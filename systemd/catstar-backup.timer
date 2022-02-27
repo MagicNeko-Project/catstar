@@ -1,0 +1,8 @@
+[Unit]
+Description=Minecraft backup service timer
+
+[Timer]
+OnCalendar=*-*-* 5,17:22:00
+
+[Install]
+WantedBy=multi-user.target
