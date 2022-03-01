@@ -1,0 +1,8 @@
+[Unit]
+Description=Catstar backup service timer
+
+[Timer]
+OnCalendar=*-*-* 12:00:00
+
+[Install]
+WantedBy=multi-user.target
