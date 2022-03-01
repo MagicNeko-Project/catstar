@@ -1,8 +1,0 @@
-[Unit]
-Description=Catstar backup service
-
-[Service]
-WorkingDirectory=/root
-ExecStart=/bin/bash backup.sh
-Environment=HOME=/root
-Type=oneshot
