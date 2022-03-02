@@ -62,9 +62,11 @@ backup_root_restic() {
 
 backup_test() {
   notify_send_verbose "开始备份：测试，只输出消息"
+  local i
   for i in {1..5}; do
     echo "测试备份消息：123*$i"
   done
+  return "$BACKUP_TEST"
 }
 
 
@@ -103,13 +105,13 @@ JOURNAL="$(journalctl -o cat -n 15 _PID=$!)"
 
 if [[ "$BACKUP_STAT" -ne 0 ]]; then
   notify_send "$MACHINE_NAME 备份失败！
-  错误码：$BACKUP_FAIL
-  开始：$BACKUP_BEGIN
-  结束：$BACKUP_END
-  $JOURNAL"
+错误码：$BACKUP_STAT
+开始：$BACKUP_BEGIN
+结束：$BACKUP_END
+$JOURNAL"
 elif [[ -v NOTIFY_SEND_SUMMARY ]]; then
   notify_send "$MACHINE_NAME 备份完成！
-  开始：$BACKUP_BEGIN
-  结束：$BACKUP_END
-  $JOURNAL"
+开始：$BACKUP_BEGIN
+结束：$BACKUP_END
+$JOURNAL"
 fi
