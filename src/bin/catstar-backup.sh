@@ -14,6 +14,10 @@ discord_send() {
     -F content="$1"
 }
 
+debug_send() {
+  echo "发送通知：$1"
+}
+
 notify_send() {
   if [[ -v TELEGRAM_BOT_TOKEN ]]; then
     telegram_send "$1"
@@ -21,6 +25,10 @@ notify_send() {
 
   if [[ -v DISCORD_WEBHOOK_URL ]]; then
     discord_send "$1"
+  fi
+
+  if [[ -v NOTIFY_DEBUG ]]; then
+    debug_send "$1"
   fi
 }
 
@@ -43,7 +51,7 @@ backup_btrfs_restic() {
   done
 
   pushd "$BTRFS_SNAPSHOTS_ROOT"
-  restic backup --exclude '**/.cache' --exclude '**/*.db' .
+  restic backup --exclude="**/.cache" --exclude="**/*.db" .
   popd
 
   btrfs subvolume delete "$BTRFS_SNAPSHOTS_ROOT/"*
@@ -52,7 +60,7 @@ backup_btrfs_restic() {
 backup_root_tar() {
   notify_send_verbose "开始备份：tar.zst"
   printf -v TAR_SAVE_FILE "$TAR_FILE_NAME"
-  tar -I zstd -cp --one-file-system "--exclude=$HOME/.cache" / | openssl "$TAR_OPENSSL_TYPE" -salt -k "$TAR_OPENSSL_PASSWORD" | dd bs=64K | ssh "$TAR_SSH_SERVER" "cat > '$TAR_SAVE_FILE'"
+  tar -I zstd -cp --one-file-system --exclude="$HOME/.cache" / | openssl "$TAR_OPENSSL_TYPE" -salt -k "$TAR_OPENSSL_PASSWORD" | dd bs=64K | ssh "$TAR_SSH_SERVER" "cat > '$TAR_SAVE_FILE'"
 }
 
 backup_root_restic() {
@@ -110,8 +118,10 @@ if [[ "$BACKUP_STAT" -ne 0 ]]; then
 结束：$BACKUP_END
 $JOURNAL"
 elif [[ -v NOTIFY_SEND_SUMMARY ]]; then
-  notify_send "$MACHINE_NAME 备份完成！
+  if [[ ! -v NOTIFY_SEND_SUMMARY_HOURS ]] || [[ " $NOTIFY_SEND_SUMMARY_HOURS " =~ " $(printf '%(%H)T') " ]]; then
+    notify_send "$MACHINE_NAME 备份完成！
 开始：$BACKUP_BEGIN
 结束：$BACKUP_END
 $JOURNAL"
+  fi
 fi
