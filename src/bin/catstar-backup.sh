@@ -96,7 +96,7 @@ backup_main() {
   fi
 
   if [[ -v BTRFS_SNAPSHOTS_ROOT ]]; then
-    backup_root_btrfs
+    backup_btrfs_restic
   fi
 
   notify_send_verbose "结束备份时间: $(printf '%(%F %T)T')"
