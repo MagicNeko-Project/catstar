@@ -109,7 +109,7 @@ BACKUP_STAT=$?
 printf -v BACKUP_END "%(%F %T)T"
 
 # journald 日志
-JOURNAL="$(journalctl -o cat -n 15 _PID=$!)"
+JOURNAL="$(journalctl -o cat -n 15 _SYSTEMD_INVOCATION_ID=$INVOCATION_ID)"
 
 if [[ "$BACKUP_STAT" -ne 0 ]]; then
   notify_send "$MACHINE_NAME 备份失败！
