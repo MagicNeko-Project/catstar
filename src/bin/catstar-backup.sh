@@ -3,13 +3,13 @@
 # 定义提醒函数
 telegram_send() {
   TELEGRAM_URL="https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"
-  curl "$TELEGRAM_URL" \
+  curl -sS -o /dev/null "$TELEGRAM_URL" \
     -F chat_id="$TELEGRAM_BOT_SendMsg_User" \
     -F text="$1"
 }
 
 discord_send() {
-  curl "$DISCORD_WEBHOOK_URL" \
+  curl -sS -o /dev/null "$DISCORD_WEBHOOK_URL" \
     -F username="$DISCORD_USERNAME" \
     -F content="$1"
 }
@@ -35,13 +35,13 @@ notify_send() {
 notify_send_verbose() {
   # echo "通知：$1"
   if [[ -v NOTIFY_SEND_VERBOSE ]]; then
-    notify_send "$1"
+    notify_send "$MACHINE_NAME $1"
   fi
 }
 
 # 定义备份函数
 backup_btrfs_restic() {
-  notify_send_verbose "$MACHINE_NAME 开始备份：btrfs 子卷快照 + restic"
+  notify_send_verbose "开始备份：btrfs 子卷快照 + restic"
   btrfs subvolume delete "$BTRFS_SNAPSHOTS_ROOT/"* || true
 
   local subvol dest
@@ -58,20 +58,20 @@ backup_btrfs_restic() {
 }
 
 backup_root_tar() {
-  notify_send_verbose "$MACHINE_NAME 开始备份：tar.zst"
+  notify_send_verbose "开始备份：tar.zst"
   printf -v TAR_SAVE_FILE "$TAR_FILE_NAME"
   tar -I zstd -cp --one-file-system --exclude="$HOME/.cache" / | openssl "$TAR_OPENSSL_TYPE" -salt -k "$TAR_OPENSSL_PASSWORD" | dd bs=64K | ssh "$TAR_SSH_SERVER" "cat > '$TAR_SAVE_FILE'"
 }
 
 backup_root_restic() {
-  notify_send_verbose "$MACHINE_NAME 开始备份：restic"
+  notify_send_verbose "开始备份：restic"
   restic backup --one-file-system --exclude="**/.cache" --exclude="**/*.db" /
 }
 
 backup_test() {
-  notify_send_verbose "$MACHINE_NAME 开始备份：测试，只输出消息"
+  notify_send_verbose "开始备份：测试，只输出消息"
   local i
-  for i in {1..5}; do
+  for i in {1..2}; do
     echo "测试备份消息：123*$i"
   done
   return "$BACKUP_TEST"
@@ -109,7 +109,7 @@ BACKUP_STAT=$?
 printf -v BACKUP_END "%(%F %T)T"
 
 # journald 日志
-JOURNAL="$(journalctl -o cat -n 15 _SYSTEMD_INVOCATION_ID=$INVOCATION_ID)"
+JOURNAL="$(journalctl -o cat _SYSTEMD_INVOCATION_ID=$INVOCATION_ID)"
 
 if [[ "$BACKUP_STAT" -ne 0 ]]; then
   notify_send "$MACHINE_NAME 备份失败！
