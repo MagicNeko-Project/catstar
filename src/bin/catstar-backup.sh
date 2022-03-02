@@ -33,7 +33,6 @@ notify_send() {
 }
 
 notify_send_verbose() {
-  # echo "通知：$1"
   if [[ -v NOTIFY_SEND_VERBOSE ]]; then
     notify_send "$MACHINE_NAME $1"
   fi
@@ -42,8 +41,9 @@ notify_send_verbose() {
 # 定义备份函数
 backup_btrfs_restic() {
   notify_send_verbose "开始备份：btrfs 子卷快照 + restic"
-  btrfs subvolume delete "$BTRFS_SNAPSHOTS_ROOT/"* || true
+  # btrfs subvolume delete "$BTRFS_SNAPSHOTS_ROOT/"* || true
 
+  # 遍历 BTRFS_SNAPSHOT_* 变量，创建快照
   local subvol dest
   for subvol in "${!BTRFS_SNAPSHOT_@}"; do
     dest="${subvol#BTRFS_SNAPSHOT_}"
@@ -52,13 +52,14 @@ backup_btrfs_restic() {
 
   pushd "$BTRFS_SNAPSHOTS_ROOT"
   restic backup --exclude="**/.cache" --exclude="**/*.db" .
-  popd
+  popd >/dev/null
 
   btrfs subvolume delete "$BTRFS_SNAPSHOTS_ROOT/"*
 }
 
 backup_root_tar() {
   notify_send_verbose "开始备份：tar.zst"
+
   printf -v TAR_SAVE_FILE "$TAR_FILE_NAME"
   tar -I zstd -cp --one-file-system --exclude="$HOME/.cache" / | openssl "$TAR_OPENSSL_TYPE" -salt -k "$TAR_OPENSSL_PASSWORD" | dd bs=64K | ssh "$TAR_SSH_SERVER" "cat > '$TAR_SAVE_FILE'"
 }
@@ -70,11 +71,12 @@ backup_root_restic() {
 
 backup_test() {
   notify_send_verbose "开始备份：测试，只输出消息"
+
   local i
   for i in {1..2}; do
     echo "测试备份消息：123*$i"
   done
-  return "$BACKUP_TEST"
+  return "$BACKUP_TEST"  # 测试返回值
 }
 
 
@@ -109,7 +111,15 @@ BACKUP_STAT=$?
 printf -v BACKUP_END "%(%F %T)T"
 
 # journald 日志
-JOURNAL="$(journalctl -o cat _SYSTEMD_INVOCATION_ID=$INVOCATION_ID)"
+if [ -n "$INVOCATION_ID" ]; then
+  if [[ -v JOURNAL_UPLOAD_URL ]]; then
+    JOURNAL="日志：$(journalctl _SYSTEMD_INVOCATION_ID=$INVOCATION_ID | curl -sS --data-binary "@-" "$JOURNAL_UPLOAD_URL")"
+  else
+    JOURNAL="$(journalctl -o cat _SYSTEMD_INVOCATION_ID=$INVOCATION_ID)"
+  fi
+fi
+
+
 
 if [[ "$BACKUP_STAT" -ne 0 ]]; then
   notify_send "$MACHINE_NAME 备份失败！
