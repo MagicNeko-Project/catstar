@@ -33,8 +33,10 @@ notify_send() {
 }
 
 notify_send_verbose() {
+  local MSG="$MACHINE_NAME $1"
+  echo "*** $MSG"
   if [[ -v NOTIFY_SEND_VERBOSE ]]; then
-    notify_send "$MACHINE_NAME $1"
+    notify_send "$MSG"
   fi
 }
 
@@ -66,6 +68,7 @@ backup_root_tar() {
 
 backup_root_restic() {
   notify_send_verbose "开始备份：restic"
+
   restic backup --one-file-system --exclude="**/.cache" --exclude="**/*.db" /
 }
 
@@ -87,18 +90,22 @@ backup_main() {
 
   if [[ -v BACKUP_TEST ]]; then
     backup_test
+    echo
   fi
 
   if [[ -v TAR_SSH_SERVER ]]; then
     backup_root_tar
+    echo
   fi
 
   if [[ -v RESTIC_REPOSITORY ]]; then
     backup_root_restic
+    echo
   fi
 
   if [[ -v BTRFS_SNAPSHOTS_ROOT ]]; then
     backup_btrfs_restic
+    echo
   fi
 
   notify_send_verbose "结束备份时间: $(printf '%(%F %T)T')"
@@ -112,9 +119,13 @@ printf -v BACKUP_END "%(%F %T)T"
 
 # journald 日志
 if [ -n "$INVOCATION_ID" ]; then
+  # 上传日志，指定一个可以上传文件的接口（参考 ix.io），接口上传完毕需要返回链接
   if [[ -v JOURNAL_UPLOAD_URL ]]; then
-    JOURNAL="日志：$(journalctl _SYSTEMD_INVOCATION_ID=$INVOCATION_ID | curl -sS --data-binary "@-" "$JOURNAL_UPLOAD_URL")"
-  else
+    JOURNAL="日志：$(journalctl _SYSTEMD_INVOCATION_ID=$INVOCATION_ID | curl -sS -F "logs=@-" "$JOURNAL_UPLOAD_URL")"
+  fi
+
+  # 日志上传失败或没有配置链接
+  if [ -z "$JOURNAL" ]; then
     JOURNAL="$(journalctl -o cat _SYSTEMD_INVOCATION_ID=$INVOCATION_ID)"
   fi
 fi
