@@ -1,0 +1,12 @@
+[Unit]
+Description=Catstar backup script service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/catstar-backup.sh
+Environment=HOME=/root
+EnvironmentFile=/usr/local/etc/catstar-backup.conf
+ReadOnlyPaths=/
+ReadWritePaths=/root
+PrivateTmp=yes
+PrivateDevices=yes
