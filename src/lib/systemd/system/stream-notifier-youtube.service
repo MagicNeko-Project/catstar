@@ -1,0 +1,16 @@
+[Unit]
+Description=Cyan's Stream Notifier for YouTube
+Documentation=https://github.com/jupiterbjy/StreamNotifier
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/env env/bin/python -m YoutubeStreamNotifyBot -p youtube.json -c $STATE_DIRECTORY/cache.json
+WorkingDirectory=/usr/local/opt/StreamNotifier
+Restart=on-failure
+RestartSec=15
+DynamicUser=yes
+StateDirectory=stream-notifier-youtube
+
+[Install]
+WantedBy=multi-user.target

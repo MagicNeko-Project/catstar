@@ -1,0 +1,17 @@
+[Unit]
+Description=Jupyter Lab %i
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env jupyter-lab --no-browser --JupyterApp.config_file=/usr/local/etc/jupyterlab-%i.py
+StateDirectory=jupyterlab-%i
+WorkingDirectory=%S/jupyterlab-%i
+Environment=HOME=%S/jupyterlab-%i
+Environment=SHELL=/usr/bin/zsh
+DynamicUser=yes
+ProtectHome=yes
+PrivateDevices=yes
+
+
+[Install]
+WantedBy=multi-user.target

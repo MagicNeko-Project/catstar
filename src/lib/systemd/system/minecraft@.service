@@ -1,0 +1,25 @@
+[Unit]
+Description=Minecraft Server (CyanMC) %i
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/usr/local/etc/minecraft-%i.conf
+
+[Service]
+Type=simple
+ExecStart=/usr/local/opt/CyanMC/start.sh
+ExecStop=/usr/local/opt/CyanMC/start.sh systemd_stop $MAINPID
+
+StateDirectory=minecraft-%i
+WorkingDirectory=%S/minecraft-%i
+EnvironmentFile=/usr/local/etc/minecraft-%i.conf
+SyslogIdentifier=minecraft-%i
+DynamicUser=yes
+ProtectHome=yes
+PrivateDevices=yes
+SuccessExitStatus=0 130
+
+Restart=always
+RestartSec=15s
+
+[Install]
+WantedBy=multi-user.target
