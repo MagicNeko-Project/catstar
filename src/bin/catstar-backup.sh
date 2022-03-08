@@ -34,6 +34,7 @@ notify_send() {
 
 notify_send_verbose() {
   local MSG="$MACHINE_NAME $1"
+  BACKUP_LOGS+=$("\"$(printf "%(%F %T) %s" "$MSG")\"")
   echo "*** $MSG"
   if [[ -v NOTIFY_SEND_VERBOSE ]]; then
     notify_send "$MSG"
@@ -107,6 +108,15 @@ backup_main() {
   notify_send_verbose "结束备份时间: $(printf '%(%F %T)T')"
 }
 
+print_journal() {
+  echo "Catstar - 喵星备份"
+  xargs -n 1 echo <<< "${BACKUP_LOGS[@]}"
+  echo "================================="
+  if [ -n "$INVOCATION_ID" ]; then
+    journalctl "$@" _SYSTEMD_INVOCATION_ID=$INVOCATION_ID
+  fi
+}
+
 printf -v BACKUP_BEGIN "%(%F %T)T"
 (backup_main) &
 wait $!
@@ -117,12 +127,12 @@ printf -v BACKUP_END "%(%F %T)T"
 if [ -n "$INVOCATION_ID" ]; then
   # 上传日志，指定一个可以上传文件的接口（参考 ix.io），接口上传完毕需要返回链接
   if [[ -v JOURNAL_UPLOAD_URL ]]; then
-    JOURNAL="日志：$(journalctl _SYSTEMD_INVOCATION_ID=$INVOCATION_ID | curl -sS -F "logs=@-" "$JOURNAL_UPLOAD_URL")"
+    JOURNAL="日志：$(print_journal | curl -sS -F "logs=@-" "$JOURNAL_UPLOAD_URL")"
   fi
 
   # 日志上传失败或没有配置链接
   if [ -z "$JOURNAL" ]; then
-    JOURNAL="$(journalctl -o cat _SYSTEMD_INVOCATION_ID=$INVOCATION_ID)"
+    JOURNAL="$(print_journal -o cat)"
   fi
 fi
 
