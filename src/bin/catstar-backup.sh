@@ -34,8 +34,8 @@ notify_send() {
 
 notify_send_verbose() {
   local MSG="$MACHINE_NAME $1"
-  BACKUP_LOGS+=("\"$(printf "%(%F %T)T %s" -1 "$MSG")\"")
-  echo "*** $MSG"
+  BACKUP_LOGS+=("\"$(printf "%(%F %T)T %s" -1 "$1")\"")
+  echo "*** $MSG ***"
   if [[ -v NOTIFY_SEND_VERBOSE ]]; then
     notify_send "$MSG"
   fi
@@ -109,7 +109,7 @@ backup_main() {
 }
 
 print_journal() {
-  echo "Catstar - 喵星备份"
+  echo "Catstar - 喵星备份日志"
   xargs -n 1 echo <<< "${BACKUP_LOGS[@]}"
   echo "================================="
   if [ -n "$INVOCATION_ID" ]; then
