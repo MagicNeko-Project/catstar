@@ -34,7 +34,7 @@ notify_send() {
 
 notify_send_verbose() {
   local MSG="$MACHINE_NAME $1"
-  BACKUP_LOGS+=$("\"$(printf "%(%F %T) %s" "$MSG")\"")
+  BACKUP_LOGS+=$("\"$(printf "%(%F %T)T %s" -1 "$MSG")\"")
   echo "*** $MSG"
   if [[ -v NOTIFY_SEND_VERBOSE ]]; then
     notify_send "$MSG"
@@ -44,7 +44,7 @@ notify_send_verbose() {
 # 定义备份函数
 backup_btrfs_restic() {
   notify_send_verbose "开始备份：btrfs 子卷快照 + restic"
-  # btrfs subvolume delete "$BTRFS_SNAPSHOTS_ROOT/"* || true
+  btrfs subvolume delete "$BTRFS_SNAPSHOTS_ROOT/"* || true
 
   # 遍历 BTRFS_SNAPSHOT_* 变量，创建快照
   local subvol dest
