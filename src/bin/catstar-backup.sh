@@ -85,8 +85,6 @@ backup_test() {
 
 
 backup_main() {
-  set -eu  # 报错立即退出
-
   notify_send_verbose "开始备份时间: $(printf '%(%F %T)T')"
 
   if [[ -v BACKUP_TEST ]]; then
@@ -113,32 +111,36 @@ print_journal() {
   xargs -n 1 echo <<< "${BACKUP_LOGS[@]}"
   echo "================================="
   if [ -n "$INVOCATION_ID" ]; then
-    journalctl "$@" _SYSTEMD_INVOCATION_ID=$INVOCATION_ID
+    journalctl "$@" _SYSTEMD_INVOCATION_ID="$INVOCATION_ID"
+  fi
+}
+
+upload_journal() {
+  # journald 日志
+  if [ -n "$INVOCATION_ID" ]; then
+    # 上传日志，指定一个可以上传文件的接口（参考 ix.io），接口上传完毕需要返回链接
+    if [[ -v JOURNAL_UPLOAD_URL ]]; then
+      JOURNAL="日志：$(print_journal | curl -sS -F "logs=@-" "$JOURNAL_UPLOAD_URL")"
+    fi
+
+    # 日志上传失败或没有配置链接
+    if [ -z "$JOURNAL" ]; then
+      JOURNAL="$(print_journal -o cat)"
+    fi
   fi
 }
 
 printf -v BACKUP_BEGIN "%(%F %T)T"
+set -eu  # 报错立即退出
 backup_main
 BACKUP_STAT=$?
+set +eu
 printf -v BACKUP_END "%(%F %T)T"
-echo $BACKUP_LOGS
-
-# journald 日志
-if [ -n "$INVOCATION_ID" ]; then
-  # 上传日志，指定一个可以上传文件的接口（参考 ix.io），接口上传完毕需要返回链接
-  if [[ -v JOURNAL_UPLOAD_URL ]]; then
-    JOURNAL="日志：$(print_journal | curl -sS -F "logs=@-" "$JOURNAL_UPLOAD_URL")"
-  fi
-
-  # 日志上传失败或没有配置链接
-  if [ -z "$JOURNAL" ]; then
-    JOURNAL="$(print_journal -o cat)"
-  fi
-fi
 
 
 
 if [[ "$BACKUP_STAT" -ne 0 ]]; then
+  upload_journal
   notify_send "$MACHINE_NAME 备份失败❌！
 错误码：$BACKUP_STAT
 开始：$BACKUP_BEGIN
@@ -146,6 +148,7 @@ if [[ "$BACKUP_STAT" -ne 0 ]]; then
 $JOURNAL"
 elif [[ -v NOTIFY_SEND_SUMMARY ]]; then
   if [[ ! -v NOTIFY_SEND_SUMMARY_HOURS ]] || [[ " $NOTIFY_SEND_SUMMARY_HOURS " =~ " $(printf '%(%H)T') " ]]; then
+    upload_journal
     notify_send "$MACHINE_NAME 备份完成✅
 开始：$BACKUP_BEGIN
 结束：$BACKUP_END
