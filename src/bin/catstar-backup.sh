@@ -118,8 +118,7 @@ print_journal() {
 }
 
 printf -v BACKUP_BEGIN "%(%F %T)T"
-(backup_main) &
-wait $!
+backup_main
 BACKUP_STAT=$?
 printf -v BACKUP_END "%(%F %T)T"
 echo $BACKUP_LOGS
