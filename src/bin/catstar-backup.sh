@@ -122,6 +122,7 @@ printf -v BACKUP_BEGIN "%(%F %T)T"
 wait $!
 BACKUP_STAT=$?
 printf -v BACKUP_END "%(%F %T)T"
+echo $BACKUP_LOGS
 
 # journald 日志
 if [ -n "$INVOCATION_ID" ]; then
