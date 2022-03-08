@@ -34,7 +34,7 @@ notify_send() {
 
 notify_send_verbose() {
   local MSG="$MACHINE_NAME $1"
-  BACKUP_LOGS+=$("\"$(printf "%(%F %T)T %s" -1 "$MSG")\"")
+  BACKUP_LOGS+=("\"$(printf "%(%F %T)T %s" -1 "$MSG")\"")
   echo "*** $MSG"
   if [[ -v NOTIFY_SEND_VERBOSE ]]; then
     notify_send "$MSG"
