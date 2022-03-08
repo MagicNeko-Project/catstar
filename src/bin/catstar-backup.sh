@@ -70,7 +70,7 @@ backup_root_tar() {
 backup_root_restic() {
   notify_send_verbose "开始备份：restic"
 
-  restic backup --one-file-system --exclude="**/.cache" --exclude="**/*.db" /
+  restic backup --one-file-system --exclude="**/.cache" --exclude="**/*.db" "$RESTIC_ROOT"
 }
 
 backup_test() {
@@ -95,7 +95,7 @@ backup_main() {
     backup_root_tar
   fi
 
-  if [[ -v RESTIC_REPOSITORY ]]; then
+  if [[ -v RESTIC_ROOT ]]; then
     backup_root_restic
   fi
 
