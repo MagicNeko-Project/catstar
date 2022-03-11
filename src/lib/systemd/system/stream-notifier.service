@@ -1,0 +1,16 @@
+[Unit]
+Description=Cyan's Stream Notifier for Twitch (Cyan/Catstar version)
+Documentation=https://github.com/CyanNyan-Fans-unofficial/StreamNotifier
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/env env/bin/python -m stream_notifier -p /usr/local/etc/stream-notifier.yml -c $STATE_DIRECTORY
+WorkingDirectory=/usr/local/opt/StreamNotifier
+Restart=on-failure
+RestartSec=15
+DynamicUser=yes
+StateDirectory=stream-notifier
+
+[Install]
+WantedBy=multi-user.target
