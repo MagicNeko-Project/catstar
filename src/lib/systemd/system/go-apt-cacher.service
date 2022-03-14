@@ -1,0 +1,14 @@
+[Unit]
+Description=Go utilities for Debian APT repositories
+Documentation=https://github.com/cybozu-go/aptutil
+
+[Service]
+ExecStart=/usr/local/bin/go-apt-cacher -f /usr/local/etc/go-apt-cacher.toml
+Type=simple
+DynamicUser=yes
+ProtectHome=yes
+PrivateDevices=yes
+ReadWritePaths=/data/data/go-apt-cacher
+
+[Install]
+WantedBy=multi-user.target

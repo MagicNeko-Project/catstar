@@ -1,0 +1,15 @@
+[Unit]
+Description=High performance HTTP server that implements restic's REST backend API
+Documentation=https://github.com/restic/rest-server
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env rest-server --path /data/data/restic-backups --no-auth --listen :8000
+
+DynamicUser=yes
+ProtectHome=yes
+PrivateDevices=yes
+ReadWritePaths=/data/data/restic-backups
+
+[Install]
+WantedBy=multi-user.target

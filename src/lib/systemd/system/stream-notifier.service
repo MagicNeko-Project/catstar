@@ -10,6 +10,8 @@ WorkingDirectory=/usr/local/opt/StreamNotifier
 Restart=on-failure
 RestartSec=15
 DynamicUser=yes
+ProtectHome=yes
+PrivateDevices=yes
 StateDirectory=stream-notifier
 
 [Install]
