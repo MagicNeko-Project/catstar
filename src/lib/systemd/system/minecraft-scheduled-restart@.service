@@ -1,0 +1,13 @@
+[Unit]
+Description=Minecraft Server Scheduled Restart (CyanMC) %i
+Requisite=minecraft@%i.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/opt/CyanMC/start.sh scheduled_restart 60
+
+WorkingDirectory=%S/minecraft-%i
+ReadOnlyPaths=/
+EnvironmentFile=/usr/local/etc/minecraft-%i.conf
+ProtectHome=yes
+PrivateDevices=yes

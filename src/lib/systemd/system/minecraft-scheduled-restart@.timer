@@ -1,0 +1,8 @@
+[Unit]
+Description=Minecraft Server Scheduled Restart timer (CyanMC) %i
+
+[Timer]
+OnCalendar=*-*-* 00:00:00 UTC
+
+[Install]
+WantedBy=multi-user.target
