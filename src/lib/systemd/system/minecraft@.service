@@ -5,7 +5,7 @@ Wants=network-online.target
 ConditionPathExists=/usr/local/etc/minecraft-%i.conf
 
 [Service]
-Type=simple
+Type=forking
 ExecStart=/usr/local/opt/CyanMC/start.sh
 ExecStop=/usr/local/opt/CyanMC/start.sh systemd_stop $MAINPID
 
