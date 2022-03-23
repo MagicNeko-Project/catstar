@@ -9,6 +9,7 @@ ExecStart=/usr/bin/env rest-server --path /data/data/restic-backups --no-auth --
 DynamicUser=yes
 ProtectHome=yes
 PrivateDevices=yes
+ProtectProc=invisible
 ReadWritePaths=/data/data/restic-backups
 
 [Install]

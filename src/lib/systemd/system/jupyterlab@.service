@@ -11,6 +11,8 @@ Environment=SHELL=/usr/bin/zsh
 DynamicUser=yes
 ProtectHome=yes
 PrivateDevices=yes
+ProtectProc=invisible
+PrivateUsers=yes
 
 
 [Install]

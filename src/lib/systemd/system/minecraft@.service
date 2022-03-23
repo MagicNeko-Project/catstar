@@ -16,6 +16,7 @@ SyslogIdentifier=minecraft-%i
 DynamicUser=yes
 ProtectHome=yes
 PrivateDevices=yes
+ProtectProc=invisible
 SuccessExitStatus=0 130
 
 Restart=always

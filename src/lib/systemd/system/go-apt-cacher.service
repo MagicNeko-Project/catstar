@@ -8,6 +8,7 @@ Type=simple
 DynamicUser=yes
 ProtectHome=yes
 PrivateDevices=yes
+ProtectProc=invisible
 ReadWritePaths=/data/data/go-apt-cacher
 
 [Install]

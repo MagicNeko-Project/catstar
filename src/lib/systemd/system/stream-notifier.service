@@ -12,6 +12,7 @@ RestartSec=15
 DynamicUser=yes
 ProtectHome=yes
 PrivateDevices=yes
+ProtectProc=invisible
 StateDirectory=stream-notifier
 
 [Install]
