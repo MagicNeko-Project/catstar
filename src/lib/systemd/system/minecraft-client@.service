@@ -1,0 +1,25 @@
+[Unit]
+Description=Minecraft Client %i
+ConditionPathExists=/usr/local/etc/minecraft-%i.conf
+
+[Service]
+Type=forking
+ExecStart=/usr/local/opt/CyanMC/start.sh
+
+StateDirectory=minecraft-%i
+WorkingDirectory=%S/minecraft-%i
+EnvironmentFile=/usr/local/etc/minecraft-%i.conf
+SyslogIdentifier=minecraft-%i
+DynamicUser=yes
+ProtectHome=yes
+ProtectProc=invisible
+# Handle dynamic user and GPU support
+# Reference: https://aur.archlinux.org/cgit/aur.git/tree/foldingathome.service?h=foldingathome
+ReadWritePaths=-/dev/dri
+# Nvidia
+ReadWritePaths=-/dev/nvidia0
+ReadWritePaths=-/dev/nvidiactl
+
+
+[Install]
+WantedBy=multi-user.target
