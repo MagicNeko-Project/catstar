@@ -1,0 +1,16 @@
+[Unit]
+Description=Cyber Cato discord bot %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/env env/bin/python main.py /usr/local/etc/CyberCato/config-%i.yml
+WorkingDirectory=/usr/local/opt/CyberCato-bot
+Restart=on-failure
+DynamicUser=yes
+ProtectHome=yes
+PrivateDevices=yes
+ProtectProc=invisible
+
+[Install]
+WantedBy=multi-user.target
