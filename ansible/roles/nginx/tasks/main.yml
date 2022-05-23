@@ -1,0 +1,33 @@
+---
+- name: Include os-specific variables
+  include_vars: "{{ item }}"
+  with_first_found:
+    - "../vars/{{ ansible_os_family }}.yml"
+    - "../vars/default.yml"
+
+- name: Remove Apache
+  apt:
+    name: '{{ apache_packages }}'
+    state: absent
+
+- name: Install Nginx
+  package:
+    name: '{{ nginx_packages }}'
+  notify: start nginx
+
+- name: Install PHP
+  package:
+    name: '{{ php_fpm_packages }}'
+  notify: start php-fpm
+  when: php_enabled
+
+- name: Create configurations
+  import_tasks: configuration_nginx.yml
+
+- name: Create PHP configurations
+  import_tasks: configuration_php.yml
+  when: php_enabled
+
+- name: Create initial contents
+  import_tasks: contents.yml
+  when: content_enabled

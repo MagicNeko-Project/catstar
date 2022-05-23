@@ -1,0 +1,11 @@
+---
+apache_packages: apache2
+nginx_packages: nginx
+php_fpm_packages:
+  - php-fpm
+  - php-mysql
+  - php-curl
+  - php-mbstring
+  - php-gd
+  - php-xml
+nginx_user: www-data

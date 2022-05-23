@@ -1,0 +1,45 @@
+server {
+  listen {{ https_port }} ssl http2;
+  listen [::]:{{ https_port }} ssl http2;
+
+  include {{ nginx_ssl_snippets }}/{{ vars.ssl_host }}.conf;
+
+  server_name {{ vars.server_name }};
+
+  root {{ html_root }};
+  index index.html index.htm;
+  location / {
+    try_files $uri $uri/ =404;
+  }
+
+  include snippets/auth.conf;
+
+  # Transmission-BT Proxy
+  location /tr {
+      return 301 https://$server_name/transmission/web;
+  }
+
+  location /transmission {
+    include snippets/proxy0.conf;
+
+    proxy_pass_header X-Transmission-Session-Id;
+    add_header        Front-End-Https   on;
+
+    proxy_pass http://transmission;
+
+    location /transmission/web {
+      alias {{ web_root }}/web-control/src;
+    }
+  }
+
+  location ~ /\.ht {
+    deny all;
+  }
+
+  location /data {
+    alias {{ data_root }};
+    # include snippets/fancyindex.conf;
+    auth_basic off;
+  }
+
+}

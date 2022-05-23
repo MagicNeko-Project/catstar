@@ -1,0 +1,11 @@
+- name: Copy cert from cert directory
+  copy:
+    src: "{{ cert_src | expanduser }}/{{ name }}/fullchain.cer"
+    dest: "{{ ssl_root }}/{{ name }}/full.pem"
+    mode: 0644
+
+- name: Copy key from cert directory
+  copy:
+    src: "{{ cert_src | expanduser }}/{{ name }}/{{ name }}.key"
+    dest: "{{ ssl_root }}/{{ name }}/key.pem"
+    mode: 0600

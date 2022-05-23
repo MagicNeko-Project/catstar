@@ -1,0 +1,53 @@
+---
+# default file for nginx
+# install: true  # Use apt to install nginx
+
+# Paths
+web_root: /srv
+html_root: /srv/html
+data_root: /data
+ssl_root: /ssl
+
+nginx_root: /etc/nginx
+
+nginx_sites_enabled: sites-enabled
+nginx_sites_available: sites-available
+nginx_ssl_snippets: snippets/ssl
+
+php_enabled: false
+php_version: 7.4  # 7.4 for ubuntu focal
+php_root: "/etc/php/{{ php_version }}"
+php_pool_root: "{{ php_root }}/fpm/pool.d"
+fastcgi_listen: "/run/php/php{{ php_version }}-fpm-user.sock"
+
+content_enabled: false
+
+# User
+new_user: www-data
+
+# Generate conf.d/upstreams.conf
+upstreams: {}
+
+nginx_config_dirs:
+  - conf.d
+  - snippets
+  - modules-available
+  - modules-enabled
+  - "{{ nginx_sites_enabled }}"
+  - "{{ nginx_sites_available }}"
+  - "{{ nginx_ssl_snippets }}"
+
+# config file -> config values dict
+sites_enabled: {}
+sites_disabled: []
+
+# vars file for nginx
+redirect_code: 301  # Choose 301 or 302
+http_port: 80
+https_port: 443
+
+php_configs:
+  - www-user.conf
+
+html_files:
+  - index.html

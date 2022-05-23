@@ -1,0 +1,28 @@
+# Redirect all {{ http_port }} requests
+server {
+  listen {{ http_port }} default_server;
+  listen [::]:{{ http_port }} default_server;
+
+  # Allow ACME to use HTTP
+  location /.well-known/acme-challenge {
+    alias {{ html_root }}/.well-known/acme-challenge;
+  }
+
+  # {{ redirect_code }} redirect
+  location / {
+    return {{ redirect_code }} https://$host$request_uri;
+  }
+}
+
+# Deny SSL without proper SNI
+server {
+  listen {{ https_port }} ssl http2 default_server;
+  listen [::]:{{ https_port }} ssl http2 default_server;
+
+  include {{ nginx_ssl_snippets }}/{{ site.ssl_host }}.conf;
+
+  # ssl_ciphers !ALL:aNULL;
+
+  server_name _;
+  return 444;
+}

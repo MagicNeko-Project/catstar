@@ -1,0 +1,9 @@
+---
+ssl_root: /ssl
+cert_src: ~/.acme.sh
+
+ssl_copy: []
+
+nginx_snippets_enabled: yes
+nginx_root: /etc/nginx
+nginx_snippets_ssl: "snippets/ssl"

@@ -1,0 +1,19 @@
+---
+- name: Create Web Root
+  file:
+    path: '{{ item }}'
+    state: directory
+    owner: "{{ new_user }}"
+    group: "{{ new_user }}"
+    mode: 0755
+  loop:
+    - '{{ web_root }}'
+    - '{{ html_root }}'
+
+- name: Copy HTML templates
+  template:
+    src: "html/{{ item }}.j2"
+    dest: '{{ html_root }}/{{ item }}'
+    mode: 0644
+  loop:
+    - index.html

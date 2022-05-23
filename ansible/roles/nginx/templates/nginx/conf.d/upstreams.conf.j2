@@ -1,0 +1,6 @@
+{% for item in upstreams | dict2items %}
+upstream {{ item.key }} {
+  server {{ item.value }};
+  keepalive 32;
+}
+{% endfor %}

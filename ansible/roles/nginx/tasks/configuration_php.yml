@@ -1,0 +1,7 @@
+- name: Copy PHP configuration template
+  template:
+    src: 'php/{{ item }}.j2'
+    dest: '{{ php_pool_root }}/{{ item }}'
+    mode: 0644
+  loop: '{{ php_configs }}'
+  notify: restart php-fpm

@@ -1,0 +1,15 @@
+server {
+  listen {{ https_port }} ssl http2;
+  listen [::]:{{ https_port }} ssl http2;
+
+  include {{ nginx_ssl_snippets }}/{{ vars.ssl_host }}.conf;
+
+  server_name {{ vars.server_name }};
+
+  location / {
+    include snippets/websocket.conf;
+    include snippets/proxy0.conf;
+
+    proxy_pass http://jupyterlab;
+  }
+}

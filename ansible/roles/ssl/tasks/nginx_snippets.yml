@@ -1,0 +1,12 @@
+- name: Create nginx SSL snippets directory
+  file:
+    path: "{{ (nginx_root, nginx_snippets_ssl) | path_join }}"
+    state: directory
+    mode: 0755
+
+- name: Create nginx SSL snippet files
+  template:
+    src: ssl.conf.j2
+    dest: "{{ (nginx_root, nginx_snippets_ssl) | path_join }}/{{ item }}.conf"
+    mode: 0644
+  loop: "{{ [ssl_copy, 'default'] | flatten }}"

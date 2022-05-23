@@ -1,0 +1,55 @@
+- name: Create nginx config directories
+  file:
+    path: "{{ nginx_root }}/{{ item }}"
+    state: directory
+    mode: 0755
+  loop: "{{ nginx_config_dirs }}"
+
+- name: Copy Nginx Configuration
+  template:
+    src: "{{ item }}"
+    dest: "{{ (nginx_root, dest) | path_join }}"
+    mode: 0644
+  vars:
+    dest: "{{ item | regex_replace('.*templates/nginx/(.+)\\.j2', '\\1') }}"
+  notify: reload nginx
+  with_fileglob:
+    - "templates/nginx/*.j2"
+    - "templates/nginx/conf.d/*.j2"
+    - "templates/nginx/snippets/*.j2"
+
+- name: Copy dhparam files
+  copy:
+    src: "{{ item }}"
+    dest: "{{ (nginx_root, item) | path_join }}"
+    mode: 0644
+  loop:
+    - ffdhe2048.pem
+    - ffdhe3072.pem
+    - ffdhe4096.pem
+
+- name: Copy Nginx sites available files templates
+  template:
+    src: "sites-available/{{ item.key }}.j2"
+    dest: "{{ (nginx_root, nginx_sites_available, item.key) | path_join }}"
+    mode: 0644
+  vars:
+    site: "{{ item.value }}"
+  with_dict: "{{ sites_enabled }}"
+  notify: reload nginx
+
+- name: Enable Nginx sites
+  file:
+    src: "{{ (nginx_root, nginx_sites_available, item.key) | path_join }}"
+    dest: "{{ (nginx_root, nginx_sites_enabled, item.key) | path_join }}"
+    state: link
+  with_dict: "{{ sites_enabled }}"
+  when: "item.value and (item.value.enabled | default(True))"
+  notify: reload nginx
+
+- name: Disable Nginx sites
+  file:
+    path: "{{ (nginx_root, nginx_sites_enabled, item) | path_join }}"
+    state: absent
+  loop: "{{ sites_disabled }}"
+  notify: reload nginx

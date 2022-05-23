@@ -1,0 +1,13 @@
+[www-user]
+user = {{ new_user }}
+group = {{ new_user }}
+
+listen = {{ fastcgi_listen }}
+listen.owner = {{ www_user }}
+listen.group = {{ www_group }}
+
+pm = dynamic
+pm.max_children = 5
+pm.start_servers = 2
+pm.min_spare_servers = 1
+pm.max_spare_servers = 3
