@@ -131,10 +131,8 @@ upload_journal() {
 }
 
 printf -v BACKUP_BEGIN "%(%F %T)T"
-set -eu  # 报错立即退出
-backup_main
+( set -eu; backup_main ) # 报错立即退出
 BACKUP_STAT=$?
-set +eu
 printf -v BACKUP_END "%(%F %T)T"
 
 
