@@ -1,0 +1,13 @@
+[Unit]
+Description=rclone restic rest server
+Documentation=https://rclone.org/commands/rclone_serve_restic/
+
+[Service]
+WorkingDirectory=%h
+ExecStart=/usr/local/bin/rclone serve restic $RCLONE_REMOTE
+EnvironmentFile=%h/.config/rclone-serve-restic-%i.conf
+NoNewPrivileges=true
+Type=simple
+
+[Install]
+WantedBy=default.target

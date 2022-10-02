@@ -1,0 +1,10 @@
+[Unit]
+Description=Jupyter Lab (for user) - System installation
+
+[Service]
+WorkingDirectory=%h
+ExecStart=/usr/bin/jupyter lab --no-browser
+Type=simple
+
+[Install]
+WantedBy=default.target
