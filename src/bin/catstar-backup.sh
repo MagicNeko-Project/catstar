@@ -25,6 +25,13 @@ http_ping_send() {
   fi
 }
 
+http_ping_start_send() {
+  if [[ -v HTTP_PING_START_URL ]]; then
+    curl -sS -o /dev/null "$HTTP_PING_START_URL" \
+    --data-binary "$1"
+  fi
+}
+
 debug_send() {
   if [[ -v NOTIFY_DEBUG ]]; then
     echo "发送通知：$1"
@@ -108,6 +115,7 @@ backup_test() {
 
 backup_main() {
   notify_send_verbose "开始备份时间: $(printf '%(%F %T)T')"
+  http_ping_start_send "开始备份时间: $(printf '%(%F %T)T')"
 
   if [[ -v BACKUP_TEST ]]; then
     backup_test
