@@ -2,34 +2,56 @@
 
 # 定义提醒函数
 telegram_send() {
-  TELEGRAM_URL="https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"
-  curl -sS -o /dev/null "$TELEGRAM_URL" \
-    -F chat_id="$TELEGRAM_BOT_SendMsg_User" \
-    -F text="$1"
+  if [[ -v TELEGRAM_BOT_TOKEN ]]; then
+    TELEGRAM_URL="https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"
+    curl -sS -o /dev/null "$TELEGRAM_URL" \
+      -F chat_id="$TELEGRAM_BOT_SendMsg_User" \
+      -F text="$1"
+  fi
 }
 
 discord_send() {
-  curl -sS -o /dev/null "$DISCORD_WEBHOOK_URL" \
-    -F username="$DISCORD_USERNAME" \
-    -F content="$1"
+  if [[ -v DISCORD_WEBHOOK_URL ]]; then
+    curl -sS -o /dev/null "$DISCORD_WEBHOOK_URL" \
+      -F username="$DISCORD_USERNAME" \
+      -F content="$1"
+  fi
+}
+
+http_ping_send() {
+  if [[ -v HTTP_PING_URL ]]; then
+    curl -sS -o /dev/null "$HTTP_PING_URL" \
+    --data-binary "$1"
+  fi
 }
 
 debug_send() {
-  echo "发送通知：$1"
+  if [[ -v NOTIFY_DEBUG ]]; then
+    echo "发送通知：$1"
+  fi
 }
 
 notify_send() {
-  if [[ -v TELEGRAM_BOT_TOKEN ]]; then
+  telegram_send "$1"
+  discord_send "$1"
+  http_ping_send "$1"
+  debug_send "$1"
+}
+
+notify_summary() {
+  if ! [[ -v TELEGRAM_SKIP_SUMMARY ]]; then
     telegram_send "$1"
   fi
 
-  if [[ -v DISCORD_WEBHOOK_URL ]]; then
+  if ! [[ -v DISCORD_SKIP_SUMMARY ]]; then
     discord_send "$1"
   fi
 
-  if [[ -v NOTIFY_DEBUG ]]; then
-    debug_send "$1"
+  if ! [[ -v HTTP_PING_SKIP_SUMMARY ]]; then
+    http_ping_send "$1"
   fi
+
+  debug_send "$1"
 }
 
 notify_send_verbose() {
@@ -147,7 +169,7 @@ $JOURNAL"
 elif [[ -v NOTIFY_SEND_SUMMARY ]]; then
   if [[ ! -v NOTIFY_SEND_SUMMARY_HOURS ]] || [[ " $NOTIFY_SEND_SUMMARY_HOURS " =~ " $(printf '%(%H)T') " ]]; then
     upload_journal
-    notify_send "$MACHINE_NAME 备份完成✅
+    notify_summary "$MACHINE_NAME 备份完成✅
 开始：$BACKUP_BEGIN
 结束：$BACKUP_END
 $JOURNAL"
