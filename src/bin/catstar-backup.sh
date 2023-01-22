@@ -144,7 +144,7 @@ print_journal() {
   printf '%s\n' "${BACKUP_VERBOSE_LOGS[@]}"
   echo "================================="
   if [ -n "$INVOCATION_ID" ]; then
-    journalctl -o cat _SYSTEMD_INVOCATION_ID="$INVOCATION_ID" | head -1
+    journalctl -o cat _SYSTEMD_INVOCATION_ID="$INVOCATION_ID"
   fi
 }
 
