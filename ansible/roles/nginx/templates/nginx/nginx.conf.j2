@@ -7,7 +7,7 @@ worker_processes     auto;
 worker_rlimit_nofile 65535;
 
 # Load modules
-include              /etc/nginx/modules-enabled/*.conf;
+include              modules-enabled/*.conf;
 
 events {
     multi_accept       on;
@@ -42,7 +42,14 @@ http {
     ssl_session_tickets    off;
 
     # Mozilla Modern configuration
+    {% if mozilla_ssl | default('modern') | lower == 'modern' %}
     ssl_protocols          TLSv1.3;
+    {% else %}
+    ssl_dhparam   ffdhe2048.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers   ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    {% endif %}
+    ssl_prefer_server_ciphers off;
 
     # OCSP Stapling
     ssl_stapling           on;
@@ -51,6 +58,14 @@ http {
     resolver_timeout       2s;
 
     # Load configs
-    include                /etc/nginx/conf.d/*.conf;
-    include                /etc/nginx/{{ nginx_sites_enabled }}/*;
+    include                conf.d/*.conf;
+    include                {{ nginx_sites_enabled }}/*;
+    include                cloudflare;
 }
+
+{% if stream | length %}
+stream {
+    include conf.d/stream;
+    include conf.d/*.streamconf;
+}
+{% endif %}

@@ -1,0 +1,26 @@
+---
+# Installation options
+
+# curl -s https://api.github.com/repos/v2fly/v2ray-core/releases/latest | jq -r '.tag_name'
+v2ray_version: v5.1.0
+v2ray_prefix: /usr/local/opt/v2ray
+v2ray_install: /usr/local
+
+# Mapping of ansible architecture to v2ray file name
+v2ray_arch:
+  x86_64: linux-64
+  aarch64: arm64-v8a
+
+v2ray_file: "v2ray-{{ v2ray_arch[ansible_architecture] }}.zip"
+v2ray_url: "https://github.com/v2fly/v2ray-core/releases/download/{{ v2ray_version }}/{{ v2ray_file }}"
+v2ray_archive: "{{ v2ray_prefix }}/{{ v2ray_version }}.zip"
+
+v2inbounds: []
+v2outbounds: []
+v2rules: []
+
+outbounds_default:
+  - protocol: freedom
+    tag: direct
+  - protocol: blackhole
+    tag: blocked

@@ -1,0 +1,19 @@
+---
+- name: Install v2ray
+  community.general.pacman:
+    name: v2ray
+    state: present
+    update_cache: yes
+  notify: Start v2ray
+
+- name: Update variables
+  set_fact:
+    v2ray_install: ""
+
+- name: Copy service file
+  template:
+    src: v2ray.service
+    dest: /etc/systemd/system/
+  notify:
+    - Reload systemd
+    - Start v2ray

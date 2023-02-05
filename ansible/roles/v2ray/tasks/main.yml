@@ -1,0 +1,17 @@
+---
+- name: Install Packages (Ubuntu)
+  import_tasks: install_general.yml
+  when: ansible_os_family == "Debian"
+  tags: install
+
+- name: Install Packages (Arch)
+  import_tasks: install_arch.yml
+  when: ansible_os_family == "Archlinux"
+  tags: install
+
+- name: Copy config file
+  copy:
+    content: "{{ lookup('template', 'config.yml.j2') | from_yaml | to_json }}"
+    dest: "{{ v2ray_install }}/etc/v2ray/config.json"
+  notify:
+    - Restart v2ray

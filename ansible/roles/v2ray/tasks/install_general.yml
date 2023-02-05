@@ -1,0 +1,44 @@
+---
+- name: Install unzip
+  apt:
+    name: unzip
+
+- name: Create directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - "{{ v2ray_prefix }}"
+    - "{{ v2ray_install }}"
+    - "{{ v2ray_install }}/bin"
+    - "{{ v2ray_install }}/etc/v2ray"
+
+- name: Download archive
+  get_url:
+    url: "{{ v2ray_url }}"
+    dest: "{{ v2ray_archive }}"
+  notify:
+    - Restart v2ray
+
+- name: Extract contents
+  unarchive:
+    remote_src: yes
+    src: "{{ v2ray_archive }}"
+    dest: "{{ v2ray_prefix }}"
+
+- name: Link binaries
+  file:
+    path: "{{ v2ray_install }}/bin/{{ item }}"
+    src: "{{ v2ray_prefix }}/{{ item }}"
+    state: link
+  loop:
+    - v2ray
+    - v2ctl
+
+- name: Copy service file
+  template:
+    src: v2ray.service
+    dest: /etc/systemd/system/
+  notify:
+    - Reload systemd
+    - Start v2ray

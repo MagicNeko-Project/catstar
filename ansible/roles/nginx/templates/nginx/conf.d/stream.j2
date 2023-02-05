@@ -1,0 +1,26 @@
+# Managed by Ansible - DO NOT EDIT!
+
+{% for s in stream %}
+server {
+
+{% if s.port is defined %}
+  listen {{ s.port }};
+  listen [::]:{{ s.port }};
+{% endif %}
+
+{% for l in s.listen | default([]) %}
+  listen {{ l }};
+{% endfor %}
+
+{% if s.bind is defined %}
+  proxy_bind {{ s.bind }};
+{% endif %}
+
+{% if s.buffer_size is defined %}
+  proxy_buffer_size {{ s.buffer_size }};
+{% endif %}
+
+  proxy_pass {{ s.address }};
+}
+
+{% endfor %}

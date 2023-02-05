@@ -5,21 +5,38 @@
     - "../vars/{{ ansible_os_family }}.yml"
     - "../vars/default.yml"
 
-- name: Remove Apache
-  apt:
-    name: '{{ apache_packages }}'
-    state: absent
+- tags:
+    - install
+  block:
+    - name: Remove Apache
+      apt:
+        name: '{{ apache_packages }}'
+        state: absent
+      when: apache_packages is defined
 
-- name: Install Nginx
-  package:
-    name: '{{ nginx_packages }}'
-  notify: start nginx
+    - name: Install Nginx
+      package:
+        name: '{{ nginx_packages }}'
+      notify: start nginx
+      when: nginx_packages is defined
 
-- name: Install PHP
-  package:
-    name: '{{ php_fpm_packages }}'
-  notify: start php-fpm
-  when: php_enabled
+    - name: Install PHP
+      package:
+        name: '{{ php_fpm_packages }}'
+      notify: start php-fpm
+      when: php_enabled and php_fpm_packages is defined
+
+    - name: Create nginx config directories
+      file:
+        path: "{{ nginx_root }}/{{ item }}"
+        state: directory
+        mode: 0755
+      loop: "{{ nginx_config_dirs }}"
+
+    - name: Copy static config files
+      copy:
+        src: nginx/
+        dest: "{{ nginx_root }}"
 
 - name: Create configurations
   import_tasks: configuration_nginx.yml

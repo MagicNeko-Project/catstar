@@ -4,18 +4,18 @@
     path: "{{ ssl_root }}/{{ item }}"
     state: directory
     mode: 0700
-  loop: "{{ ['', 'default', ssl_copy] | flatten }}"
+  loop: "{{ ssl_all }}"
 
 - name: Copy certificates
   include_tasks: copycert.yml
-  loop: "{{ ssl_copy }}"
+  loop: "{{ ssl_all }}"
   loop_control:
     loop_var: name
 
 - name: Generate default certificate
   command:
-    cmd: "openssl req -nodes -x509 -newkey rsa:2048 -keyout {{ ssl_root }}/default/key.pem -out {{ ssl_root }}/default/full.pem -days 700 -subj /"
-    creates: "{{ ssl_root }}/default/full.pem"
+    cmd: openssl req -nodes -x509 -newkey rsa:2048 -keyout {{ ssl_root }}/default/key.pem -out {{ ssl_root }}/default/full.pem -days 700 -subj /
+    creates: "{{ ssl_root }}/_/full.pem"
 
 - name: Generate nginx snippets
   import_tasks: nginx_snippets.yml

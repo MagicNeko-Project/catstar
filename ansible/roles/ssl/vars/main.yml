@@ -1,0 +1,2 @@
+---
+ssl_all: "{{ [ssl_copy, sites_enabled | gather_ssl_hosts ] | flatten | unique }}"

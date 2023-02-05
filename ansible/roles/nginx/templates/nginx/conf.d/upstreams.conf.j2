@@ -1,6 +1,12 @@
-{% for item in upstreams | dict2items %}
+# Managed by Ansible - DO NOT EDIT!
+
+{% for item in upstreams_default | combine(upstreams) | dict2items %}
 upstream {{ item.key }} {
+  {% if item.value is number %}
+  server 127.0.0.1:{{ item.value }};
+  {% else %}
   server {{ item.value }};
+  {% endif %}
   keepalive 32;
 }
 {% endfor %}

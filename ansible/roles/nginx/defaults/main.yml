@@ -27,6 +27,11 @@ new_user: www-data
 
 # Generate conf.d/upstreams.conf
 upstreams: {}
+upstreams_default:
+  transmission: 127.0.0.1:9091
+  jupyter: 127.0.0.1:8888
+  zeronet: 127.0.0.1:43110
+  sync: 127.0.0.1:8880
 
 nginx_config_dirs:
   - conf.d
@@ -40,6 +45,8 @@ nginx_config_dirs:
 # config file -> config values dict
 sites_enabled: {}
 sites_disabled: []
+stream: []
+proxy_cache_paths: []
 
 # vars file for nginx
 redirect_code: 301  # Choose 301 or 302

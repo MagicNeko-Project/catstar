@@ -9,4 +9,4 @@
     src: ssl.conf.j2
     dest: "{{ (nginx_root, nginx_snippets_ssl) | path_join }}/{{ item }}.conf"
     mode: 0644
-  loop: "{{ [ssl_copy, 'default'] | flatten }}"
+  loop: "{{ ssl_all }}"

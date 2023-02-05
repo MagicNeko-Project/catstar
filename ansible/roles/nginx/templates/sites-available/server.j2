@@ -2,9 +2,9 @@ server {
   listen {{ https_port }} ssl http2;
   listen [::]:{{ https_port }} ssl http2;
 
-  include {{ nginx_ssl_snippets }}/{{ vars.ssl_host }}.conf;
+  include {{ nginx_ssl_snippets }}/{{ site.ssl_host }}.conf;
 
-  server_name {{ vars.server_name }};
+  server_name {{ site.server_name }};
 
   root {{ html_root }};
   index index.html index.htm;
@@ -37,9 +37,16 @@ server {
   }
 
   location /data {
+    {% if site.data_upstream is defined %}
+    proxy_pass http://{{ site.data_upstream }};
+    include snippets/proxy_nocache.conf;
+    {% else %}
     alias {{ data_root }};
+    {% endif %}
     # include snippets/fancyindex.conf;
     auth_basic off;
   }
+
+{{ site.inject | default('') }}
 
 }

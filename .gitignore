@@ -1,2 +1,5 @@
-!src/*
-ansible/*.yml
+!/src/*
+/ansible/hosts/*.yml
+/ansible/*.yml
+/*.txt
+/.vscode/

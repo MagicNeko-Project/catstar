@@ -1,0 +1,183 @@
+log:
+  loglevel: info
+
+inbounds:
+
+{% for i in v2inbounds %}
+
+{% if i.vmess is defined %}
+  - {{ {
+    'protocol': 'vmess',
+    'port': i.vmess,
+    'listen': i.listen | default('::'),
+    'tag': i.tag | default(none),
+    'settings': {
+      'clients': i.clients
+    },
+    'streamSettings': i.stream_settings | default({})
+  } | to_json }}
+
+{% elif i.vless is defined %}
+
+  - {{ {
+    'protocol': 'vless',
+    'port': i.vless,
+    'listen': i.listen | default('::'),
+    'tag': i.tag | default(none),
+    'settings': {
+      'clients': i.clients,
+      'decryption': 'none'
+    },
+    'streamSettings': i.stream_settings | default({})
+  } | to_json }}
+
+{% elif i.ss is defined %}
+  - {{ {
+    'protocol': 'shadowsocks',
+    'port': i.ss,
+    'listen': i.listen | default('::'),
+    'tag': i.tag | default(none),
+    'settings': {
+      'method': i.method | default('aes-256-gcm'),
+      'password': i.password
+    },
+    'streamSettings': s.stream_settings | default({})
+  } | to_json }}
+
+{% elif i.socks is defined %}
+  - {{ {
+    'protocol': 'socks',
+    'port': i.socks,
+    'listen': i.listen | default('::'),
+    'tag': i.tag | default(none),
+    'settings': {
+      'auth': 'noauth'
+    },
+    'streamSettings': s.stream_settings | default({})
+  } | to_json }}
+
+{% elif i.http is defined %}
+  - {{ {
+    'protocol': 'http',
+    'port': i.http,
+    'listen': i.listen | default('::'),
+    'tag': i.tag | default(none),
+    'settings': {
+      'auth': 'noauth'
+    },
+    'streamSettings': s.stream_settings | default({})
+  } | to_json }}
+
+{% elif i.tcp is defined %}
+{% set tcp_relay_tags = [] %}
+
+{% for t in i.tcp | dict2items %}
+  {% set current_tag = 'tcp_relay_' ~ t.key %}
+  {{ tcp_relay_tags.append(current_tag) }}
+  - {{ {
+    'protocol': 'dokodemo-door',
+    'port': t.key,
+    'listen': '::',
+    'tag': current_tag,
+    'settings': {
+      'address': t.value.rsplit(':', 1) | first,
+      'port': t.value.rsplit(':', 1) | last | int,
+      'network': 'tcp'
+    }
+  } | to_json }}
+{% endfor %}
+
+{% elif i.tg is defined %}
+  - protocol: socks
+    port: {{ i.tg }}
+    listen: "{{ t.listen | default('::') }}"
+    tag: inbound-tg
+    settings:
+{% if i.accounts is defined %}
+      auth: password
+      accounts: {{ i.accounts }}
+{% else %}
+      auth: noauth
+{% endif %}
+
+{% endif %}
+{% endfor %}
+
+outbounds:
+  - protocol: freedom
+    tag: direct
+  - protocol: blackhole
+    tag: blocked
+{% for outbound in v2outbounds %}
+  - {{ outbound | to_json }}
+{% endfor %}
+
+transport:
+  tcpSettings:
+    header:
+      type: none
+
+routing:
+  rules:
+
+{% if tcp_relay_tags is defined %}
+    - type: field
+      outboundTag: direct
+      inboundTag: {{ tcp_relay_tags | to_json }}
+{% endif %}
+
+    - type: field
+      ip:
+        - geoip:private
+      outboundTag: blocked
+
+    - type: field
+      domain:
+        - domain:vungle.com
+        - domain:unityads.unity3d.com
+        - domain:supersonicads.com
+        - domain:applovin.com
+        - domain:applvn.com
+        - domain:aarki.net
+        - domain:googleads.g.doubleclick.net
+        - domain:tpc.googlesyndication.com
+        - domain:ironsrc.mob
+      outboundTag: blocked
+
+    - type: field
+      ip:
+        # https://ipinfo.io/AS62041
+        - "149.154.160.0/20"
+        - "149.154.164.0/22"
+        - "91.108.4.0/22"
+        - "91.108.56.0/22"
+        - "91.108.8.0/22"
+        - "95.161.64.0/20"
+        - "2001:67c:4e8::/48"
+
+        # https://ipinfo.io/AS44907
+        - "91.108.20.0/22"
+        - "2001:b28:f23c::/48"
+
+        # https://ipinfo.io/AS59930
+        - "149.154.172.0/22"
+        - "91.108.12.0/22"
+        - "2001:b28:f23d::/48"
+
+        # https://ipinfo.io/AS62014
+        - "149.154.168.0/22"
+        - "149.154.168.0/22"
+        - "91.108.56.0/23"
+        - "2001:b28:f23f::/48"
+      inboundTag:
+        - inbound-tg
+      outboundTag: direct
+
+    - type: field
+      inboundTag:
+        - inbound-tg
+      outboundTag: blocked
+
+{% for rule in v2rules %}
+    - {{ {'type': 'field'} | combine(rule) | to_json }}
+{% endfor %}

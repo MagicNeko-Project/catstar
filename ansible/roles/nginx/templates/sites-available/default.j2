@@ -4,8 +4,8 @@ server {
   listen [::]:{{ http_port }} default_server;
 
   # Allow ACME to use HTTP
-  location /.well-known/acme-challenge {
-    alias {{ html_root }}/.well-known/acme-challenge;
+  location /.well-known/acme-challenge/ {
+    root {{ html_root }};
   }
 
   # {{ redirect_code }} redirect
@@ -19,7 +19,7 @@ server {
   listen {{ https_port }} ssl http2 default_server;
   listen [::]:{{ https_port }} ssl http2 default_server;
 
-  include {{ nginx_ssl_snippets }}/{{ site.ssl_host }}.conf;
+  include {{ nginx_ssl_snippets }}/{{ site.ssl_host | default('_') }}.conf;
 
   # ssl_ciphers !ALL:aNULL;
 

@@ -1,11 +1,19 @@
-- name: Copy cert from cert directory
-  copy:
-    src: "{{ cert_src | expanduser }}/{{ name }}/fullchain.cer"
-    dest: "{{ ssl_root }}/{{ name }}/full.pem"
-    mode: 0644
+- name: Check if certificate folder exists
+  delegate_to: localhost
+  stat:
+    path: "{{ cert_src | expanduser }}/{{ name }}"
+  register: cert_folder
 
-- name: Copy key from cert directory
+- name: Copy certificates from cert folder
   copy:
-    src: "{{ cert_src | expanduser }}/{{ name }}/{{ name }}.key"
-    dest: "{{ ssl_root }}/{{ name }}/key.pem"
-    mode: 0600
+    src: "{{ cert_src | expanduser }}/{{ item.src }}"
+    dest: "{{ ssl_root }}/{{ name }}/{{ item.dest }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - src: "{{ name }}/fullchain.cer"
+      dest: full.pem
+      mode: "0644"
+    - src: "{{ name }}/{{ name }}.key"
+      dest: "key.pem"
+      mode: "0600"
+  when: cert_folder.stat.exists

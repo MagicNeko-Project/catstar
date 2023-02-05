@@ -1,39 +1,35 @@
-- name: Create nginx config directories
-  file:
-    path: "{{ nginx_root }}/{{ item }}"
-    state: directory
-    mode: 0755
-  loop: "{{ nginx_config_dirs }}"
-
 - name: Copy Nginx Configuration
   template:
     src: "{{ item }}"
     dest: "{{ (nginx_root, dest) | path_join }}"
     mode: 0644
+    lstrip_blocks: yes
   vars:
-    dest: "{{ item | regex_replace('.*templates/nginx/(.+)\\.j2', '\\1') }}"
+    dest: "{{ item | regex_replace('.*templates/nginx/(.+)\\.j2$', '\\1') }}"
   notify: reload nginx
   with_fileglob:
     - "templates/nginx/*.j2"
     - "templates/nginx/conf.d/*.j2"
     - "templates/nginx/snippets/*.j2"
 
-- name: Copy dhparam files
-  copy:
-    src: "{{ item }}"
-    dest: "{{ (nginx_root, item) | path_join }}"
-    mode: 0644
-  loop:
-    - ffdhe2048.pem
-    - ffdhe3072.pem
-    - ffdhe4096.pem
+- name: Create htpasswd files
+  template:
+    src: htpasswd.j2
+    dest: /etc/nginx/htpasswd_{{ item.key }}
+    mode: 0640
+    owner: root
+    group: "{{ nginx_user }}"
+  loop: "{{ htpasswd | dict2items }}"
+  when: htpasswd is defined
 
 - name: Copy Nginx sites available files templates
   template:
-    src: "sites-available/{{ item.key }}.j2"
+    src: "sites-available/{{ site.template | default('generic') }}.j2"
     dest: "{{ (nginx_root, nginx_sites_available, item.key) | path_join }}"
     mode: 0644
+    lstrip_blocks: yes
   vars:
+    site_name: "{{ item.key }}"
     site: "{{ item.value }}"
   with_dict: "{{ sites_enabled }}"
   notify: reload nginx
@@ -44,7 +40,7 @@
     dest: "{{ (nginx_root, nginx_sites_enabled, item.key) | path_join }}"
     state: link
   with_dict: "{{ sites_enabled }}"
-  when: "item.value and (item.value.enabled | default(True))"
+  when: item.value.enabled | default(True)
   notify: reload nginx
 
 - name: Disable Nginx sites
