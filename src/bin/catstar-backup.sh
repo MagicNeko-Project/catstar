@@ -95,7 +95,7 @@ backup_btrfs_restic() {
 backup_root_tar() {
   notify_send_verbose "开始备份：tar.zst"
 
-  printf -v TAR_SAVE_FILE '%s' "$TAR_FILE_NAME"
+  printf -v TAR_SAVE_FILE "$TAR_FILE_NAME"
   tar -I zstd -cp --one-file-system --exclude="$HOME/.cache" / | openssl "$TAR_OPENSSL_TYPE" -salt -k "$TAR_OPENSSL_PASSWORD" | dd bs=64K | ssh "$TAR_SSH_SERVER" "cat > '$TAR_SAVE_FILE'"
 }
 
