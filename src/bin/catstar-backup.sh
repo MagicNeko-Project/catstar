@@ -85,6 +85,7 @@ backup_btrfs_restic() {
     btrfs subvolume snapshot -r "${!subvol}" "$BTRFS_SNAPSHOTS_ROOT/$dest"
   done
 
+  restic version
   pushd "$BTRFS_SNAPSHOTS_ROOT"
   restic backup --exclude="**/.cache" --exclude="**/*.db" .
   popd
@@ -96,13 +97,14 @@ backup_root_tar() {
   notify_send_verbose "开始备份：tar.zst"
 
   printf -v TAR_SAVE_FILE "$TAR_FILE_NAME"
-  tar -I zstd -cp --one-file-system --exclude="$HOME/.cache" / | openssl "$TAR_OPENSSL_TYPE" -salt -k "$TAR_OPENSSL_PASSWORD" | dd bs=64K | ssh "$TAR_SSH_SERVER" "cat > '$TAR_SAVE_FILE'"
+  tar -I zstd -cp --one-file-system / | openssl "$TAR_OPENSSL_TYPE" -salt -k "$TAR_OPENSSL_PASSWORD" | dd bs=64K | ssh "$TAR_SSH_SERVER" "cat > '$TAR_SAVE_FILE'"
 }
 
 backup_root_restic() {
   notify_send_verbose "开始备份：restic"
 
-  restic backup --one-file-system --exclude="**/.cache" --exclude="**/*.db" "$RESTIC_ROOT"
+  restic version
+  restic backup --one-file-system "$RESTIC_ROOT"
 }
 
 backup_test() {
