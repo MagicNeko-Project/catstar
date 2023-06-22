@@ -86,10 +86,7 @@ backup_btrfs_restic() {
   done
 
   restic version
-  pushd "$BTRFS_SNAPSHOTS_ROOT"
-  restic backup --exclude="**/.cache" --exclude="**/*.db" .
-  popd
-
+  restic backup --exclude-caches "$BTRFS_SNAPSHOTS_ROOT"
   btrfs subvolume delete "$BTRFS_SNAPSHOTS_ROOT/"*
 }
 
@@ -104,7 +101,7 @@ backup_root_restic() {
   notify_send_verbose "开始备份：restic"
 
   restic version
-  restic backup --one-file-system "$RESTIC_ROOT"
+  restic backup --exclude-caches --one-file-system "$RESTIC_ROOT"
 }
 
 backup_test() {
