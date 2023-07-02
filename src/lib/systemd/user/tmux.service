@@ -1,0 +1,12 @@
+[Unit]
+Description=Tmux master service
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/tmux new-session -s 0 -d
+KillMode=mixed
+Restart=on-success
+RestartSec=1s
+
+[Install]
+WantedBy=default.target
