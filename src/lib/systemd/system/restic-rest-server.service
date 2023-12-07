@@ -1,0 +1,15 @@
+[Unit]
+Description=High performance HTTP server that implements restic's REST backend API (Arch Linux)
+Documentation=https://github.com/restic/rest-server
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/restic-rest-server --path /data/data/restic-backups --no-auth
+ReadWritePaths=/data/data/restic-backups
+
+DynamicUser=yes
+ProtectHome=yes
+PrivateUsers=yes
+PrivateDevices=yes
+ProtectProc=invisible
+PrivateNetwork=yes
