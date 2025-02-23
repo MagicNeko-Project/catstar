@@ -1,6 +1,6 @@
 # DO NOT EDIT: this file is managed by Ansible
 
-{% for s in site | nginx_server_block %}
+{% for s in site | nginx_server_block(site_name) %}
 
 {% for option in site.options_global | nginx_options %}
 {{ option }}

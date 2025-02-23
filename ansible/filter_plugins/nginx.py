@@ -1,104 +1,74 @@
 from dataclasses import dataclass, field, fields
-
 from jinja2.runtime import Undefined
 
 
 def force_list(item):
+    """Ensure the item is a list."""
     if isinstance(item, Undefined):
         return []
-    if isinstance(item, list):
-        return item
-    return [item]
+    return item if isinstance(item, list) else [item]
 
 
-def dataclass_create(cls, data):
-    """Create dataclass by filtering relevant attributes,
-    and return extra attributes."""
-
-    fields_ = set(field.name for field in fields(cls))
-    relevant = {}
-    extras = {}
-
-    for name, value in data.items():
-        if name in fields_:
-            relevant[name] = value
-        else:
-            extras[name] = value
-
-    obj = cls(**relevant)
-    return obj, extras
+def dataclass_from_dict(cls, data):
+    """Create a dataclass instance from a dictionary, separating extra attributes."""
+    field_names = {f.name for f in fields(cls)}
+    relevant = {k: v for k, v in data.items() if k in field_names}
+    extras = {k: v for k, v in data.items() if k not in field_names}
+    return cls(**relevant), extras
 
 
-HTTP_PORTS = [
-    *range(80, 90),
-    *range(8000, 8010),
-    *range(8080, 8090)
-]
+HTTP_PORTS = set(range(80, 90)) | set(range(8000, 8010)) | set(range(8080, 8090)) | set(range(80, 65536, 100))
 
 
+@dataclass
 class ListenPort:
-    def __init__(self, port=0, ssl=True, v6=True, h2=True, full=None):
-        self.port = port
-        self.ssl = ssl
-        self.v6 = v6
-        self.h2 = h2
-        self.full = full
+    port: int = 0
+    ssl: bool = True
+    v6: bool = True
+    h2: bool = True
+    full: str = None
 
     def __str__(self):
         if self.full:
             return self.full
-        result = str(self.port)
+        result = f"[::]:{self.port}" if self.v6 else str(self.port)
         if self.ssl:
             result += " ssl"
             if self.h2:
                 result += " http2"
-        if self.v6:
-            result = "[::]:" + result
         return result
 
-    def has_ssl(self):
-        if self.full:
-            return " ssl " in self.full
-        return self.ssl
+    def has_ssl(self) -> bool:
+        return " ssl" in self.full if self.full else self.ssl
 
 
-def parse_listen(data):
+def parse_listen_ports(data):
+    """Parse listen directives from a configuration input."""
     for line in force_list(data):
         args = str(line).split()
-
-        ssl = False
-        plain = False
-        v4 = False
-        v6 = False
-        dual = True
+        force_ssl, force_http, v4, v6, dual = False, False, False, False, True
         ports = []
-        full_listen = []
 
-        for item in args:
-            if item == "plain":
-                plain = True
-            elif item == "ssl":
-                ssl = True
-            elif item in ["ipv4", "v4"]:
-                dual = False
-                v4 = True
-            elif item in ["ipv6", "v6"]:
-                dual = False
-                v6 = True
-            elif item.isnumeric():
-                ports.append(int(item))
+        for arg in args:
+            if arg in ["plain", "http"]:
+                force_http = True
+            elif arg == "ssl":
+                force_ssl = True
+            elif arg in ["ipv4", "v4"]:
+                v4, dual = True, False
+            elif arg in ["ipv6", "v6"]:
+                v6, dual = True, False
+            elif arg.isnumeric():
+                ports.append(int(arg))
             else:
-                full_listen.append(item)
+                yield ListenPort(full=arg)
 
         for port in ports:
-            default_ssl = not (port in HTTP_PORTS or port % 100 == 80)
-            do_ssl = ssl or (not plain and default_ssl)
+            ssl = force_ssl or (port not in HTTP_PORTS and not force_http)
             if v4 or dual:
-                yield ListenPort(port, do_ssl, False)
+                yield ListenPort(port, ssl, v6=False)
             if v6 or dual:
-                yield ListenPort(port, do_ssl, True)
-        for full in full_listen:
-            yield ListenPort(full=full)
+                yield ListenPort(port, ssl, v6=True)
 
 
 @dataclass
@@ -114,10 +84,10 @@ class NginxLocationBlock:
 
 @dataclass
 class NginxServerBlock:
-    server_name: str = "_"
+    server_name: str = None
     template: str = None
     ssl_host: str = None
-    listen: str | int = None
+    listen: str | int = None  # Space-separated string, or a single number.
     locations: list[dict] = field(default_factory=list)
     options: dict[str, str] = field(default_factory=dict)
     options_global: dict[str, str] = field(default_factory=dict)
@@ -130,69 +100,75 @@ class FilterModule:
             "nginx_location_block": self.nginx_location_block,
             "nginx_options": self.nginx_options,
             "nginx_server_block": self.nginx_server_block,
-            "gather_ssl_hosts": self.gather_ssl_hosts
+            "gather_ssl_hosts": self.gather_ssl_hosts,
         }
 
     def nginx_location_block(self, location_config):
-        return [self._nginx_location(config)
-                for config in force_list(location_config)]
+        return [self._create_nginx_location(config) for config in force_list(location_config)]
 
-    def nginx_server_block(self, server_config):
-        return [self._nginx_server(config)
-                for config in force_list(server_config)]
+    def nginx_server_block(self, server_config, name):
+        return [self._create_nginx_server(config, name) for config in force_list(server_config)]
 
     def gather_ssl_hosts(self, sites_enabled_config):
-        ssl_hosts = set()
-        for server_config in sites_enabled_config.values():
-            for site in self.nginx_server_block(server_config):
-                ssl_hosts.add(site.ssl_host)
-        return filter(None, ssl_hosts)
+        return [
+            site.ssl_host for name, server in sites_enabled_config.items()
+            for site in self.nginx_server_block(server, name)
+        ]
 
-    def _nginx_location(self, location_block):
-        block, extras = dataclass_create(NginxLocationBlock, location_block)
-        block.options.update(extras)
-        return block
+    def _create_nginx_location(self, location_block):
+        location_block, extras = dataclass_from_dict(NginxLocationBlock, location_block)
+        # Merge all extras into options
+        location_block.options.update(extras)
+        return location_block
 
-    def _nginx_server(self, server_block):
-        block, extras = dataclass_create(NginxServerBlock, server_block)
+    def _create_nginx_server(self, server_block, name):
+        server_block, extras = dataclass_from_dict(NginxServerBlock, server_block)
+
+        # Treat the extras as a separate location block
         if extras:
-            block.locations.append(extras)
+            server_block.locations.append(extras)
 
-        if not block.listen:
-            block.listen = 443
-        block.listen = list(parse_listen(block.listen))
+        # Server name defaults to the name of the block
+        if server_block.server_name is None:
+            server_block.server_name = name
 
-        need_ssl = any(port.has_ssl() for port in block.listen)
-        if not block.ssl_host and need_ssl:
-            block.ssl_host = '.'.join(
-                block.server_name.split()[0].split('.')[-2:])
+        server_block.listen = list(parse_listen_ports(server_block.listen or 443))
 
-        return block
+        if server_block.ssl_host is None:
+            if any(port.has_ssl() for port in server_block.listen):
+                server_block.ssl_host = '.'.join(server_block.server_name.split()[0].split('.')[-2:])
+
+        return server_block
 
     def nginx_options(self, options):
+        """Generate nginx options directives."""
         if isinstance(options, Undefined):
-            return
-        for name, value in options.items():
-            for v in force_list(value):
-                if v is True:
-                    yield f"{name} on;"
-                elif v is False:
-                    yield f"{name} off;"
-                elif name in ['if']:
-                    yield f"{name} {v}"
+            return []
+
+        formatted_options = []
+        for name, values in options.items():
+            for value in force_list(values):
+                if value is True:
+                    formatted_options.append(f"{name} on;")
+                elif value is False:
+                    formatted_options.append(f"{name} off;")
+                elif name == 'if':
+                    formatted_options.append(f"{name} {value}")
                 else:
-                    yield f"{name} {v};"
+                    formatted_options.append(f"{name} {value};")
+
+        return formatted_options
 
 
 if __name__ == "__main__":
-    # Testing
+    # Example test cases
     module = FilterModule()
-    block = module.nginx_location_block({})
-    for b in block:
-        print(b)
-    server = module.nginx_server_block([{
-        "server_name": "a.test.c",
-        "a": "b"
-    }])
-    for s in server:
-        print(s)
+    print(module.nginx_location_block([{"location": "/app", "proxy": "http://backend"}]))
+    print(module.nginx_server_block([{"server_name": "example.com", "locations": [{"location": "/", "proxy": "http://frontend"}]}], "default_name"))
+    print(module.gather_ssl_hosts({
+        "default": {},
+        "c5.example.com": {},
+        "c6.example.com": {
+            "server_name": "c6.example.com"
+        }
+    }))
