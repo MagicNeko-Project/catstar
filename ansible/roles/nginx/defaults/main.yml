@@ -28,10 +28,13 @@ new_user: www-data
 # Generate conf.d/upstreams.conf
 upstreams: {}
 upstreams_default:
-  transmission: 127.0.0.1:9091
-  jupyter: 127.0.0.1:8888
-  zeronet: 127.0.0.1:43110
-  sync: 127.0.0.1:8880
+  transmission: 9091
+  jupyter: 8888
+  zeronet: 43110
+  sync: 8880
+  syncthing: 8384
+  cockpit: 9999
+  code_server: 8080
 
 nginx_config_dirs:
   - conf.d

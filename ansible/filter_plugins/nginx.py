@@ -1,5 +1,6 @@
-from jinja2.runtime import Undefined
 from dataclasses import dataclass, field, fields
+
+from jinja2.runtime import Undefined
 
 
 def force_list(item):
@@ -107,6 +108,7 @@ class NginxLocationBlock:
     auth_basic: str = None
     static: str = None
     snippets: str = ""
+    php_fpm: str = None
     options: dict[str, str | list[str]] = field(default_factory=dict)
 
 
@@ -173,11 +175,13 @@ class FilterModule:
         for name, value in options.items():
             for v in force_list(value):
                 if v is True:
-                    yield f"{name} on"
+                    yield f"{name} on;"
                 elif v is False:
-                    yield f"{name} off"
-                else:
+                    yield f"{name} off;"
+                elif name in ['if']:
                     yield f"{name} {v}"
+                else:
+                    yield f"{name} {v};"
 
 
 if __name__ == "__main__":

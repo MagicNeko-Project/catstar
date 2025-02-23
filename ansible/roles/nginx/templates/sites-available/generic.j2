@@ -3,7 +3,7 @@
 {% for s in site | nginx_server_block %}
 
 {% for option in site.options_global | nginx_options %}
-{{ option }};
+{{ option }}
 {% endfor %}
 
 server {
@@ -16,7 +16,7 @@ server {
   include {{ nginx_ssl_snippets }}/{{ s.ssl_host }}.conf;
 {% endif %}
 
-  server_name {{ s.server_name }};
+server_name {{ s.server_name }};
 
 {% for location in s.locations | nginx_location_block %}
   location {{ location.location }} {
@@ -24,45 +24,51 @@ server {
     {% set proxy_list = location.proxy | split %}
 
     {% if proxy_list %}
-    proxy_pass http://{{ proxy_list | first }};
-
-    {% for snippet in (proxy_list[1:] or ['basic']) %}
-    include snippets/proxy_{{ snippet }}.conf;
-    {% endfor %}
+      proxy_pass http://{{ proxy_list | first }};
+      {% for snippet in (proxy_list[1:] or ['basic']) %}
+        include snippets/proxy_{{ snippet }}.conf;
+      {% endfor %}
     {% endif %}
 
     {% if location.auth_basic %}
-    auth_basic "Authorization Required";
-    auth_basic_user_file htpasswd_{{ location.auth_basic }};
+      auth_basic "Authorization Required";
+      auth_basic_user_file htpasswd_{{ location.auth_basic }};
     {% endif %}
 
     {% if location.static %}
-    try_files $uri $uri/ =404;
-    index index.htm index.html;
-    alias {{ location.static }};
+      try_files $uri $uri/ =404;
+      index index.htm index.html;
+      alias {{ location.static }};
+    {% endif %}
+
+    {% if location.php_fpm %}
+      fastcgi_pass unix:{{ location.php_fpm }};
+      fastcgi_index index.php;
+      fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+      include fastcgi_params;
     {% endif %}
 
     {% for snippet in location.snippets | split %}
-    include snippets/{{ snippet }}.conf;
+      include snippets/{{ snippet }}.conf;
     {% endfor %}
 
     {% for option in location.options | nginx_options %}
-    {{ option }};
+      {{ option }}
     {% endfor %}
   }
 {% endfor %}
 
 {% for option in s.options | nginx_options %}
-  {{ option }};
+  {{ option }}
 {% endfor %}
 
 {% if s.blocked_location %}
   ## Disable .htaccess and other hidden files
   location {{ s.blocked_location }} {
-      deny all;
-      access_log off;
-      log_not_found off;
-      return 404;
+    deny all;
+    access_log off;
+    log_not_found off;
+    return 404;
   }
 {% endif %}
 

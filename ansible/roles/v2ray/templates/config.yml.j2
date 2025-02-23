@@ -18,7 +18,6 @@ inbounds:
   } | to_json }}
 
 {% elif i.vless is defined %}
-
   - {{ {
     'protocol': 'vless',
     'port': i.vless,
@@ -100,6 +99,8 @@ inbounds:
       auth: noauth
 {% endif %}
 
+{% else %}
+  - {{ i | to_json }}
 {% endif %}
 {% endfor %}
 
@@ -108,6 +109,12 @@ outbounds:
     tag: direct
   - protocol: blackhole
     tag: blocked
+  - protocol: socks
+    tag: tor
+    settings:
+      servers:
+        - address: localhost
+          port: 9050
 {% for outbound in v2outbounds %}
   - {{ outbound | to_json }}
 {% endfor %}

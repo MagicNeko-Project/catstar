@@ -33,7 +33,6 @@
     state: link
   loop:
     - v2ray
-    - v2ctl
 
 - name: Copy service file
   template:

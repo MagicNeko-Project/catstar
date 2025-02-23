@@ -19,10 +19,5 @@ server {
   listen {{ https_port }} ssl http2 default_server;
   listen [::]:{{ https_port }} ssl http2 default_server;
 
-  include {{ nginx_ssl_snippets }}/{{ site.ssl_host | default('_') }}.conf;
-
-  # ssl_ciphers !ALL:aNULL;
-
-  server_name _;
-  return 444;
+  ssl_reject_handshake on;
 }

@@ -47,5 +47,5 @@
   file:
     path: "{{ (nginx_root, nginx_sites_enabled, item) | path_join }}"
     state: absent
-  loop: "{{ sites_disabled }}"
+  loop: "{{ sites_disabled | default([], true) }}"
   notify: reload nginx

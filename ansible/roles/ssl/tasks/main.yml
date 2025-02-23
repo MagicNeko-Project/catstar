@@ -14,7 +14,7 @@
 
 - name: Generate default certificate
   command:
-    cmd: openssl req -nodes -x509 -newkey rsa:2048 -keyout {{ ssl_root }}/default/key.pem -out {{ ssl_root }}/default/full.pem -days 700 -subj /
+    cmd: openssl req -nodes -x509 -newkey rsa:2048 -keyout {{ ssl_root }}/_/key.pem -out {{ ssl_root }}/_/full.pem -days 709 -subj /
     creates: "{{ ssl_root }}/_/full.pem"
 
 - name: Generate nginx snippets
