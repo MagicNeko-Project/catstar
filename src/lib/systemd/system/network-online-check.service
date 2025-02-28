@@ -1,0 +1,11 @@
+[Unit]
+Description=Check if host is online with ping, reboot automatically when offline.
+OnFailure=reboot.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ping -c10 -i3 one.one.one.one
+DynamicUser=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes

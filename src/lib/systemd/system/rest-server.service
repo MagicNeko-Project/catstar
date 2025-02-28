@@ -4,13 +4,14 @@ Documentation=https://github.com/restic/rest-server
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env rest-server --path /data/data/restic-backups --no-auth --listen :8000
-
+ExecStart=/usr/bin/rest-server --path /data/data/restic-backups --no-auth --listen :8000
+ReadWritePaths=/data/data/restic-backups
 DynamicUser=yes
 ProtectHome=yes
+PrivateUsers=yes
 PrivateDevices=yes
 ProtectProc=invisible
-ReadWritePaths=/data/data/restic-backups
+PrivateNetwork=yes
 
 [Install]
 WantedBy=multi-user.target

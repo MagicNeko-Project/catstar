@@ -6,7 +6,6 @@ Documentation=https://github.com/restic/rest-server
 Type=simple
 ExecStart=/usr/bin/restic-rest-server --path /data/data/restic-backups --no-auth
 ReadWritePaths=/data/data/restic-backups
-
 DynamicUser=yes
 ProtectHome=yes
 PrivateUsers=yes

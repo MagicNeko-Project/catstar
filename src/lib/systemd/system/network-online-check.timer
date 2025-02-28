@@ -1,0 +1,10 @@
+[Unit]
+Description=Check if host is online with ping - Timer
+
+[Timer]
+OnBootSec=1h
+OnUnitActiveSec=5m
+RandomizedDelaySec=30s
+
+[Install]
+WantedBy=timers.target
