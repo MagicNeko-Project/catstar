@@ -1,0 +1,9 @@
+[Unit]
+Description=Download available Pacman package updates (no installation, no dependency resolution)
+Documentation=man:pacman(8)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/pacman -Syuw --noconfirm --nodeps
