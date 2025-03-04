@@ -1,0 +1,5 @@
+---
+cache_dirs:
+  - /var/cache/pacman
+  - /var/cache/apt
+  - /var/lib/apt/lists

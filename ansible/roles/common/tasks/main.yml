@@ -1,0 +1,15 @@
+---
+- name: Find a list of existing cache directories
+  stat:
+    path: "{{ item }}"
+  loop: "{{ cache_dirs }}"
+  register: cache_dir_stats
+
+- name: Ensure CACHEDIR.TAG exists in valid cache directories
+  copy:
+    src: CACHEDIR.TAG
+    dest: "{{ item }}/CACHEDIR.TAG"
+    mode: 0644
+    owner: root
+    group: root
+  loop: "{{ cache_dir_stats.results | selectattr('stat.exists') | selectattr('stat.isdir') | map(attribute='item') }}"
