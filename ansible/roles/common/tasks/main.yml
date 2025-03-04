@@ -13,3 +13,16 @@
     owner: root
     group: root
   loop: "{{ cache_dir_stats.results | selectattr('stat.exists') | selectattr('stat.isdir') | map(attribute='item') }}"
+
+- name: Copy bash skel files to /root
+  copy:
+    src: "bash/skel{{ item }}"
+    dest: "/root/{{ item }}"
+    owner: root
+    group: root
+    backup: true
+  loop:
+    - .bash_logout
+    - .bashrc
+    - .profile
+  when: copy_bash_skel_to_root

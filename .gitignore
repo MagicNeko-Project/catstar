@@ -3,3 +3,4 @@
 /ansible/*.yml
 /*.txt
 /.vscode/
+*.tar.xz

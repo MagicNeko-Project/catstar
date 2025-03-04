@@ -3,3 +3,5 @@ cache_dirs:
   - /var/cache/pacman
   - /var/cache/apt
   - /var/lib/apt/lists
+
+copy_bash_skel_to_root: false
