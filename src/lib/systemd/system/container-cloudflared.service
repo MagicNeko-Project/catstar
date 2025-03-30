@@ -7,11 +7,11 @@ RequiresMountsFor=%t/containers
 
 [Service]
 Environment=PODMAN_SYSTEMD_UNIT=%n
-EnvironmentFile=/etc/cloudflared/config
+EnvironmentFile=-%E/container-%j.conf
+EnvironmentFile=-/usr/local/etc/container-%j.conf
+EnvironmentFile=-/etc/cloudflared/config
 Restart=on-failure
 TimeoutStopSec=70
-Type=notify
-NotifyAccess=all
 ExecStartPre=/bin/rm -f %t/%n.ctr-id
 ExecStart=/usr/bin/podman run \
     --cidfile=%t/%n.ctr-id \
@@ -21,12 +21,14 @@ ExecStart=/usr/bin/podman run \
     --replace \
     -d \
     --name=%j \
-    --network=slirp4netns:allow_host_loopback=true \
+    --network=host \
     --userns=auto \
     -e TUNNEL_TOKEN \
     docker.io/cloudflare/cloudflared:latest tunnel run
 ExecStop=/usr/bin/podman stop --ignore -t 10 --cidfile=%t/%n.ctr-id
 ExecStopPost=/usr/bin/podman rm -f --ignore -t 10 --cidfile=%t/%n.ctr-id
+Type=notify
+NotifyAccess=all
 
 [Install]
 WantedBy=default.target

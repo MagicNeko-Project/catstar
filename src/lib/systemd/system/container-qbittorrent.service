@@ -18,22 +18,22 @@ Restart=on-failure
 TimeoutStopSec=70
 ExecStartPre=/bin/rm -f %t/%n.ctr-id
 ExecStart=/usr/bin/podman run \
-        --cidfile=%t/%n.ctr-id \
-        --cgroups=no-conmon \
-        --rm \
-        --sdnotify=conmon \
-        --replace \
-        -d \
-        --name=%j \
-        --network=host \
-        -v /data/%j/config:/config \
-        -v /data/data/Transmission:/downloads \
-        -e PUID \
-        -e PGID \
-        -e TZ \
-        -e WEBUI_PORT \
-        -e TORRENTING_PORT \
-        lscr.io/linuxserver/qbittorrent:latest
+    --cidfile=%t/%n.ctr-id \
+    --cgroups=no-conmon \
+    --rm \
+    --sdnotify=conmon \
+    --replace \
+    -d \
+    --name=%j \
+    --network=host \
+    -v /data/%j/config:/config \
+    -v /data/data/Transmission:/downloads \
+    -e PUID \
+    -e PGID \
+    -e TZ \
+    -e WEBUI_PORT \
+    -e TORRENTING_PORT \
+    lscr.io/linuxserver/qbittorrent:latest
 ExecStop=/usr/bin/podman stop --ignore -t 10 --cidfile=%t/%n.ctr-id
 ExecStopPost=/usr/bin/podman rm -f --ignore -t 10 --cidfile=%t/%n.ctr-id
 Type=notify
