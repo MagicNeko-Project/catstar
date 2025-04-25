@@ -3,8 +3,8 @@
   community.general.pacman:
     name: v2ray
     state: present
-    update_cache: yes
   notify: Start v2ray
+  ignore_errors: true
 
 - name: Update variables
   set_fact:

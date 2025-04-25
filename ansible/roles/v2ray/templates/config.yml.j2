@@ -1,6 +1,8 @@
+### Logging ###
 log:
   loglevel: info
 
+### Inbounds ###
 inbounds:
 
 {% for i in v2inbounds %}
@@ -104,78 +106,49 @@ inbounds:
 {% endif %}
 {% endfor %}
 
+### Outbounds ###
+
 outbounds:
-  - protocol: freedom
-    tag: direct
-  - protocol: blackhole
-    tag: blocked
-  - protocol: socks
-    tag: tor
-    settings:
-      servers:
-        - address: localhost
-          port: 9050
-{% for outbound in v2outbounds %}
+{% for outbound in v2outbounds_default + v2outbounds %}
   - {{ outbound | to_json }}
 {% endfor %}
+
+### Transport ###
 
 transport:
   tcpSettings:
     header:
       type: none
 
+### Routing ###
+
 routing:
   rules:
-
 {% if tcp_relay_tags is defined %}
     - type: field
-      outboundTag: direct
       inboundTag: {{ tcp_relay_tags | to_json }}
+      outboundTag: direct
 {% endif %}
 
-    - type: field
-      ip:
-        - geoip:private
-      outboundTag: blocked
+{% for rule in v2rules_default %}
+    - {{ {'type': 'field'} | combine(rule) | to_json }}
+{% endfor %}
 
+{% if v2_ads_domains %}
     - type: field
       domain:
-        - domain:vungle.com
-        - domain:unityads.unity3d.com
-        - domain:supersonicads.com
-        - domain:applovin.com
-        - domain:applvn.com
-        - domain:aarki.net
-        - domain:googleads.g.doubleclick.net
-        - domain:tpc.googlesyndication.com
-        - domain:ironsrc.mob
+{% for ads in v2_ads_domains %}
+        - domain:{{ ads }}
+{% endfor %}
       outboundTag: blocked
+{% endif %}
 
+{% if v2_telegram_ips %}
     - type: field
       ip:
-        # https://ipinfo.io/AS62041
-        - "149.154.160.0/20"
-        - "149.154.164.0/22"
-        - "91.108.4.0/22"
-        - "91.108.56.0/22"
-        - "91.108.8.0/22"
-        - "95.161.64.0/20"
-        - "2001:67c:4e8::/48"
-
-        # https://ipinfo.io/AS44907
-        - "91.108.20.0/22"
-        - "2001:b28:f23c::/48"
-
-        # https://ipinfo.io/AS59930
-        - "149.154.172.0/22"
-        - "91.108.12.0/22"
-        - "2001:b28:f23d::/48"
-
-        # https://ipinfo.io/AS62014
-        - "149.154.168.0/22"
-        - "149.154.168.0/22"
-        - "91.108.56.0/23"
-        - "2001:b28:f23f::/48"
+{% for ip in v2_telegram_ips %}
+        - {{ ip }}
+{% endfor %}
       inboundTag:
         - inbound-tg
       outboundTag: direct
@@ -184,6 +157,7 @@ routing:
       inboundTag:
         - inbound-tg
       outboundTag: blocked
+{% endif %}
 
 {% for rule in v2rules %}
     - {{ {'type': 'field'} | combine(rule) | to_json }}

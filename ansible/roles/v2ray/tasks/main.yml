@@ -9,6 +9,9 @@
   when: ansible_os_family == "Archlinux"
   tags: install
 
+# - debug:
+#     msg: "{{ lookup('template', 'config.yml.j2') }}"
+
 - name: Copy config file
   copy:
     content: "{{ lookup('template', 'config.yml.j2') | from_yaml | to_json }}"
