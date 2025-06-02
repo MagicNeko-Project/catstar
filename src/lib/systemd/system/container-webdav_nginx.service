@@ -6,24 +6,29 @@ After=network-online.target
 RequiresMountsFor=%t/containers
 
 [Service]
+Environment=CONTAINER_IMAGE=docker.io/loganmarchione/docker-webdav-nginx:latest
+Environment=DATA_DIR=/data
+Environment=BIND_IP=127.0.0.1
+Environment=BIND_PORT=6001
 Environment=PODMAN_SYSTEMD_UNIT=%n
 Restart=on-failure
 TimeoutStopSec=70
 Type=notify
 NotifyAccess=all
+ExecStartPre=/bin/rm -f %t/%n.ctr-id
 ExecStart=/usr/bin/podman run \
-    --cidfile=%t/%n.ctr-id \
-    --cgroups=no-conmon \
     --rm \
-    --sdnotify=conmon \
     --replace \
-    -d \
     --name=%j \
+    --cidfile=%t/%n.ctr-id \
+    --sdnotify=conmon \
+    --cgroups=no-conmon \
     --network=slirp4netns \
     --userns=auto \
-    -v /data:/srv/data:rslave,ro \
-    -p 127.0.0.1:6001:80 \
-    loganmarchione/docker-webdav-nginx:latest
+    -v ${DATA_DIR}:/srv/data:rslave,ro \
+    -p ${BIND_IP}:${BIND_PORT}:80 \
+    -d \
+    ${CONTAINER_IMAGE}
 ExecStop=/usr/bin/podman stop --ignore -t 10 --cidfile=%t/%n.ctr-id
 ExecStopPost=/usr/bin/podman rm -f --ignore -t 10 --cidfile=%t/%n.ctr-id
 
