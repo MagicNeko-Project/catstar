@@ -10,6 +10,8 @@ Environment=CONTAINER_IMAGE=docker.io/loganmarchione/docker-webdav-nginx:latest
 Environment=DATA_DIR=/data
 Environment=BIND_IP=127.0.0.1
 Environment=BIND_PORT=6001
+EnvironmentFile=-%E/container-%j.conf
+EnvironmentFile=-/usr/local/etc/container-%j.conf
 Environment=PODMAN_SYSTEMD_UNIT=%n
 Restart=on-failure
 TimeoutStopSec=70
