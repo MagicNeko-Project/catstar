@@ -1,0 +1,34 @@
+[Unit]
+Description=Podman user container: firefox
+Documentation=man:podman-generate-systemd(1)
+Wants=podman-user-wait-network-online.service
+After=podman-user-wait-network-online.service
+
+[Service]
+Environment=CONTAINER_IMAGE=lscr.io/linuxserver/firefox:latest
+Environment=DATA_DIR=%h/.config/firefox-container
+Environment=TZ=Etc/UTC
+Environment=DOCKER_MODS=linuxserver/mods:universal-package-install
+Environment=INSTALL_PACKAGES=fonts-noto-cjk
+Environment=BIND_IP=127.0.0.1
+Environment=BIND_PORT=3000
+Environment=SHM_SIZE=1g
+EnvironmentFile=-%E/container-%j.conf
+Type=notify
+NotifyAccess=all
+Restart=on-failure
+TimeoutStopSec=70
+ExecStartPre=-/usr/bin/podman create \
+    --name=%j \
+    -e TZ \
+    -e DOCKER_MODS \
+    -e INSTALL_PACKAGES \
+    -p ${BIND_IP}:${BIND_PORT}:3000 \
+    --shm-size=${SHM_SIZE} \
+    -v ${DATA_DIR}:/config \
+    ${CONTAINER_IMAGE}
+ExecStart=/usr/bin/podman start --attach %j
+ExecStop=/usr/bin/podman stop --ignore -t 10 %j
+
+[Install]
+WantedBy=default.target
