@@ -4,13 +4,15 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+EnvironmentFile=-%E/cloudflared-%i.conf
+EnvironmentFile=-%E/cloudflared/%i
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 Type=simple
 DynamicUser=yes
 ProtectHome=yes
 PrivateDevices=yes
 ProtectProc=invisible
-ExecStart=/usr/bin/cloudflared --config /etc/cloudflared/%i.yml --no-autoupdate tunnel run
+ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel run
 Restart=on-failure
 RestartSec=15
 
