@@ -1,0 +1,10 @@
+[Unit]
+Description=Aria2 download manager with RPC
+
+[Service]
+ExecStart=/usr/bin/aria2c --enable-rpc --console-log-level=info
+NoNewPrivileges=true
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
