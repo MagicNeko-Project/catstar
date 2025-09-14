@@ -5,3 +5,14 @@ cache_dirs:
   - /var/lib/apt/lists
 
 copy_bash_skel_to_root: false
+
+# vm.swappiness = 10
+sysctl_swappiness: false
+
+# net.core.default_qdisc = cake
+# net.ipv4.tcp_congestion_control = bbr
+sysctl_bbr: true
+
+create_directories: {}
+create_files: {}
+create_configs: {}

@@ -1,21 +1,46 @@
 ---
+- name: Create Directories
+  ansible.builtin.file:
+    path: "{{ item.key }}"
+    state: directory
+    mode: "{{ item.value }}"
+  loop: "{{ create_directories | dict2items }}"
+
+- name: Create Files
+  ansible.builtin.copy:
+    dest: "{{ item.key }}"
+    content: "{{ item.value }}"
+    mode: "0644"
+  loop: "{{ create_files | dict2items }}"
+
+- name: Create Configs
+  ansible.builtin.copy:
+    dest: "{{ item.key }}"
+    content: |
+      {% for k, v in item.value.items() %}
+      {{ k }}={{ v }}
+      {% endfor %}
+    mode: "0644"
+  loop: "{{ create_configs | dict2items }}"
+
 - name: Find a list of existing cache directories
-  stat:
+  ansible.builtin.stat:
     path: "{{ item }}"
   loop: "{{ cache_dirs }}"
-  register: cache_dir_stats
+  register: common_cache_dir_stats
 
-- name: Ensure CACHEDIR.TAG exists in valid cache directories
-  copy:
+- name: Copy CACHEDIR.TAG to valid cache directories
+  ansible.builtin.copy:
     src: CACHEDIR.TAG
     dest: "{{ item }}/CACHEDIR.TAG"
-    mode: 0644
-  loop: "{{ cache_dir_stats.results | selectattr('stat.exists') | selectattr('stat.isdir') | map(attribute='item') }}"
+    mode: "0644"
+  loop: "{{ common_cache_dir_stats.results | selectattr('stat.exists') | selectattr('stat.isdir') | map(attribute='item') }}"
 
 - name: Copy bash skel files to /root
-  copy:
+  ansible.builtin.copy:
     src: "bash/skel{{ item }}"
     dest: "/root/{{ item }}"
+    mode: "0644"
     backup: true
   loop:
     - .bash_logout
@@ -24,7 +49,15 @@
   when: copy_bash_skel_to_root
 
 - name: Copy BBR sysctl configuration
-  copy:
+  ansible.builtin.copy:
     src: files/98-bbr.conf
     dest: /etc/sysctl.d/98-bbr.conf
-    mode: 0644
+    mode: "0644"
+  when: sysctl_bbr
+
+- name: Copy swappiness sysctl configuration
+  ansible.builtin.copy:
+    src: files/90-swappiness.conf
+    dest: /etc/sysctl.d/90-swappiness.conf
+    mode: "0644"
+  when: sysctl_swappiness
