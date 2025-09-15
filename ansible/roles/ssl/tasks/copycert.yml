@@ -1,11 +1,11 @@
 - name: Check if certificate folder exists
   delegate_to: localhost
-  stat:
+  ansible.builtin.stat:
     path: "{{ cert_src | expanduser }}/{{ name }}"
   register: cert_folder
 
 - name: Copy certificates from cert folder
-  copy:
+  ansible.builtin.copy:
     src: "{{ cert_src | expanduser }}/{{ item.src }}"
     dest: "{{ ssl_root }}/{{ name }}/{{ item.dest }}"
     mode: "{{ item.mode }}"

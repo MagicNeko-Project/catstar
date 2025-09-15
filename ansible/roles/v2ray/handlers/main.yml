@@ -1,16 +1,16 @@
 ---
 # handlers file for basic
 - name: Reload systemd
-  systemd:
+  ansible.builtin.systemd:
     daemon_reload: yes
 
 - name: Start v2ray
-  service:
+  ansible.builtin.service:
     name: v2ray
     state: started
     enabled: yes
 
 - name: Restart v2ray
-  service:
+  ansible.builtin.service:
     name: v2ray
     state: restarted

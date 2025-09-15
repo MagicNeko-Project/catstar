@@ -1,22 +1,22 @@
 ---
 - name: Create ssl directories
-  file:
+  ansible.builtin.file:
     path: "{{ ssl_root }}/{{ item }}"
     state: directory
     mode: 0700
   loop: "{{ ssl_all }}"
 
 - name: Copy certificates
-  include_tasks: copycert.yml
+  ansible.builtin.include_tasks: copycert.yml
   loop: "{{ ssl_all }}"
   loop_control:
     loop_var: name
 
 - name: Generate default certificate
-  command:
+  ansible.builtin.command:
     cmd: openssl req -nodes -x509 -newkey rsa:2048 -keyout {{ ssl_root }}/_/key.pem -out {{ ssl_root }}/_/full.pem -days 709 -subj /
     creates: "{{ ssl_root }}/_/full.pem"
 
 - name: Generate nginx snippets
-  import_tasks: nginx_snippets.yml
+  ansible.builtin.import_tasks: nginx_snippets.yml
   when: nginx_snippets_enabled

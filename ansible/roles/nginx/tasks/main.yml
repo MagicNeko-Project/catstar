@@ -1,6 +1,6 @@
 ---
 - name: Include os-specific variables
-  include_vars: "{{ item }}"
+  ansible.builtin.include_vars: "{{ item }}"
   with_first_found:
     - "../vars/{{ ansible_os_family }}.yml"
     - "../vars/default.yml"
@@ -9,42 +9,42 @@
     - install
   block:
     - name: Remove Apache
-      apt:
+      ansible.builtin.apt:
         name: '{{ apache_packages }}'
         state: absent
       when: apache_packages is defined
 
     - name: Install Nginx
-      package:
+      ansible.builtin.package:
         name: '{{ nginx_packages }}'
       notify: start nginx
       when: nginx_packages is defined
 
     - name: Install PHP
-      package:
+      ansible.builtin.package:
         name: '{{ php_fpm_packages }}'
       notify: start php-fpm
       when: php_enabled and php_fpm_packages is defined
 
     - name: Create nginx config directories
-      file:
+      ansible.builtin.file:
         path: "{{ nginx_root }}/{{ item }}"
         state: directory
         mode: 0755
       loop: "{{ nginx_config_dirs }}"
 
     - name: Copy static config files
-      copy:
+      ansible.builtin.copy:
         src: nginx/
         dest: "{{ nginx_root }}"
 
 - name: Create configurations
-  import_tasks: configuration_nginx.yml
+  ansible.builtin.import_tasks: configuration_nginx.yml
 
 - name: Create PHP configurations
-  import_tasks: configuration_php.yml
+  ansible.builtin.import_tasks: configuration_php.yml
   when: php_enabled
 
 - name: Create initial contents
-  import_tasks: contents.yml
+  ansible.builtin.import_tasks: contents.yml
   when: content_enabled

@@ -1,5 +1,5 @@
 - name: Copy Nginx Configuration
-  template:
+  ansible.builtin.template:
     src: "{{ item }}"
     dest: "{{ (nginx_root, dest) | path_join }}"
     mode: 0644
@@ -13,7 +13,7 @@
     - "templates/nginx/snippets/*.j2"
 
 - name: Create htpasswd files
-  template:
+  ansible.builtin.template:
     src: htpasswd.j2
     dest: /etc/nginx/htpasswd_{{ item.key }}
     mode: 0640
@@ -23,7 +23,7 @@
   when: htpasswd is defined
 
 - name: Copy Nginx sites available files templates
-  template:
+  ansible.builtin.template:
     src: "sites-available/{{ site.template | default('generic') }}.j2"
     dest: "{{ (nginx_root, nginx_sites_available, item.key) | path_join }}"
     mode: 0644
@@ -35,7 +35,7 @@
   notify: reload nginx
 
 - name: Enable Nginx sites
-  file:
+  ansible.builtin.file:
     src: "{{ (nginx_root, nginx_sites_available, item.key) | path_join }}"
     dest: "{{ (nginx_root, nginx_sites_enabled, item.key) | path_join }}"
     state: link
@@ -44,7 +44,7 @@
   notify: reload nginx
 
 - name: Disable Nginx sites
-  file:
+  ansible.builtin.file:
     path: "{{ (nginx_root, nginx_sites_enabled, item) | path_join }}"
     state: absent
   loop: "{{ sites_disabled | default([], true) }}"

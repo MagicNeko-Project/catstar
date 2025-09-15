@@ -1,5 +1,5 @@
 - name: Copy PHP configuration template
-  template:
+  ansible.builtin.template:
     src: 'php/{{ item }}.j2'
     dest: '{{ php_pool_root }}/{{ item }}'
     mode: 0644

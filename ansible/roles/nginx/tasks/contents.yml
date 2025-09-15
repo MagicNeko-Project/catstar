@@ -1,6 +1,6 @@
 ---
 - name: Create Web Root
-  file:
+  ansible.builtin.file:
     path: '{{ item }}'
     state: directory
     owner: "{{ new_user }}"
@@ -11,7 +11,7 @@
     - '{{ html_root }}'
 
 - name: Copy HTML templates
-  template:
+  ansible.builtin.template:
     src: "html/{{ item }}.j2"
     dest: '{{ html_root }}/{{ item }}'
     mode: 0644

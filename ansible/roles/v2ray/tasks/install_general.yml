@@ -1,10 +1,10 @@
 ---
 - name: Install unzip
-  apt:
+  ansible.builtin.apt:
     name: unzip
 
 - name: Create directories
-  file:
+  ansible.builtin.file:
     path: "{{ item }}"
     state: directory
   loop:
@@ -14,20 +14,20 @@
     - "{{ v2ray_install }}/etc/v2ray"
 
 - name: Download archive
-  get_url:
+  ansible.builtin.get_url:
     url: "{{ v2ray_url }}"
     dest: "{{ v2ray_archive }}"
   notify:
     - Restart v2ray
 
 - name: Extract contents
-  unarchive:
+  ansible.builtin.unarchive:
     remote_src: yes
     src: "{{ v2ray_archive }}"
     dest: "{{ v2ray_prefix }}"
 
 - name: Link binaries
-  file:
+  ansible.builtin.file:
     path: "{{ v2ray_install }}/bin/{{ item }}"
     src: "{{ v2ray_prefix }}/{{ item }}"
     state: link
@@ -35,7 +35,7 @@
     - v2ray
 
 - name: Copy service file
-  template:
+  ansible.builtin.template:
     src: v2ray.service
     dest: /etc/systemd/system/
   notify:
