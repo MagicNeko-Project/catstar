@@ -48,15 +48,23 @@ class KnownHostsFile:
         self.path = path
         self.matcher = matcher
 
-    def clean(self, inplace: bool):
+    def clean(self, inplace: bool, dry_run: bool = False):
         """
-        Cleans the file, either writing to stdout or modifying the file in place.
+        Cleans the file, writing to stdout, modifying in place, or showing a diff.
         """
         try:
             lines = self._read_lines()
         except FileNotFoundError:
             print(f"Error: File not found at {self.path}", file=sys.stderr)
             sys.exit(1)
+
+        if dry_run:
+            for line in lines:
+                if self.matcher.line_matches(line):
+                    sys.stdout.write(f"- {line.strip()}\n")
+                else:
+                    sys.stdout.write(f"  {line.strip()}\n")
+            return
 
         output_lines = [line for line in lines if not self.matcher.line_matches(line)]
 
@@ -96,11 +104,15 @@ def main():
         "--inplace", action="store_true",
         help="Replace the known_hosts file (a backup is created)."
     )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Show which lines would be removed without modifying the file."
+    )
     args = parser.parse_args()
 
     matcher = HostMatcher(args.patterns)
     known_hosts = KnownHostsFile(args.file, matcher)
-    known_hosts.clean(args.inplace)
+    known_hosts.clean(args.inplace, args.dry_run)
 
 if __name__ == "__main__":
     main()
