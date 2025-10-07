@@ -196,9 +196,11 @@ def main() -> None:
         use_sensible_defaults=args.sensible_defaults
     )
 
-    out_stream = open(args.output, 'w', encoding='utf-8') if args.output else sys.stdout
-    with out_stream:
-        scanner.scan_and_dump(out_stream)
+    if args.output:
+        with open(args.output, 'w', encoding='utf-8') as out_stream:
+            scanner.scan_and_dump(out_stream)
+    else:
+        scanner.scan_and_dump(sys.stdout)
 
 
 if __name__ == "__main__":
