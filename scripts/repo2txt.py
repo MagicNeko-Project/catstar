@@ -6,14 +6,21 @@
 import os
 import fnmatch
 import argparse
-from typing import List, Set, Optional
-from datetime import datetime
+from typing import List, Set, Optional, Tuple
+from datetime import datetime, timezone
 
 EXT_TO_LANG = {
-    ".py": "python", ".js": "javascript", ".ts": "typescript",
-    ".html": "html", ".css": "css", ".md": "markdown",
-    ".json": "json", ".yaml": "yaml", ".yml": "yaml",
-    ".sh": "bash", ".cpp": "cpp", ".c": "c", ".java": "java",
+    ".py": "python", ".js": "javascript", ".ts": "typescript", ".tsx": "typescript",
+    ".html": "html", ".css": "css", ".md": "markdown", ".json": "json",
+    ".yaml": "yaml", ".yml": "yaml", ".sh": "bash", ".cpp": "cpp", ".c": "c",
+    ".java": "java", ".jsx": "javascript", ".go": "go", ".rs": "rust",
+    ".kt": "kotlin", ".m": "objectivec", ".swift": "swift", ".rb": "ruby",
+    ".php": "php", ".ps1": "powershell", ".sql": "sql", ".proto": "protobuf",
+    ".toml": "toml", ".ini": "ini", ".xml": "xml", ".svg": "xml", ".tex": "latex",
+}
+
+SENSIBLE_DEFAULTS = {
+    ".git/", "node_modules/", "dist/", "build/", ".venv/", "__pycache__/",
 }
 
 
@@ -23,18 +30,21 @@ class RepoScanner:
     in an LLM-optimized format.
     """
 
-    def __init__(self, start_path: str, output_file: str, exclusion_file: Optional[str] = None, file_types: Optional[List[str]] = None):
+    def __init__(self, start_path: str, output_file: str, exclusion_file: Optional[str] = None, file_types: Optional[List[str]] = None, use_sensible_defaults: bool = False):
         self.start_path = os.path.abspath(start_path)
         self.output_file = output_file
         self.exclusion_file = exclusion_file
         self.file_types = file_types
-        self.exclusion_patterns = self._parse_exclusion_file()
+        self.exclusion_patterns = self._parse_exclusion_file(use_sensible_defaults)
 
-    def _parse_exclusion_file(self) -> Set[str]:
+    def _parse_exclusion_file(self, use_sensible_defaults: bool) -> Set[str]:
         """
-        Parses an exclusion file (like .gitignore) and returns a set of patterns.
+        Parses an exclusion file and adds sensible defaults if requested.
         """
         patterns = set()
+        if use_sensible_defaults:
+            patterns.update(SENSIBLE_DEFAULTS)
+
         if self.exclusion_file and os.path.exists(self.exclusion_file):
             with open(self.exclusion_file, 'r', encoding='utf-8') as f:
                 for line in f:
@@ -48,18 +58,8 @@ class RepoScanner:
         Checks if a given path matches any of the exclusion patterns.
         """
         for pattern in self.exclusion_patterns:
-            if pattern.startswith('/') and pattern.endswith('/'):
-                if path.startswith(pattern[1:]) or path == pattern[1:-1]:
-                    return True
-            elif pattern.endswith('/'):
-                if path.startswith(pattern) or path == pattern[:-1]:
-                    return True
-            elif pattern.startswith('/'):
-                if path == pattern[1:] or path.startswith(f"{pattern[1:]}{os.sep}"):
-                    return True
-            else:
-                if fnmatch.fnmatch(path, pattern) or any(fnmatch.fnmatch(part, pattern) for part in path.split(os.sep)):
-                    return True
+            if fnmatch.fnmatch(path, pattern) or fnmatch.fnmatch(os.path.basename(path), pattern):
+                return True
         return False
 
     def _get_language(self, file_path: str) -> str:
@@ -69,15 +69,19 @@ class RepoScanner:
         _, ext = os.path.splitext(file_path)
         return EXT_TO_LANG.get(ext, "text")
 
-    def _get_line_count(self, file_path: str) -> int:
+    def _read_file_content(self, path: str) -> Tuple[Optional[str], int, bool, int]:
         """
-        Counts the number of lines in a file.
+        Reads file content, detects if it's binary, and counts lines.
+        Returns (content, line_count, is_binary, byte_len).
         """
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                return sum(1 for _ in f)
-        except (IOError, UnicodeDecodeError):
-            return 0
+            with open(path, "rb") as fb:
+                data = fb.read()
+            text = data.decode("utf-8")
+            line_count = text.count("\n") + (1 if text and not text.endswith("\n") else 0)
+            return text, line_count, False, len(data)
+        except UnicodeDecodeError:
+            return None, 0, True, len(data)
 
     def _generate_directory_structure(self) -> str:
         """
@@ -86,18 +90,18 @@ class RepoScanner:
         tree = ['/']
 
         def _generate_tree(dir_path: str, prefix: str = '') -> None:
-            entries = os.listdir(dir_path)
-            entries = sorted(entries, key=lambda x: (not os.path.isdir(os.path.join(dir_path, x)), x.lower()))
+            entries = sorted(os.listdir(dir_path), key=str.lower)
 
             for i, entry in enumerate(entries):
                 rel_path = os.path.relpath(os.path.join(dir_path, entry), self.start_path)
                 if self._is_excluded(rel_path):
                     continue
 
-                connector = '└── ' if i == len(entries) - 1 else '├── '
-                tree.append(f"{prefix}{connector}{entry}")
-
                 full_path = os.path.join(dir_path, entry)
+                connector = '└── ' if i == len(entries) - 1 else '├── '
+                name = f"{entry}/" if os.path.isdir(full_path) else entry
+                tree.append(f"{prefix}{connector}{name}")
+
                 if os.path.isdir(full_path):
                     new_prefix = f"{prefix}{'    ' if i == len(entries) - 1 else '│   '}"
                     _generate_tree(full_path, new_prefix)
@@ -110,44 +114,44 @@ class RepoScanner:
         Scans the repository and writes the directory structure and file contents to the output file.
         """
         with open(self.output_file, 'w', encoding='utf-8') as out_file:
-            # Write repository overview
             out_file.write("# Repository Overview\n")
             out_file.write(f"Path: {self.start_path}\n")
             out_file.write("Generated by repo2txt.py\n")
-            out_file.write(f"Date: {datetime.now().isoformat()}\n\n")
+            out_file.write(f"Date: {datetime.now(timezone.utc).isoformat()}\n\n")
             out_file.write("## Directory Tree\n")
             out_file.write(self._generate_directory_structure())
             out_file.write("\n\n---\n\n")
 
-            for root, _, files in os.walk(self.start_path):
+            for root, dirs, files in os.walk(self.start_path, topdown=True):
+                dirs.sort(key=str.lower)
                 rel_path = os.path.relpath(root, self.start_path)
                 if self._is_excluded(rel_path):
+                    dirs[:] = []
+                    files[:] = []
                     continue
 
-                for file in files:
-                    file_rel_path = os.path.join(rel_path, file)
+                for file in sorted(files, key=str.lower):
+                    raw_rel = file if rel_path == "." else os.path.join(rel_path, file)
+                    file_rel_path = raw_rel.replace(os.sep, "/")
+
                     if self._is_excluded(file_rel_path):
                         continue
 
                     if not self.file_types or any(file.endswith(ext) for ext in self.file_types):
                         file_path = os.path.join(root, file)
-                        lang = self._get_language(file_path)
-                        line_count = self._get_line_count(file_path)
+                        content, line_count, is_binary, byte_len = self._read_file_content(file_path)
 
                         out_file.write(f"# FILE: {file_rel_path}\n")
-                        out_file.write(f"LANG: {lang}\n")
-                        out_file.write(f"SIZE: {line_count} lines\n\n")
-                        out_file.write(f"```{lang}\n")
+                        if is_binary:
+                            out_file.write(f"LANG: binary\nSIZE: {byte_len} bytes\n\n")
+                            out_file.write("# BINARY FILE (skipped)\n")
+                        else:
+                            lang = self._get_language(file_path)
+                            out_file.write(f"LANG: {lang}\nSIZE: {line_count} lines\n\n")
+                            fence = "````" if "```" in content else "```"
+                            out_file.write(f"{fence}{lang}\n{content}\n{fence}\n")
 
-                        try:
-                            with open(file_path, 'r', encoding='utf-8') as in_file:
-                                content = in_file.read()
-                                out_file.write(content)
-                        except Exception:
-                            out_file.write("# ERROR: Could not read file\n")
-
-                        out_file.write("\n```\n\n")
-                        out_file.write("# END FILE\n\n---\n\n")
+                        out_file.write("\n# END FILE\n\n---\n\n")
 
 
 def main() -> None:
@@ -155,29 +159,22 @@ def main() -> None:
     Main function to parse arguments and run the repository scanner.
     """
     parser = argparse.ArgumentParser(
-        description='Scan a folder and write the contents of specified file types to an output file in an LLM-optimized format.',
+        description='Scan a folder and write the contents to an LLM-optimized output file.',
         formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument('start_path', type=str, help='The path to the folder to scan.')
     parser.add_argument('output_file', type=str, help='The path to the output file.')
-    parser.add_argument(
-        '-e', '--exclusion-file',
-        type=str,
-        help='The path to a file containing exclusion patterns (e.g., .gitignore).'
-    )
-    parser.add_argument(
-        '-t', '--file-types',
-        type=str,
-        nargs='*',
-        help='The file extensions to include in the scan.'
-    )
+    parser.add_argument('-e', '--exclusion-file', type=str, help='Path to a .gitignore-style exclusion file.')
+    parser.add_argument('-t', '--file-types', type=str, nargs='*', help='File extensions to include.')
+    parser.add_argument('--sensible-defaults', action='store_true', help='Exclude common noise like .git, node_modules.')
     args = parser.parse_args()
 
     scanner = RepoScanner(
         start_path=args.start_path,
         output_file=args.output_file,
         exclusion_file=args.exclusion_file,
-        file_types=args.file_types
+        file_types=args.file_types,
+        use_sensible_defaults=args.sensible_defaults
     )
 
     print(f"Starting scan of '{args.start_path}'...")
