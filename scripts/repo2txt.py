@@ -7,8 +7,9 @@ import os
 import sys
 import fnmatch
 import argparse
-from typing import List, Set, Optional, Tuple, IO
+from typing import List, Set, Optional, Tuple, IO, Dict
 from datetime import datetime, timezone
+
 
 EXT_TO_LANG = {
     ".py": "python", ".js": "javascript", ".ts": "typescript", ".tsx": "typescript",
@@ -84,44 +85,75 @@ class RepoScanner:
         except UnicodeDecodeError:
             return None, 0, True, len(data)
 
+    def _insert_path(self, tree: dict, rel_path: str, is_file: bool) -> None:
+        parts = [p for p in rel_path.split("/") if p and p != "."]
+        node = tree
+        for i, part in enumerate(parts):
+            last = (i == len(parts) - 1)
+            if last and is_file:
+                node.setdefault("__files__", set()).add(part)
+            else:
+                node = node.setdefault(part, {})
+
+    def _render_tree(self, tree: dict, lines: list, prefix: str = "") -> None:
+        dirs = sorted([k for k in tree.keys() if k not in ("__files__")], key=str.lower)
+        files = sorted(list(tree.get("__files__", [])), key=str.lower)
+
+        entries = [(d, True) for d in dirs] + [(f, False) for f in files]
+        for idx, (name, is_dir) in enumerate(entries):
+            is_last = (idx == len(entries) - 1)
+            connector = "└── " if is_last else "├── "
+            if is_dir:
+                lines.append(f"{prefix}{connector}{name}/")
+                self._render_tree(tree[name], lines, prefix + ("    " if is_last else "│   "))
+            else:
+                lines.append(f"{prefix}{connector}{name}")
+
     def _generate_directory_structure(self) -> str:
-        """
-        Generates a string representation of the directory structure for multiple paths.
-        """
-        tree = ['/']
-
-        def _generate_tree(dir_path: str, prefix: str = '') -> None:
-            entries = sorted(os.listdir(dir_path), key=str.lower)
-
-            for i, entry in enumerate(entries):
-                full_path = os.path.join(dir_path, entry)
-                rel_path = os.path.relpath(full_path, self.root)
-                if self._is_excluded(rel_path):
-                    continue
-
-                connector = '└── ' if i == len(entries) - 1 else '├── '
-                name = f"{entry}/" if os.path.isdir(full_path) else entry
-                tree.append(f"{prefix}{connector}{name}")
-
-                if os.path.isdir(full_path):
-                    new_prefix = f"{prefix}{'    ' if i == len(entries) - 1 else '│   '}"
-                    _generate_tree(full_path, new_prefix)
+        tree_root: Dict[str, Dict] = {}
 
         for path in self.paths:
-            if os.path.isdir(path):
-                _generate_tree(path)
+            if not os.path.exists(path):
+                continue
+            abs_path = os.path.abspath(path)
+            if os.path.isdir(abs_path):
+                for root, dirs, files in os.walk(abs_path, topdown=True):
+                    dirs.sort(key=str.lower)
+                    rel_root = os.path.relpath(root, self.root).replace(os.sep, "/")
+                    if self._is_excluded(rel_root):
+                        dirs[:] = []
+                        files[:] = []
+                        continue
+                    if rel_root != "." and not self._is_excluded(rel_root):
+                        self._insert_path(tree_root, rel_root, is_file=False)
+                    for f in sorted(files, key=str.lower):
+                        rel_file = (f if rel_root == "." else f"{rel_root}/{f}")
+                        if self._is_excluded(rel_file):
+                            continue
+                        if self.file_types and not any(rel_file.endswith(ext) for ext in self.file_types):
+                            continue
+                        self._insert_path(tree_root, rel_file, is_file=True)
             else:
-                tree.append(f"└── {os.path.basename(path)}")
+                rel_file = os.path.relpath(abs_path, self.root).replace(os.sep, "/")
+                if not self._is_excluded(rel_file):
+                    if not self.file_types or any(rel_file.endswith(ext) for ext in self.file_types):
+                        parent = os.path.dirname(rel_file)
+                        if parent and parent != ".":
+                            self._insert_path(tree_root, parent, is_file=False)
+                        self._insert_path(tree_root, rel_file, is_file=True)
 
-        return '\n'.join(tree)
+        lines = ["/"]
+        self._render_tree(tree_root, lines, prefix="")
+        return "\n".join(lines)
 
     def scan_and_dump(self, out_stream: IO[str]) -> None:
         """
         Scans the repository and writes the directory structure and file contents to the output stream.
         """
+        normalized_paths = ", ".join(sorted(os.path.relpath(p, self.root).replace(os.sep, "/") for p in self.paths))
         out_stream.write("# Repository Overview\n")
         out_stream.write(f"Root: {self.root}\n")
-        out_stream.write(f"Included Paths: {', '.join(self.paths)}\n")
+        out_stream.write(f"Included Paths: {normalized_paths}\n")
         out_stream.write("Generated by repo2txt.py\n")
         out_stream.write(f"Date: {datetime.now(timezone.utc).isoformat()}\n\n")
         out_stream.write("## Directory Tree\n")
