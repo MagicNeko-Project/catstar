@@ -34,12 +34,16 @@ class RepoScanner:
     in an LLM-optimized format.
     """
 
-    def __init__(self, paths: List[str], exclusion_file: Optional[str] = None, file_types: Optional[List[str]] = None, use_sensible_defaults: bool = False):
+    def __init__(self, paths: List[str], exclusion_file: Optional[str] = None,
+                 file_types: Optional[List[str]] = None,
+                 use_sensible_defaults: bool = False,
+                 debug_exclude: bool = False):
         self.paths = sorted(list(set(paths)))
         self.root = os.getcwd()
         self.exclusion_file = exclusion_file
         self.file_types = file_types
         self.exclusion_patterns = self._parse_exclusion_file(use_sensible_defaults)
+        self.debug_exclude = debug_exclude
 
     def _parse_exclusion_file(self, use_sensible_defaults: bool) -> Set[str]:
         """
@@ -57,13 +61,52 @@ class RepoScanner:
                         patterns.add(line)
         return patterns
 
+    def _norm(self, p: str) -> str:
+        # POSIX-style, no leading './', collapse backslashes
+        p = p.replace("\\", "/")
+        if p.startswith("./"):
+            p = p[2:]
+        return p.strip("/")
+
     def _is_excluded(self, path: str) -> bool:
-        """
-        Checks if a given path matches any of the exclusion patterns.
-        """
-        for pattern in self.exclusion_patterns:
-            if fnmatch.fnmatch(path, pattern) or fnmatch.fnmatch(os.path.basename(path), pattern):
+        path = self._norm(path)
+        if not path:
+            return False
+
+        for raw in self.exclusion_patterns:
+            pat = raw.strip()
+            if not pat or pat.startswith("#"):
+                continue
+
+            negated = pat.startswith("!")
+            if negated:
+                pat = pat[1:].strip()
+            pat = pat.replace("\\", "/").strip()
+
+            matched = False
+
+            if pat.endswith("/"):
+                seg = pat.rstrip("/")
+                hay = f"/{path}/"
+                matched = (path == seg) or (f"/{seg}/" in hay)
+
+            elif pat.startswith("/"):
+                anchor = pat.lstrip("/")
+                matched = (path == anchor) or path.startswith(anchor + "/")
+
+            elif "/" in pat:
+                matched = fnmatch.fnmatch(path, pat)
+
+            else:
+                matched = any(fnmatch.fnmatch(part, pat) for part in path.split("/"))
+
+            if matched:
+                if self.debug_exclude:
+                    print(f"[exclude] path='{path}' matched by pattern='{raw}'", file=sys.stderr)
+                if negated:
+                    return False
                 return True
+
         return False
 
     def _get_language(self, file_path: str) -> str:
@@ -88,7 +131,7 @@ class RepoScanner:
             return None, 0, True, len(data)
 
     def _insert_path(self, tree: Tree, rel_path: str, is_file: bool) -> None:
-        parts = [p for p in rel_path.split("/") if p and p != "."]
+        parts = [p for p in self._norm(rel_path).split("/") if p]
         node = tree
         for i, part in enumerate(parts):
             last = (i == len(parts) - 1)
@@ -233,13 +276,15 @@ def main() -> None:
     parser.add_argument('-e', '--exclusion-file', type=str, help='Path to a .gitignore-style exclusion file.')
     parser.add_argument('-t', '--file-types', type=str, nargs='*', help='File extensions to include.')
     parser.add_argument('--sensible-defaults', action='store_true', help='Exclude common noise like .git, node_modules.')
+    parser.add_argument('--debug-exclude', action='store_true', help='Print debug information for excluded files.')
     args = parser.parse_args()
 
     scanner = RepoScanner(
         paths=args.paths,
         exclusion_file=args.exclusion_file,
         file_types=args.file_types,
-        use_sensible_defaults=args.sensible_defaults
+        use_sensible_defaults=args.sensible_defaults,
+        debug_exclude=args.debug_exclude
     )
 
     if args.output:
