@@ -5,9 +5,10 @@
 # Copied from https://github.com/artkulak/repo2file
 import os
 import sys
-import fnmatch
 import argparse
-from typing import List, Set, Optional, Tuple, IO, Dict
+import re
+from dataclasses import dataclass
+from typing import List, Set, Optional, Tuple, IO, Dict, Pattern
 from datetime import datetime, timezone
 
 
@@ -23,9 +24,117 @@ EXT_TO_LANG = {
     ".toml": "toml", ".ini": "ini", ".xml": "xml", ".svg": "xml", ".tex": "latex",
 }
 
-SENSIBLE_DEFAULTS = {
+SENSIBLE_DEFAULTS = [
     ".git/", "node_modules/", "dist/", "build/", ".venv/", "__pycache__/",
-}
+]
+
+
+@dataclass(frozen=True)
+class Rule:
+    raw: str
+    negated: bool
+    anchored: bool
+    dir_only: bool
+    pattern: str
+    regex: Pattern[str]
+
+
+class GitignoreMatcher:
+    def __init__(self, patterns: List[str], debug: bool = False):
+        self.rules = [self._compile_rule(p) for p in patterns]
+        self.debug = debug
+
+    def _norm_posix(self, p: str) -> str:
+        p = p.replace("\\", "/")
+        if p.startswith("./"):
+            p = p[2:]
+        while "//" in p:
+            p = p.replace("//", "/")
+        return p.strip("/")
+
+    def _parse_line(self, line: str) -> Optional[str]:
+        line = line.rstrip("\n\r")
+        i = len(line) - 1
+        while i >= 0 and line[i] == " ":
+            if i > 0 and line[i-1] == "\\":
+                line = line[:i-1] + line[i:]
+                i -= 2
+                break
+            i -= 1
+        else:
+            line = line[:i+1]
+
+        if not line:
+            return None
+
+        if line.startswith(r"\#"):
+            line = line[1:]
+        elif line.lstrip().startswith("#"):
+            return None
+
+        if line.startswith(r"\!"):
+            line = line[1:]
+
+        return self._norm_posix(line) if line else None
+
+    def _compile_rule(self, raw: str) -> Rule:
+        neg = raw.startswith("!")
+        pat = raw[1:] if neg else raw
+
+        anchored = pat.startswith("/")
+        if anchored:
+            pat = pat.lstrip("/")
+
+        dir_only = pat.endswith("/")
+        if dir_only:
+            pat = pat.rstrip("/")
+
+        special = r".^$+{}()|"
+        esc = []
+        i = 0
+        while i < len(pat):
+            c = pat[i]
+            if c == "*":
+                if i + 1 < len(pat) and pat[i+1] == "*":
+                    esc.append(".*")
+                    i += 2
+                    continue
+                else:
+                    esc.append("[^/]*")
+            elif c == "?":
+                esc.append("[^/]")
+            elif c in special:
+                esc.append("\\" + c)
+            else:
+                esc.append(c)
+            i += 1
+        core = "".join(esc)
+
+        if dir_only:
+            tail = r"(?:/.*)?"
+        else:
+            tail = r"(?:/.*)?"
+
+        if anchored:
+            regex = rf"^(?:{core}){tail}$"
+        else:
+            regex = rf"^(?:.*?/)?(?:{core}){tail}$"
+
+        return Rule(raw=raw, negated=neg, anchored=anchored, dir_only=dir_only, pattern=pat, regex=re.compile(regex))
+
+    def is_excluded(self, rel_path: str) -> bool:
+        path = self._norm_posix(rel_path)
+        if not path:
+            return False
+
+        decision: Optional[bool] = None
+        for rule in self.rules:
+            if rule.regex.match(path):
+                decision = not rule.negated
+                if self.debug:
+                    state = "EXCLUDE" if decision else "INCLUDE"
+                    print(f"[exclude] {state}: path='{path}' matched rule='{rule.raw}'", file=sys.stderr)
+        return bool(decision)
 
 
 class RepoScanner:
@@ -40,74 +149,54 @@ class RepoScanner:
                  debug_exclude: bool = False):
         self.paths = sorted(list(set(paths)))
         self.root = os.getcwd()
-        self.exclusion_file = exclusion_file
         self.file_types = file_types
-        self.exclusion_patterns = self._parse_exclusion_file(use_sensible_defaults)
-        self.debug_exclude = debug_exclude
+        self.matcher = self._create_matcher(exclusion_file, use_sensible_defaults, debug_exclude)
 
-    def _parse_exclusion_file(self, use_sensible_defaults: bool) -> Set[str]:
-        """
-        Parses an exclusion file and adds sensible defaults if requested.
-        """
-        patterns = set()
+    def _create_matcher(self, exclusion_file: Optional[str], use_sensible_defaults: bool, debug: bool) -> GitignoreMatcher:
+        patterns: List[str] = []
         if use_sensible_defaults:
-            patterns.update(SENSIBLE_DEFAULTS)
+            patterns.extend(SENSIBLE_DEFAULTS)
 
-        if self.exclusion_file and os.path.exists(self.exclusion_file):
-            with open(self.exclusion_file, 'r', encoding='utf-8') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#'):
-                        patterns.add(line)
-        return patterns
+        if exclusion_file and os.path.exists(exclusion_file):
+            with open(exclusion_file, "r", encoding="utf-8") as f:
+                for raw in f:
+                    parsed = self._parse_gitignore_line(raw)
+                    if parsed is not None:
+                        patterns.append(parsed)
+        return GitignoreMatcher(patterns, debug)
 
-    def _norm(self, p: str) -> str:
-        # POSIX-style, no leading './', collapse backslashes
+    def _parse_gitignore_line(self, line: str) -> Optional[str]:
+        line = line.rstrip("\n\r")
+        i = len(line) - 1
+        while i >= 0 and line[i] == " ":
+            if i > 0 and line[i-1] == "\\":
+                line = line[:i-1] + line[i:]
+                i -= 2
+                break
+            i -= 1
+        else:
+            line = line[:i+1]
+
+        if not line:
+            return None
+
+        if line.startswith(r"\#"):
+            line = line[1:]
+        elif line.lstrip().startswith("#"):
+            return None
+
+        if line.startswith(r"\!"):
+            line = line[1:]
+
+        return self._norm_posix(line) if line else None
+
+    def _norm_posix(self, p: str) -> str:
         p = p.replace("\\", "/")
         if p.startswith("./"):
             p = p[2:]
+        while "//" in p:
+            p = p.replace("//", "/")
         return p.strip("/")
-
-    def _is_excluded(self, path: str) -> bool:
-        path = self._norm(path)
-        if not path:
-            return False
-
-        for raw in self.exclusion_patterns:
-            pat = raw.strip()
-            if not pat or pat.startswith("#"):
-                continue
-
-            negated = pat.startswith("!")
-            if negated:
-                pat = pat[1:].strip()
-            pat = pat.replace("\\", "/").strip()
-
-            matched = False
-
-            if pat.endswith("/"):
-                seg = pat.rstrip("/")
-                hay = f"/{path}/"
-                matched = (path == seg) or (f"/{seg}/" in hay)
-
-            elif pat.startswith("/"):
-                anchor = pat.lstrip("/")
-                matched = (path == anchor) or path.startswith(anchor + "/")
-
-            elif "/" in pat:
-                matched = fnmatch.fnmatch(path, pat)
-
-            else:
-                matched = any(fnmatch.fnmatch(part, pat) for part in path.split("/"))
-
-            if matched:
-                if self.debug_exclude:
-                    print(f"[exclude] path='{path}' matched by pattern='{raw}'", file=sys.stderr)
-                if negated:
-                    return False
-                return True
-
-        return False
 
     def _get_language(self, file_path: str) -> str:
         """
@@ -131,7 +220,7 @@ class RepoScanner:
             return None, 0, True, len(data)
 
     def _insert_path(self, tree: Tree, rel_path: str, is_file: bool) -> None:
-        parts = [p for p in self._norm(rel_path).split("/") if p]
+        parts = [p for p in self._norm_posix(rel_path).split("/") if p]
         node = tree
         for i, part in enumerate(parts):
             last = (i == len(parts) - 1)
@@ -159,7 +248,7 @@ class RepoScanner:
         Includes a file in the directory tree and adds it to the collected file list.
         Handles exclusion and file-type filtering automatically.
         """
-        if not self._is_excluded(rel_path):
+        if not self.matcher.is_excluded(rel_path):
             if not self.file_types or any(rel_path.endswith(ext) for ext in self.file_types):
                 parent = os.path.dirname(rel_path)
                 if parent and parent != ".":
@@ -193,8 +282,7 @@ class RepoScanner:
                     files.sort(key=str.lower)
                     rel_root = os.path.relpath(root, self.root).replace(os.sep, "/")
 
-                    if self._is_excluded(rel_root):
-                        dirs[:] = []
+                    if self.matcher.is_excluded(rel_root):
                         continue
 
                     if rel_root != ".":
