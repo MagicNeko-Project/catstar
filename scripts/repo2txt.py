@@ -44,7 +44,8 @@ class GitignoreMatcher:
         self.rules = [self._compile_rule(p) for p in patterns]
         self.debug = debug
 
-    def _norm_posix(self, p: str) -> str:
+    @staticmethod
+    def _norm_posix(p: str) -> str:
         p = p.replace("\\", "/")
         if p.startswith("./"):
             p = p[2:]
@@ -52,7 +53,8 @@ class GitignoreMatcher:
             p = p.replace("//", "/")
         return p.strip("/")
 
-    def _parse_line(self, line: str) -> Optional[str]:
+    @staticmethod
+    def _parse_line(line: str) -> Optional[str]:
         line = line.rstrip("\n\r")
         i = len(line) - 1
         while i >= 0 and line[i] == " ":
@@ -73,13 +75,17 @@ class GitignoreMatcher:
             return None
 
         if line.startswith(r"\!"):
-            line = line[1:]
+            return "\x00" + line[2:]
 
-        return self._norm_posix(line) if line else None
+        return GitignoreMatcher._norm_posix(line) if line else None
 
     def _compile_rule(self, raw: str) -> Rule:
-        neg = raw.startswith("!")
-        pat = raw[1:] if neg else raw
+        if raw.startswith("\x00"):
+            neg = False
+            pat = "!" + raw[1:]
+        else:
+            neg = raw.startswith("!")
+            pat = raw[1:] if neg else raw
 
         anchored = pat.startswith("/")
         if anchored:
@@ -118,7 +124,7 @@ class GitignoreMatcher:
         if anchored:
             regex = rf"^(?:{core}){tail}$"
         else:
-            regex = rf"^(?:.*?/)?(?:{core}){tail}$"
+            regex = rf"^(?:.*?/)*(?:{core}){tail}$"
 
         return Rule(raw=raw, negated=neg, anchored=anchored, dir_only=dir_only, pattern=pat, regex=re.compile(regex))
 
@@ -160,43 +166,10 @@ class RepoScanner:
         if exclusion_file and os.path.exists(exclusion_file):
             with open(exclusion_file, "r", encoding="utf-8") as f:
                 for raw in f:
-                    parsed = self._parse_gitignore_line(raw)
+                    parsed = GitignoreMatcher._parse_line(raw)
                     if parsed is not None:
                         patterns.append(parsed)
         return GitignoreMatcher(patterns, debug)
-
-    def _parse_gitignore_line(self, line: str) -> Optional[str]:
-        line = line.rstrip("\n\r")
-        i = len(line) - 1
-        while i >= 0 and line[i] == " ":
-            if i > 0 and line[i-1] == "\\":
-                line = line[:i-1] + line[i:]
-                i -= 2
-                break
-            i -= 1
-        else:
-            line = line[:i+1]
-
-        if not line:
-            return None
-
-        if line.startswith(r"\#"):
-            line = line[1:]
-        elif line.lstrip().startswith("#"):
-            return None
-
-        if line.startswith(r"\!"):
-            line = line[1:]
-
-        return self._norm_posix(line) if line else None
-
-    def _norm_posix(self, p: str) -> str:
-        p = p.replace("\\", "/")
-        if p.startswith("./"):
-            p = p[2:]
-        while "//" in p:
-            p = p.replace("//", "/")
-        return p.strip("/")
 
     def _get_language(self, file_path: str) -> str:
         """
@@ -220,7 +193,7 @@ class RepoScanner:
             return None, 0, True, len(data)
 
     def _insert_path(self, tree: Tree, rel_path: str, is_file: bool) -> None:
-        parts = [p for p in self._norm_posix(rel_path).split("/") if p]
+        parts = [p for p in self.matcher._norm_posix(rel_path).split("/") if p]
         node = tree
         for i, part in enumerate(parts):
             last = (i == len(parts) - 1)
