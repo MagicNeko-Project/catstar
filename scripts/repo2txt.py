@@ -11,6 +11,8 @@ from typing import List, Set, Optional, Tuple, IO, Dict
 from datetime import datetime, timezone
 
 
+Tree = Dict[str, Dict]
+
 EXT_TO_LANG = {
     ".py": "python", ".js": "javascript", ".ts": "typescript", ".tsx": "typescript",
     ".html": "html", ".css": "css", ".md": "markdown", ".json": "json",
@@ -85,7 +87,7 @@ class RepoScanner:
         except UnicodeDecodeError:
             return None, 0, True, len(data)
 
-    def _insert_path(self, tree: dict, rel_path: str, is_file: bool) -> None:
+    def _insert_path(self, tree: Tree, rel_path: str, is_file: bool) -> None:
         parts = [p for p in rel_path.split("/") if p and p != "."]
         node = tree
         for i, part in enumerate(parts):
@@ -95,8 +97,8 @@ class RepoScanner:
             else:
                 node = node.setdefault(part, {})
 
-    def _render_tree(self, tree: dict, lines: list, prefix: str = "") -> None:
-        dirs = sorted([k for k in tree.keys() if k not in ("__files__")], key=str.lower)
+    def _render_tree(self, tree: Tree, lines: list, prefix: str = "") -> None:
+        dirs = sorted([k for k in tree.keys() if k not in ("__files__",)], key=str.lower)
         files = sorted(list(tree.get("__files__", [])), key=str.lower)
 
         entries = [(d, True) for d in dirs] + [(f, False) for f in files]
@@ -109,20 +111,31 @@ class RepoScanner:
             else:
                 lines.append(f"{prefix}{connector}{name}")
 
-    def _add_file_to_tree(self, abs_path: str, rel_path: str, tree_root: Dict[str, Dict], collected_files: List[str]) -> None:
-        """Adds a file and its parent directories to the tree, and appends to collected file list."""
+    def _include_file(self, abs_path: str, rel_path: str, tree_root: Tree, included_files: List[str]) -> None:
+        """
+        Includes a file in the directory tree and adds it to the collected file list.
+        Handles exclusion and file-type filtering automatically.
+        """
         if not self._is_excluded(rel_path):
             if not self.file_types or any(rel_path.endswith(ext) for ext in self.file_types):
                 parent = os.path.dirname(rel_path)
                 if parent and parent != ".":
                     self._insert_path(tree_root, parent, is_file=False)
                 self._insert_path(tree_root, rel_path, is_file=True)
-                collected_files.append(abs_path)
+                included_files.append(abs_path)
 
-    def _collect_entries(self) -> Tuple[Dict[str, Dict], List[str]]:
-        """Walks all paths once, applying exclusions and file-type filters."""
-        tree_root: Dict[str, Dict] = {}
-        collected_files: List[str] = []
+    def _collect_entries(self) -> Tuple[Tree, List[str]]:
+        """
+        Walks all provided paths (files or directories) exactly once,
+        applies exclusion patterns and file-type filters,
+        and returns a tuple of:
+          - tree_root: nested dictionary representing the directory hierarchy
+          - included_files: sorted list of absolute file paths to process
+
+        Duplicate files are automatically deduplicated to handle overlapping inputs.
+        """
+        tree_root: Tree = {}
+        included_files: List[str] = []
 
         for path in self.paths:
             if not os.path.exists(path):
@@ -147,13 +160,13 @@ class RepoScanner:
                     for f in files:
                         abs_file = os.path.join(root, f)
                         rel_file = f if rel_root == "." else f"{rel_root}/{f}"
-                        self._add_file_to_tree(abs_file, rel_file, tree_root, collected_files)
+                        self._include_file(abs_file, rel_file, tree_root, included_files)
             else:
-                self._add_file_to_tree(abs_path, rel_path, tree_root, collected_files)
+                self._include_file(abs_path, rel_path, tree_root, included_files)
 
-        return tree_root, sorted(set(collected_files))
+        return tree_root, sorted(set(included_files))
 
-    def _generate_directory_structure(self, tree_root: Dict[str, Dict]) -> str:
+    def _generate_directory_structure(self, tree_root: Tree) -> str:
         lines = ["/"]
         self._render_tree(tree_root, lines)
         return "\n".join(lines)
@@ -163,7 +176,7 @@ class RepoScanner:
         Scans the repository and writes the directory structure and file contents to the output stream.
         """
         # Phase 1: Collect all files and directory structure
-        tree_root, collected_files = self._collect_entries()
+        tree_root, included_files = self._collect_entries()
 
         # Phase 2: Render output
         normalized_paths = ", ".join(sorted(os.path.relpath(p, self.root).replace(os.sep, "/") for p in self.paths))
@@ -176,8 +189,9 @@ class RepoScanner:
         out_stream.write(self._generate_directory_structure(tree_root))
         out_stream.write("\n\n---\n\n")
 
+        # Phase 3: Dump file contents
         processed_files = set()
-        for file_path in collected_files:
+        for file_path in included_files:
             self._process_file(file_path, out_stream, processed_files)
 
     def _process_file(self, file_path: str, out_stream: IO[str], processed_files: Set[str]) -> None:
