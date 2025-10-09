@@ -255,12 +255,12 @@ class RepoScanner:
                     files.sort(key=str.lower)
                     rel_root = os.path.relpath(root, self.root).replace(os.sep, "/")
 
-                    if self.matcher.is_excluded(rel_root):
-                        continue
+                    excluded_dir = self.matcher.is_excluded(rel_root)
 
-                    if rel_root != ".":
+                    if not excluded_dir and rel_root != ".":
                         self._insert_path(tree_root, rel_root, is_file=False)
 
+                    # Always process files so negations like `!dist/keep.txt` can re-include them
                     for f in files:
                         abs_file = os.path.join(root, f)
                         rel_file = f if rel_root == "." else f"{rel_root}/{f}"
