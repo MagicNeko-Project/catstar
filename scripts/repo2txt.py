@@ -25,7 +25,26 @@ EXT_TO_LANG = {
 }
 
 SENSIBLE_DEFAULTS = [
-    ".git/", "node_modules/", "dist/", "build/", ".venv/", "__pycache__/",
+    # Version control
+    ".git/", ".svn/", ".hg/", ".CVS/",
+
+    # Dependencies and build artifacts
+    "node_modules/", "bower_components/", "vendor/",
+    "dist/", "build/", "target/", "out/", "bin/",
+    "__pycache__/", "*.pyc", "*.pyo", "*.pyd",
+    "*.egg-info/", ".eggs/",
+    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "composer.lock",
+
+    # IDE/Editor specific
+    ".vscode/", ".idea/", ".project", ".classpath", ".settings/",
+    "*.swp", "*.swo", "*~",
+
+    # OS specific
+    ".DS_Store", "Thumbs.db",
+
+    # Logs and temporary files
+    "*.log", "*.tmp", "*.temp",
+    ".venv/", "venv/", "env/",
 ]
 
 
