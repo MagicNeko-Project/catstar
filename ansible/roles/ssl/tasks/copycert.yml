@@ -3,6 +3,7 @@
   ansible.builtin.stat:
     path: "{{ cert_src | expanduser }}/{{ name }}"
   register: cert_folder
+  become: false
 
 - name: Copy certificates from cert folder
   ansible.builtin.copy:
