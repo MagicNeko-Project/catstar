@@ -1,5 +1,9 @@
 # Archive wrappers and autoload stubs
 
+tar0() { tar --numeric-owner --owner=0 --group=0 "$@" }
+tarz() { tar --zstd "$@" }
+tarz0() { tar --zstd --numeric-owner --owner=0 --group=0 "$@" }
+
 tarc19() { tarc "$1" 19 "${@:2}" }
 tarc22() { tarc "$1" 22 "${@:2}" }
 

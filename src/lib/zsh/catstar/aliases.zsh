@@ -50,6 +50,4 @@ elif (($+commands[uuidgen])); then
     alias u='uuidgen'
 fi
 
-alias tar0="tar --numeric-owner --owner=0 --group=0"
-alias tarz="tar --zstd"
-alias tarz0="tar --zstd --numeric-owner --owner=0 --group=0"
+
