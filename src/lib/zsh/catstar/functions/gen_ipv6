@@ -1,0 +1,100 @@
+# Generate a random IPv6 address within a prefix
+# Usage: gen_ipv6 [prefix/mask]
+
+local input=${1:-"fc00::/7"}
+local prefix mask
+
+# --- 1. Generous Parsing: Extract Prefix and Mask ---
+if [[ "$input" == */* ]]; then
+    prefix="${input%/*}"
+    mask="${input#*/}"
+else
+    prefix="$input"
+    # Implicit mask: Calculate based on provided hextets (1 hextet = 16 bits)
+    # e.g., 'fc00' -> 1 block -> /16, '2001:db8' -> 2 blocks -> /32
+    local -a temp_blocks=( ${(s.:.)prefix} )
+    mask=$(( ${#temp_blocks} * 16 ))
+fi
+
+# --- 2. Generous Parsing: Implicit Padding ---
+# If no '::' is present and it has fewer than 8 hextets, implicitly append '::'
+if [[ "$prefix" != *"::"* ]]; then
+    local -a check_blocks=( ${(s.:.)prefix} )
+    if (( ${#check_blocks} < 8 )); then
+        prefix="${prefix}::"
+    fi
+fi
+
+# --- 3. Input Validation Guardrails ---
+if [[ "$prefix" == *"::"*"::"* ]]; then
+    print -u2 "Error: Invalid IPv6 address (contains multiple '::')"
+    return 1
+fi
+
+# Strip colons and check for invalid hex characters
+local raw_hex="${prefix//:/}"
+if [[ -n "${raw_hex//[0-9a-fA-F]/}" ]]; then
+    print -u2 "Error: Invalid hex characters in prefix"
+    return 1
+fi
+
+if (( mask < 0 || mask > 128 )); then
+    print -u2 "Error: Subnet mask must be between 0 and 128"
+    return 1
+fi
+
+# --- 4. Expand the IPv6 Address Natively ---
+local left="${prefix%%::*}"
+local right="${prefix#*::}"
+[[ "$prefix" != *"::"* ]] && right="" # Handle edge case of no '::'
+
+local -a left_arr right_arr
+[[ -n "$left" ]] && left_arr=( ${(s.:.)left} ) || left_arr=()
+[[ -n "$right" ]] && right_arr=( ${(s.:.)right} ) || right_arr=()
+
+local missing=$(( 8 - ${#left_arr} - ${#right_arr} ))
+
+if (( missing < 0 )); then
+    print -u2 "Error: Invalid IPv6 address (more than 8 hextets)"
+    return 1
+fi
+
+local -a full_arr=( "${left_arr[@]}" )
+for (( j=0; j<missing; j++ )); do
+    full_arr+=( "0" )
+done
+full_arr+=( "${right_arr[@]}" )
+
+# --- 5. Apply Subnet Mask and Randomize ---
+local -a out_arr
+for (( i=0; i<8; i++ )); do
+    # Parse original block as base-16 integer
+    local orig=$(( 16#${full_arr[i+1]:-0} ))
+
+    # Combine two 15-bit $RANDOM variables for true 16-bit entropy
+    local r16=$(( ((RANDOM << 15) | RANDOM) & 0xFFFF ))
+
+    local start_bit=$(( i * 16 ))
+    local end_bit=$(( start_bit + 16 ))
+
+    if (( mask >= end_bit )); then
+        # Fully within the network prefix
+        out_arr+=( $(printf "%x" "$orig") )
+    elif (( mask <= start_bit )); then
+        # Fully within the host portion
+        out_arr+=( $(printf "%x" "$r16") )
+    else
+        # The subnet mask splits this specific 16-bit block
+        local net_bits=$(( mask - start_bit ))
+        local host_bits=$(( 16 - net_bits ))
+
+        local host_mask=$(( (1 << host_bits) - 1 ))
+        local net_mask=$(( ~host_mask & 0xFFFF ))
+
+        local combined=$(( (orig & net_mask) | (r16 & host_mask) ))
+        out_arr+=( $(printf "%x" "$combined") )
+    fi
+done
+
+# --- 6. Output the formatted address ---
+print "${(j.:.)out_arr}"

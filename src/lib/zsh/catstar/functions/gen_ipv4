@@ -1,0 +1,85 @@
+# Generate a random IPv4 address within a prefix
+# Usage: gen_ipv4 [prefix/mask]
+
+# Default to the 10.x.x.x private block if no argument is provided
+local input=${1:-"10.0.0.0/8"}
+local prefix mask
+
+# --- 1. Generous Parsing: Extract Prefix and Mask ---
+if [[ "$input" == */* ]]; then
+    prefix="${input%/*}"
+    mask="${input#*/}"
+else
+    prefix="$input"
+    # Implicit mask: Calculate based on provided octets (1 octet = 8 bits)
+    # e.g., '10' -> 1 block -> /8, '192.168' -> 2 blocks -> /16
+    local -a temp_blocks=( ${(s/./)prefix} )
+    mask=$(( ${#temp_blocks} * 8 ))
+fi
+
+# --- 2. Validation & Array Setup ---
+# Split the prefix by dot into an array
+local -a octets=( ${(s/./)prefix} )
+
+# Check for invalid characters (anything not a dot or number)
+local raw_num="${prefix//./}"
+if [[ -n "${raw_num//[0-9]/}" ]]; then
+    print -u2 "Error: Invalid characters in IPv4 address"
+    return 1
+fi
+
+if (( ${#octets} > 4 )); then
+    print -u2 "Error: IPv4 address cannot have more than 4 octets"
+    return 1
+fi
+
+if (( mask < 0 || mask > 32 )); then
+    print -u2 "Error: Subnet mask must be between 0 and 32"
+    return 1
+fi
+
+# Pad with zeros to ensure exactly 4 octets
+while (( ${#octets} < 4 )); do
+    octets+=( "0" )
+done
+
+# --- 3. Apply Subnet Mask and Randomize ---
+local -a out_arr
+for (( i=0; i<4; i++ )); do
+    local orig=${octets[i+1]}
+
+    if (( orig < 0 || orig > 255 )); then
+        print -u2 "Error: Octet '$orig' is out of range (0-255)"
+        return 1
+    fi
+
+    # Get an unbiased 8-bit random number (0-255)
+    local r8=$(( RANDOM & 255 ))
+
+    local start_bit=$(( i * 8 ))
+    local end_bit=$(( start_bit + 8 ))
+
+    if (( mask >= end_bit )); then
+        # Fully within the network prefix
+        out_arr+=( "$orig" )
+    elif (( mask <= start_bit )); then
+        # Fully within the host portion
+        out_arr+=( "$r8" )
+    else
+        # The subnet mask splits this specific 8-bit block
+        local net_bits=$(( mask - start_bit ))
+        local host_bits=$(( 8 - net_bits ))
+
+        # Create bitwise masks
+        local host_mask=$(( (1 << host_bits) - 1 ))
+        local net_mask=$(( ~host_mask & 255 ))
+
+        # Combine: (Original bits & Net Mask) | (Random bits & Host Mask)
+        local combined=$(( (orig & net_mask) | (r8 & host_mask) ))
+        out_arr+=( "$combined" )
+    fi
+done
+
+# --- 4. Output the formatted address ---
+# Join the array elements with dots
+print "${(j/./)out_arr}"

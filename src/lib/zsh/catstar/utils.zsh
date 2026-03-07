@@ -14,10 +14,8 @@ rL() { randstr "A-Z" "$@" }
 rh() { randstr "0-9a-f" "$@" }
 rH() { randstr "0-9A-F" "$@" }
 rp() { randstr '0-9A-Za-z!@#$%^&*()-+=' "$@" }
-r6() {
-    local r=$(rh 32)
-    print "fd${r:0:2}:${r:2:4}:${r:6:4}:${r:10:4}:${r:14:4}:${r:18:4}:${r:22:4}:${r:26:4}"
-}
+r4() { gen_ipv4 "$@" }
+r6() { gen_ipv6 "$@" }
 
 colors() {
     local i
