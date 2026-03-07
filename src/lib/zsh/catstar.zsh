@@ -3,7 +3,7 @@
 
 # Avoid polluting the global namespace during initialization.
 () {
-  local catstar_dir="${0:A:h}/catstar"
+  local catstar_dir="${1:A:h}/catstar"
 
   # 1. Performance: Setup autoloading for complex functions
   local functions_dir="$catstar_dir/functions"
