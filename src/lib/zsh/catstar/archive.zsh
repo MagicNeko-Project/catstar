@@ -43,3 +43,13 @@ mksquashfss0() {
     fi
     sudo mksquashfs "$fn" "$dst.squashfs" -comp zstd -not-reproducible -root-owned -no-xattrs
 }
+
+zip_directory() {
+    local dir=$1
+    if [[ -d "$dir" ]]; then
+        local base_name=${dir:t}
+        zip -0rj "${base_name}.zip" "$dir"
+    else
+        print -u2 "Warning: '$dir' is not a directory"
+    fi
+}
