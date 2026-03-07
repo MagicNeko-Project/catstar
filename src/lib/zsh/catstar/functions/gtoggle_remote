@@ -1,0 +1,48 @@
+# Toggle git remote between HTTP(S) and SSH
+# Usage: gtoggle_remote [remote-name]
+
+local remote_name="${1:-origin}"
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    print -u2 "Error: Not a git repository."
+    return 1
+fi
+
+local current_url=$(git remote get-url "$remote_name" 2>/dev/null)
+if [[ -z "$current_url" ]]; then
+    print -u2 "Error: Remote '$remote_name' not found."
+    return 1
+fi
+
+local new_url
+
+if [[ "$current_url" =~ ^https?://([^/]+)/(.+)$ ]]; then
+    # Convert HTTPS to SSH
+    local host="${match[1]}"
+    local path="${match[2]}"
+    # Remove .git if it's there to normalize, then re-add later if preferred?
+    # Git handles both, but usually SSH uses : and no leading /
+    new_url="git@${host}:${path}"
+    [[ "$new_url" != *.git ]] && new_url="${new_url}.git"
+    print "Switching $remote_name to SSH: $new_url"
+elif [[ "$current_url" =~ ^git@([^:]+):(.+)$ ]]; then
+    # Convert SSH to HTTPS
+    local host="${match[1]}"
+    local path="${match[2]}"
+    # Normalize host (some might use ssh://git@host/path)
+    new_url="https://${host}/${path}"
+    [[ "$new_url" != *.git ]] && new_url="${new_url}.git"
+    print "Switching $remote_name to HTTPS: $new_url"
+elif [[ "$current_url" =~ ^ssh://git@([^/]+)/(.+)$ ]]; then
+    # Convert alternative SSH format to HTTPS
+    local host="${match[1]}"
+    local path="${match[2]}"
+    new_url="https://${host}/${path}"
+    [[ "$new_url" != *.git ]] && new_url="${new_url}.git"
+    print "Switching $remote_name to HTTPS: $new_url"
+else
+    print -u2 "Error: Unsupported remote URL format: $current_url"
+    return 1
+fi
+
+git remote set-url "$remote_name" "$new_url"
