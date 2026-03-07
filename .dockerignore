@@ -1,0 +1,22 @@
+# Exclude sensitive keys
+keys/
+
+# Exclude Git metadata
+.git/
+.github/
+.gitignore
+
+# Exclude local development and OS-specific files
+.DS_Store
+*.log
+tmp/
+
+# Exclude Python build/cache artifacts
+__pycache__/
+*.pyc
+
+# Exclude the dockerignore itself
+.dockerignore
+
+# Exclude Zsh/Shell helper source (if they are only for local machine use)
+# src/lib/zsh/
