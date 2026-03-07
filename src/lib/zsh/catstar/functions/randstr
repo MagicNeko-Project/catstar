@@ -1,0 +1,12 @@
+# Generate a random string using Zsh native dev/urandom reading
+# Usage: randstr [charset] [length] [count]
+
+local char="${1:-0-9a-z}"
+local len="${2:-16}"
+local count="${3:-1}"
+
+local i
+for i in {1..$count}; do
+    tr -dc "$char" < /dev/urandom | head -c "$len"
+    print
+done

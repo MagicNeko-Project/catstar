@@ -1,0 +1,36 @@
+# Split a large file into parts
+# Usage: split_file <file_path> [max_part_size_in_MB]
+
+if (( $# == 0 )); then
+    print -u2 "Usage: split_file <file_path> [max_part_size_in_MB]"
+    return 1
+fi
+
+local filepath=$1
+if [[ ! -f "$filepath" ]]; then
+    print -u2 "Error: File '$filepath' does not exist."
+    return 1
+fi
+
+local max_part_size="${2:-2000}"
+if [[ ! "$max_part_size" =~ ^[0-9]+$ ]]; then
+    print -u2 "Error: max_part_size must be a positive integer."
+    return 1
+fi
+
+local prefix="$filepath."
+if [[ -f "${prefix}001" ]]; then
+    print -u2 "${prefix}001 already exists."
+    return 0
+fi
+
+local filesize=$(stat -f%z "$filepath" 2>/dev/null || stat -c%s "$filepath")
+local max_part_size_bytes=$((max_part_size * 1024 * 1024))
+local parts=$(( (filesize + max_part_size_bytes - 1) / max_part_size_bytes ))
+
+if (( parts <= 1 )); then
+    print "Warning: File size is less than specified part size. No split required."
+    return 0
+fi
+
+split -n "$parts" --numeric-suffixes=1 -a 3 "$filepath" "$prefix"

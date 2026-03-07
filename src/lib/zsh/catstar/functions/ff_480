@@ -1,0 +1,14 @@
+# FFmpeg helper for 480p conversion
+# Usage: ff_480 <input_file>
+
+if (( $# == 0 )); then
+  print -u2 "Usage: ff_480 <input_file>"
+  return 1
+fi
+
+local input=$1
+local output="${input%.*}.mp4"
+
+ffmpeg -i "$input" -map-metadata -1 -c:v libx264 -crf 21 -preset faster \
+  -pix_fmt yuv420p -vf 'scale=-2:480' -movflags +faststart \
+  -c:a aac -b:a 128k "$output"

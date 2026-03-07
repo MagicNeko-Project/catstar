@@ -1,0 +1,16 @@
+# FFmpeg helper for LBRY/Odysee compatible uploads
+# Usage: ff_lbry <input_file> [output_file]
+
+if (( $# == 0 )); then
+  print -u2 "Usage: ff_lbry <input_file> [output_file]"
+  return 1
+fi
+
+local input=$1
+local default_output="${input%.*}.mp4"
+local output="${2:-$default_output}"
+
+ffmpeg -i "$input" -map-metadata -1 -c:v libx264 -crf 21 -preset faster \
+  -pix_fmt yuv420p -maxrate 5000K -bufsize 5000K \
+  -vf 'scale=if(gte(iw\,ih)\,min(1920\,iw)\,-2):if(lt(iw\,ih)\,min(1920\,ih)\,-2)' \
+  -movflags +faststart -c:a aac -b:a 128k "$output"

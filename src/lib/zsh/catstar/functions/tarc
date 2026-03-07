@@ -1,0 +1,36 @@
+# Create a tar archive with modern native flags
+# Usage: tarc <filename> [compression_level] [extra_args...]
+
+if (( $# == 0 )); then
+    print -u2 "Error: No filename provided. Please specify the file or directory to archive."
+    return 1
+fi
+
+local fn=$1
+shift
+
+local compression_level=${1:-}
+[[ -n $compression_level ]] && shift
+
+local dst="$fn.tar.zst"
+if [[ -f $dst ]]; then
+    print -u2 "$dst already exists."
+    return 1
+fi
+
+local -a tar_opts=(--zstd --numeric-owner --owner=0 --group=0 --sort=name -cvf "$dst" "$fn")
+
+if [[ -n $compression_level ]]; then
+    # ZSH_OPTIONS can be used to pass environment variables to the zstd compressor
+    # For modern tar with --zstd, we use ZSTD_CLEVEL or similar if needed,
+    # but for simplicity and compatibility with the requested refactor,
+    # we can use the environment variable strategy if the system's tar supports it.
+    # Alternatively, we can use the --use-compress-program if we want to be explicit.
+    if (( compression_level >= 20 )); then
+        tar_opts=(--use-compress-program="zstd --long --ultra -$compression_level" "${tar_opts[@]:1}")
+    else
+        tar_opts=(--use-compress-program="zstd --long -$compression_level" "${tar_opts[@]:1}")
+    fi
+fi
+
+tar "${tar_opts[@]}" "$@"

@@ -1,0 +1,22 @@
+# Set local git configuration from commit author
+# Usage: gcauthor [commit-ref]
+
+local commit_ref="${1:-HEAD}"
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    print -u2 "Error: Not a git repository."
+    return 1
+fi
+
+if ! git rev-parse --verify --quiet "$commit_ref^{commit}" >/dev/null; then
+    print -u2 "Error: '$commit_ref' is not a valid commit reference."
+    return 1
+fi
+
+local author_name=$(git show -s --format='%an' "$commit_ref")
+local author_email=$(git show -s --format='%ae' "$commit_ref")
+
+git config user.name "$author_name"
+git config user.email "$author_email"
+
+print "Git user set to: $author_name <$author_email>"
