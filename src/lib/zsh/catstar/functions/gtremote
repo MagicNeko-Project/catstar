@@ -25,27 +25,27 @@ if [[ -z "$current_url" ]]; then
 fi
 
 # --- 2. Pure Zsh URL Parsing ---
-local host path new_url stripped
+local host url_path new_url stripped
 
 if [[ "$current_url" == http://* || "$current_url" == https://* ]]; then
     # Action: Convert HTTP(S) -> SSH
     stripped="${current_url#*://}" # Strip http:// or https://
     host="${stripped%%/*}"         # Extract everything before first '/'
-    path="${stripped#*/}"          # Extract everything after first '/'
+    url_path="${stripped#*/}"          # Extract everything after first '/'
 
     # Strip any embedded credentials (e.g., user:pass@github.com)
     host="${host##*@}"
 
-    new_url="git@${host}:${path}"
+    new_url="git@${host}:${url_path}"
     print "Switched '$remote_name' to SSH: $new_url"
 
 elif [[ "$current_url" == git@* ]]; then
     # Action: Convert Standard SSH -> HTTPS
     stripped="${current_url#git@}" # Strip git@
     host="${stripped%%:*}"         # Extract everything before first ':'
-    path="${stripped#*:}"          # Extract everything after first ':'
+    url_path="${stripped#*:}"          # Extract everything after first ':'
 
-    new_url="https://${host}/${path}"
+    new_url="https://${host}/${url_path}"
     print "Switched '$remote_name' to HTTPS: $new_url"
 
 elif [[ "$current_url" == ssh://* ]]; then
@@ -53,9 +53,9 @@ elif [[ "$current_url" == ssh://* ]]; then
     stripped="${current_url#ssh://}"
     stripped="${stripped#git@}"    # Strip optional git@ user
     host="${stripped%%/*}"         # Extract everything before first '/'
-    path="${stripped#*/}"          # Extract everything after first '/'
+    url_path="${stripped#*/}"          # Extract everything after first '/'
 
-    new_url="https://${host}/${path}"
+    new_url="https://${host}/${url_path}"
     print "Switched '$remote_name' to HTTPS: $new_url"
 
 else
