@@ -169,6 +169,7 @@ class RepoScanner:
     """
 
     def __init__(self, paths: List[str], exclusion_file: Optional[str] = None,
+                 content_exclusion_file: Optional[str] = None,
                  file_types: Optional[List[str]] = None,
                  use_sensible_defaults: bool = False,
                  debug_exclude: bool = False):
@@ -176,6 +177,7 @@ class RepoScanner:
         self.root = os.getcwd()
         self.file_types = file_types
         self.matcher = self._create_matcher(exclusion_file, use_sensible_defaults, debug_exclude)
+        self.content_matcher = self._create_matcher(content_exclusion_file, False, debug_exclude)
 
     def _create_matcher(self, exclusion_file: Optional[str], use_sensible_defaults: bool, debug: bool) -> GitignoreMatcher:
         patterns: List[str] = []
@@ -331,10 +333,15 @@ class RepoScanner:
         out_stream.write(f"# FILE: {file_rel_path}\n")
         if is_binary:
             out_stream.write(f"LANG: binary\nSIZE: {byte_len} bytes\n\n")
-            out_stream.write("# BINARY FILE (skipped)\n")
         else:
             lang = self._get_language(file_path)
             out_stream.write(f"LANG: {lang}\nSIZE: {line_count} lines\n\n")
+
+        if self.content_matcher.is_excluded(file_rel_path):
+            out_stream.write("# CONTENT EXCLUDED\n")
+        elif is_binary:
+            out_stream.write("# BINARY FILE (skipped)\n")
+        else:
             fence = "````" if "```" in content else "```"
             out_stream.write(f"{fence}{lang}\n{content}\n{fence}\n")
 
@@ -353,6 +360,7 @@ def main() -> None:
     parser.add_argument('paths', nargs='+', help='One or more file or directory paths to include.')
     parser.add_argument('-o', '--output', type=str, help='Optional output file (defaults to stdout).')
     parser.add_argument('-e', '--exclusion-file', type=str, help='Path to a .gitignore-style exclusion file.')
+    parser.add_argument('--content-exclusion-file', type=str, help='Path to a .gitignore-style exclusion file for content only.')
     parser.add_argument('-t', '--file-types', type=str, nargs='*', help='File extensions to include.')
     parser.add_argument('--sensible-defaults', action='store_true', help='Exclude common noise like .git, node_modules.')
     parser.add_argument('--debug-exclude', action='store_true', help='Print debug information for excluded files.')
@@ -361,6 +369,7 @@ def main() -> None:
     scanner = RepoScanner(
         paths=args.paths,
         exclusion_file=args.exclusion_file,
+        content_exclusion_file=args.content_exclusion_file,
         file_types=args.file_types,
         use_sensible_defaults=args.sensible_defaults,
         debug_exclude=args.debug_exclude
