@@ -65,6 +65,10 @@ class GitignoreMatcher:
 
     @staticmethod
     def _norm_posix(p: str) -> str:
+        """
+        Normalizes paths to use forward slashes and removes leading/trailing slashes.
+        This ensures consistency across OS platforms and simplifies matching.
+        """
         p = p.replace("\\", "/")
         if p.startswith("./"):
             p = p[2:]
@@ -74,7 +78,12 @@ class GitignoreMatcher:
 
     @staticmethod
     def _parse_line(line: str) -> Optional[str]:
+        """
+        Parses a single line from a .gitignore file.
+        Handles comments (#), whitespace stripping, and escapes.
+        """
         line = line.rstrip("\n\r")
+        # Strip trailing unescaped spaces
         i = len(line) - 1
         while i >= 0 and line[i] == " ":
             if i > 0 and line[i-1] == "\\":
@@ -88,17 +97,24 @@ class GitignoreMatcher:
         if not line:
             return None
 
+        # Handle escaped # (literal pound) vs comment #
         if line.startswith(r"\#"):
             line = line[1:]
         elif line.lstrip().startswith("#"):
             return None
 
+        # Handle escaped ! (literal exclamation) vs negation marker
         if line.startswith(r"\!"):
-            return "\x00" + line[2:]
+            return "\x00" + line[2:] # Use null byte as a marker for literal '!' for later processing
 
         return GitignoreMatcher._norm_posix(line) if line else None
 
     def _compile_rule(self, raw: str) -> Rule:
+        """
+        Translates a .gitignore glob pattern into a compiled regex object.
+        This is the core engine for matching paths.
+        """
+        # 1. Detect negation and extract pure pattern
         if raw.startswith("\x00"):
             neg = False
             pat = "!" + raw[1:]
@@ -106,14 +122,17 @@ class GitignoreMatcher:
             neg = raw.startswith("!")
             pat = raw[1:] if neg else raw
 
+        # 2. Detect anchoring (starts with / means it matches from the root)
         anchored = pat.startswith("/")
         if anchored:
             pat = pat.lstrip("/")
 
+        # 3. Detect directory-only constraints (ends with /)
         dir_only = pat.endswith("/")
         if dir_only:
             pat = pat.rstrip("/")
 
+        # 4. Convert glob symbols to regex syntax
         special = r".^$+{}()|"
         esc = []
         i = 0
@@ -121,33 +140,45 @@ class GitignoreMatcher:
             c = pat[i]
             if c == "*":
                 if i + 1 < len(pat) and pat[i+1] == "*":
+                    # Double asterisk '**' matches any sequence of characters across directories
                     esc.append(".*")
                     i += 2
                     continue
                 else:
+                    # Single asterisk '*' matches anything except directory separator '/'
                     esc.append("[^/]*")
             elif c == "?":
+                # Question mark '?' matches a single character except directory separator '/'
                 esc.append("[^/]")
             elif c in special:
+                # Escape standard regex meta-characters
                 esc.append("\\" + c)
             else:
                 esc.append(c)
             i += 1
         core = "".join(esc)
 
+        # 5. Handle directory traversal (match anything underneath if it's a dir rule)
         if dir_only:
             tail = r"(?:/.*)?"
         else:
             tail = r"(?:/.*)?"
 
+        # 6. Final regex assembly based on anchoring
         if anchored:
+            # Anchored to root: matches 'core' at start of path
             regex = rf"^(?:{core}){tail}$"
         else:
+            # Unanchored: can match anywhere in the path (e.g. 'foo/bar' matches 'src/foo/bar')
             regex = rf"^(?:.*?/)*(?:{core}){tail}$"
 
         return Rule(raw=raw, negated=neg, anchored=anchored, dir_only=dir_only, pattern=pat, regex=re.compile(regex))
 
     def is_excluded(self, rel_path: str) -> bool:
+        """
+        Checks if a path is excluded by any of the rules.
+        Standard gitignore precedence: the LAST matching rule wins.
+        """
         path = self._norm_posix(rel_path)
         if not path:
             return False
@@ -214,6 +245,10 @@ class RepoScanner:
             return None, 0, True, len(data)
 
     def _insert_path(self, tree: Tree, rel_path: str, is_file: bool) -> None:
+        """
+        Builds a nested dictionary (trie structure) representing the filesystem.
+        Leaves are stored in a special '__files__' set key at each node level.
+        """
         parts = [p for p in self.matcher._norm_posix(rel_path).split("/") if p]
         node = tree
         for i, part in enumerate(parts):
@@ -255,10 +290,11 @@ class RepoScanner:
         Walks all provided paths (files or directories) exactly once,
         applies exclusion patterns and file-type filters,
         and returns a tuple of:
-          - tree_root: nested dictionary representing the directory hierarchy
-          - included_files: sorted list of absolute file paths to process
+          - tree_root: nested dictionary representing the directory hierarchy (for tree drawing)
+          - included_files: deduplicated list of absolute file paths to dump (for content dumping)
 
-        Duplicate files are automatically deduplicated to handle overlapping inputs.
+        This separates discovery (finding files) from rendering (printing them) to ensure
+        correctness and avoid processing overlapping directories twice.
         """
         tree_root: Tree = {}
         included_files: List[str] = []
@@ -271,6 +307,7 @@ class RepoScanner:
             rel_path = os.path.relpath(abs_path, self.root).replace(os.sep, "/")
 
             if os.path.isdir(abs_path):
+                # Using os.walk to find all children recursively
                 for root, dirs, files in os.walk(abs_path, topdown=True):
                     dirs.sort(key=str.lower)
                     files.sort(key=str.lower)
