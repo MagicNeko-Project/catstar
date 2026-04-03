@@ -200,17 +200,19 @@ class RepoScanner:
     """
 
     def __init__(self, paths: List[str], exclusion_file: Optional[str] = None,
+                 exclusion_patterns: Optional[List[str]] = None,
                  content_exclusion_file: Optional[str] = None,
+                 content_exclusion_patterns: Optional[List[str]] = None,
                  file_types: Optional[List[str]] = None,
                  use_sensible_defaults: bool = False,
                  debug_exclude: bool = False):
         self.paths = sorted(list(set(paths)))
         self.root = os.getcwd()
         self.file_types = file_types
-        self.matcher = self._create_matcher(exclusion_file, use_sensible_defaults, debug_exclude)
-        self.content_matcher = self._create_matcher(content_exclusion_file, False, debug_exclude)
+        self.matcher = self._create_matcher(exclusion_file, exclusion_patterns, use_sensible_defaults, debug_exclude)
+        self.content_matcher = self._create_matcher(content_exclusion_file, content_exclusion_patterns, False, debug_exclude)
 
-    def _create_matcher(self, exclusion_file: Optional[str], use_sensible_defaults: bool, debug: bool) -> GitignoreMatcher:
+    def _create_matcher(self, exclusion_file: Optional[str], extra_patterns: Optional[List[str]], use_sensible_defaults: bool, debug: bool) -> GitignoreMatcher:
         patterns: List[str] = []
         if use_sensible_defaults:
             patterns.extend(SENSIBLE_DEFAULTS)
@@ -221,6 +223,13 @@ class RepoScanner:
                     parsed = GitignoreMatcher._parse_line(raw)
                     if parsed is not None:
                         patterns.append(parsed)
+
+        if extra_patterns:
+            for pat in extra_patterns:
+                parsed = GitignoreMatcher._parse_line(pat)
+                if parsed is not None:
+                    patterns.append(parsed)
+
         return GitignoreMatcher(patterns, debug)
 
     def _get_language(self, file_path: str) -> str:
@@ -397,7 +406,9 @@ def main() -> None:
     parser.add_argument('paths', nargs='+', help='One or more file or directory paths to include.')
     parser.add_argument('-o', '--output', type=str, help='Optional output file (defaults to stdout).')
     parser.add_argument('-e', '--exclusion-file', type=str, help='Path to a .gitignore-style exclusion file.')
+    parser.add_argument('--exclude', type=str, nargs='*', help='One or more .gitignore-style exclusion patterns.')
     parser.add_argument('--content-exclusion-file', type=str, help='Path to a .gitignore-style exclusion file for content only.')
+    parser.add_argument('--exclude-content', type=str, nargs='*', help='One or more .gitignore-style exclusion patterns for content only.')
     parser.add_argument('-t', '--file-types', type=str, nargs='*', help='File extensions to include.')
     parser.add_argument('--sensible-defaults', action='store_true', help='Exclude common noise like .git, node_modules.')
     parser.add_argument('--debug-exclude', action='store_true', help='Print debug information for excluded files.')
@@ -406,7 +417,9 @@ def main() -> None:
     scanner = RepoScanner(
         paths=args.paths,
         exclusion_file=args.exclusion_file,
+        exclusion_patterns=args.exclude,
         content_exclusion_file=args.content_exclusion_file,
+        content_exclusion_patterns=args.exclude_content,
         file_types=args.file_types,
         use_sensible_defaults=args.sensible_defaults,
         debug_exclude=args.debug_exclude
