@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-# This script dumps the contents of a Git repository into a single file.
-# It's designed to make it easier to use repository content in RAG systems
-# or as part of prompts for Large Language Models (LLMs).
-# Copied from https://github.com/artkulak/repo2file
-import os
-import sys
+"""
+This script dumps the contents of a Git repository into a single file.
+It's designed to make it easier to use repository content in RAG systems
+or as part of prompts for Large Language Models (LLMs).
+Copied and heavily optimized from https://github.com/artkulak/repo2file
+"""
+
 import argparse
+import os
 import re
+import sys
 from dataclasses import dataclass
-from typing import List, Set, Optional, Tuple, IO, Dict, Pattern
 from datetime import datetime, timezone
+from typing import Dict, IO, List, Optional, Pattern, Set, Tuple
 
-
+# Tree type alias for the directory structure representation
 Tree = Dict[str, Dict]
 
 EXT_TO_LANG = {
@@ -50,6 +53,7 @@ SENSIBLE_DEFAULTS = [
 
 @dataclass(frozen=True)
 class Rule:
+    """Represents a compiled .gitignore-style rule."""
     raw: str
     negated: bool
     anchored: bool
@@ -59,6 +63,8 @@ class Rule:
 
 
 class GitignoreMatcher:
+    """Handles parsing and matching paths against .gitignore-style rules."""
+    
     def __init__(self, patterns: List[str], debug: bool = False):
         self.rules = [self._compile_rule(p) for p in patterns]
         self.debug = debug
@@ -83,16 +89,17 @@ class GitignoreMatcher:
         Handles comments (#), whitespace stripping, and escapes.
         """
         line = line.rstrip("\n\r")
+        
         # Strip trailing unescaped spaces
         i = len(line) - 1
         while i >= 0 and line[i] == " ":
-            if i > 0 and line[i-1] == "\\":
-                line = line[:i-1] + line[i:]
+            if i > 0 and line[i - 1] == "\\":
+                line = line[:i - 1] + line[i:]
                 i -= 2
                 break
             i -= 1
         else:
-            line = line[:i+1]
+            line = line[:i + 1]
 
         if not line:
             return None
@@ -105,7 +112,8 @@ class GitignoreMatcher:
 
         # Handle escaped ! (literal exclamation) vs negation marker
         if line.startswith(r"\!"):
-            return "\x00" + line[2:] # Use null byte as a marker for literal '!' for later processing
+            # Use null byte as a marker for literal '!' for later processing
+            return "\x00" + line[2:] 
 
         return GitignoreMatcher._norm_posix(line) if line else None
 
@@ -139,16 +147,16 @@ class GitignoreMatcher:
         while i < len(pat):
             c = pat[i]
             if c == "*":
-                if i + 1 < len(pat) and pat[i+1] == "*":
-                    # Double asterisk '**' matches any sequence of characters across directories
+                if i + 1 < len(pat) and pat[i + 1] == "*":
+                    # Double asterisk '**' matches any sequence of characters
                     esc.append(".*")
                     i += 2
                     continue
                 else:
-                    # Single asterisk '*' matches anything except directory separator '/'
+                    # Single asterisk '*' matches anything except directory separator
                     esc.append("[^/]*")
             elif c == "?":
-                # Question mark '?' matches a single character except directory separator '/'
+                # Question mark '?' matches a single character except separator
                 esc.append("[^/]")
             elif c in special:
                 # Escape standard regex meta-characters
@@ -158,21 +166,25 @@ class GitignoreMatcher:
             i += 1
         core = "".join(esc)
 
-        # 5. Handle directory traversal (match anything underneath if it's a dir rule)
-        if dir_only:
-            tail = r"(?:/.*)?"
-        else:
-            tail = r"(?:/.*)?"
+        # 5. Handle directory traversal
+        tail = r"(?:/.*)?"
 
         # 6. Final regex assembly based on anchoring
         if anchored:
             # Anchored to root: matches 'core' at start of path
             regex = rf"^(?:{core}){tail}$"
         else:
-            # Unanchored: can match anywhere in the path (e.g. 'foo/bar' matches 'src/foo/bar')
+            # Unanchored: can match anywhere in the path
             regex = rf"^(?:.*?/)*(?:{core}){tail}$"
 
-        return Rule(raw=raw, negated=neg, anchored=anchored, dir_only=dir_only, pattern=pat, regex=re.compile(regex))
+        return Rule(
+            raw=raw, 
+            negated=neg, 
+            anchored=anchored, 
+            dir_only=dir_only, 
+            pattern=pat, 
+            regex=re.compile(regex)
+        )
 
     def is_excluded(self, rel_path: str) -> bool:
         """
@@ -190,7 +202,46 @@ class GitignoreMatcher:
                 if self.debug:
                     state = "EXCLUDE" if decision else "INCLUDE"
                     print(f"[exclude] {state}: path='{path}' matched rule='{rule.raw}'", file=sys.stderr)
+        
         return bool(decision)
+
+    def can_skip_dir(self, rel_dir: str) -> bool:
+        """
+        Returns True if the directory is excluded and we can safely skip 
+        descending into it during os.walk. This is True if it's excluded, 
+        AND no subsequent negation rules could possibly match inside it.
+        """
+        path = self._norm_posix(rel_dir)
+        if not path:
+            return False
+
+        excluded = False
+        last_match_idx = -1
+        
+        # 1. Check if the directory itself is currently excluded
+        for i, rule in enumerate(self.rules):
+            if rule.regex.match(path):
+                excluded = not rule.negated
+                last_match_idx = i
+                
+        if not excluded:
+            return False
+            
+        # 2. Check if ANY negation rule AFTER the matching exclusion rule could re-include contents.
+        for i in range(last_match_idx + 1, len(self.rules)):
+            rule = self.rules[i]
+            if rule.negated:
+                # If the negation is unanchored or has glob chars, it might match anywhere inside
+                if not rule.anchored or any(c in rule.pattern for c in "*?[]"):
+                    return False
+                
+                # If it's an anchored literal path, verify if it overlaps with `path`
+                if (rule.pattern.startswith(path + "/") or 
+                    path.startswith(rule.pattern + "/") or 
+                    rule.pattern == path):
+                    return False
+
+        return True
 
 
 class RepoScanner:
@@ -199,20 +250,35 @@ class RepoScanner:
     in an LLM-optimized format.
     """
 
-    def __init__(self, paths: List[str], exclusion_file: Optional[str] = None,
-                 exclusion_patterns: Optional[List[str]] = None,
-                 content_exclusion_file: Optional[str] = None,
-                 content_exclusion_patterns: Optional[List[str]] = None,
-                 file_types: Optional[List[str]] = None,
-                 use_sensible_defaults: bool = False,
-                 debug_exclude: bool = False):
+    def __init__(
+        self, 
+        paths: List[str], 
+        exclusion_file: Optional[str] = None,
+        exclusion_patterns: Optional[List[str]] = None,
+        content_exclusion_file: Optional[str] = None,
+        content_exclusion_patterns: Optional[List[str]] = None,
+        file_types: Optional[List[str]] = None,
+        use_sensible_defaults: bool = False,
+        debug_exclude: bool = False
+    ):
         self.paths = sorted(list(set(paths)))
         self.root = os.getcwd()
         self.file_types = file_types
-        self.matcher = self._create_matcher(exclusion_file, exclusion_patterns, use_sensible_defaults, debug_exclude)
-        self.content_matcher = self._create_matcher(content_exclusion_file, content_exclusion_patterns, False, debug_exclude)
+        self.matcher = self._create_matcher(
+            exclusion_file, exclusion_patterns, use_sensible_defaults, debug_exclude
+        )
+        self.content_matcher = self._create_matcher(
+            content_exclusion_file, content_exclusion_patterns, False, debug_exclude
+        )
 
-    def _create_matcher(self, exclusion_file: Optional[str], extra_patterns: Optional[List[str]], use_sensible_defaults: bool, debug: bool) -> GitignoreMatcher:
+    def _create_matcher(
+        self, 
+        exclusion_file: Optional[str], 
+        extra_patterns: Optional[List[str]], 
+        use_sensible_defaults: bool, 
+        debug: bool
+    ) -> GitignoreMatcher:
+        """Helper to construct a GitignoreMatcher with all rules loaded."""
         patterns: List[str] = []
         if use_sensible_defaults:
             patterns.extend(SENSIBLE_DEFAULTS)
@@ -233,9 +299,7 @@ class RepoScanner:
         return GitignoreMatcher(patterns, debug)
 
     def _get_language(self, file_path: str) -> str:
-        """
-        Infers the programming language from the file extension.
-        """
+        """Infers the programming language from the file extension."""
         _, ext = os.path.splitext(file_path)
         return EXT_TO_LANG.get(ext, "text")
 
@@ -267,7 +331,8 @@ class RepoScanner:
             else:
                 node = node.setdefault(part, {})
 
-    def _render_tree(self, tree: Tree, lines: list, prefix: str = "") -> None:
+    def _render_tree(self, tree: Tree, lines: List[str], prefix: str = "") -> None:
+        """Recursively formats the Tree object into tree-like string output."""
         dirs = sorted([k for k in tree.keys() if k not in ("__files__",)], key=str.lower)
         files = sorted(list(tree.get("__files__", [])), key=str.lower)
 
@@ -299,11 +364,8 @@ class RepoScanner:
         Walks all provided paths (files or directories) exactly once,
         applies exclusion patterns and file-type filters,
         and returns a tuple of:
-          - tree_root: nested dictionary representing the directory hierarchy (for tree drawing)
-          - included_files: deduplicated list of absolute file paths to dump (for content dumping)
-
-        This separates discovery (finding files) from rendering (printing them) to ensure
-        correctness and avoid processing overlapping directories twice.
+          - tree_root: nested dictionary representing the directory hierarchy
+          - included_files: deduplicated list of absolute file paths to dump
         """
         tree_root: Tree = {}
         included_files: List[str] = []
@@ -322,6 +384,19 @@ class RepoScanner:
                     files.sort(key=str.lower)
                     rel_root = os.path.relpath(root, self.root).replace(os.sep, "/")
 
+                    # In-place filtering of directories to aggressively prevent
+                    # descent into excluded dirs (unless a negation rule forces it)
+                    dirs_to_keep = []
+                    for d in dirs:
+                        rel_d = d if rel_root == "." else f"{rel_root}/{d}"
+                        if self.matcher.can_skip_dir(rel_d):
+                            if self.matcher.debug:
+                                print(f"[exclude] SKIP DIR : path='{rel_d}'", file=sys.stderr)
+                            # Directory pruned from traversal
+                        else:
+                            dirs_to_keep.append(d)
+                    dirs[:] = dirs_to_keep
+
                     excluded_dir = self.matcher.is_excluded(rel_root)
 
                     if not excluded_dir and rel_root != ".":
@@ -338,19 +413,23 @@ class RepoScanner:
         return tree_root, sorted(set(included_files))
 
     def _generate_directory_structure(self, tree_root: Tree) -> str:
+        """Converts the Tree to a string representation."""
         lines = ["/"]
         self._render_tree(tree_root, lines)
         return "\n".join(lines)
 
     def scan_and_dump(self, out_stream: IO[str]) -> None:
         """
-        Scans the repository and writes the directory structure and file contents to the output stream.
+        Scans the repository and writes the directory structure and file contents 
+        to the output stream.
         """
         # Phase 1: Collect all files and directory structure
         tree_root, included_files = self._collect_entries()
 
         # Phase 2: Render output
-        normalized_paths = ", ".join(sorted(os.path.relpath(p, self.root).replace(os.sep, "/") for p in self.paths))
+        normalized_paths = ", ".join(
+            sorted(os.path.relpath(p, self.root).replace(os.sep, "/") for p in self.paths)
+        )
         out_stream.write("# Repository Overview\n")
         out_stream.write(f"Root: {self.root}\n")
         out_stream.write(f"Included Paths: {normalized_paths}\n")
@@ -388,30 +467,29 @@ class RepoScanner:
         elif is_binary:
             out_stream.write("# BINARY FILE (skipped)\n")
         else:
-            fence = "````" if "```" in content else "```"
-            out_stream.write(f"{fence}{lang}\n{content}\n{fence}\n")
+            fence = "````" if content and "```" in content else "```"
+            out_stream.write(f"{fence}{lang}\n{content if content else ''}\n{fence}\n")
 
         out_stream.write("\n# END FILE\n\n---\n\n")
         processed_files.add(abs_path)
 
 
 def main() -> None:
-    """
-    Main function to parse arguments and run the repository scanner.
-    """
+    """Main function to parse arguments and run the repository scanner."""
     parser = argparse.ArgumentParser(
-        description='Scan files and directories and write the contents to an LLM-optimized output.',
+        description="Scan files and directories and write the contents to an LLM-optimized output.",
         formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument('paths', nargs='+', help='One or more file or directory paths to include.')
-    parser.add_argument('-o', '--output', type=str, help='Optional output file (defaults to stdout).')
-    parser.add_argument('-e', '--exclusion-file', type=str, help='Path to a .gitignore-style exclusion file.')
-    parser.add_argument('--exclude', type=str, nargs='*', help='One or more .gitignore-style exclusion patterns.')
-    parser.add_argument('--content-exclusion-file', type=str, help='Path to a .gitignore-style exclusion file for content only.')
-    parser.add_argument('--exclude-content', type=str, nargs='*', help='One or more .gitignore-style exclusion patterns for content only.')
-    parser.add_argument('-t', '--file-types', type=str, nargs='*', help='File extensions to include.')
-    parser.add_argument('--sensible-defaults', action='store_true', help='Exclude common noise like .git, node_modules.')
-    parser.add_argument('--debug-exclude', action='store_true', help='Print debug information for excluded files.')
+    parser.add_argument("paths", nargs="+", help="One or more file or directory paths to include.")
+    parser.add_argument("-o", "--output", type=str, help="Optional output file (defaults to stdout).")
+    parser.add_argument("-e", "--exclusion-file", type=str, help="Path to a .gitignore-style exclusion file.")
+    parser.add_argument("--exclude", type=str, nargs="*", help="One or more .gitignore-style exclusion patterns.")
+    parser.add_argument("--content-exclusion-file", type=str, help="Path to a .gitignore-style exclusion file for content only.")
+    parser.add_argument("--exclude-content", type=str, nargs="*", help="One or more .gitignore-style exclusion patterns for content only.")
+    parser.add_argument("-t", "--file-types", type=str, nargs="*", help="File extensions to include.")
+    parser.add_argument("--sensible-defaults", action="store_true", help="Exclude common noise like .git, node_modules.")
+    parser.add_argument("--debug-exclude", action="store_true", help="Print debug information for excluded files.")
+    
     args = parser.parse_args()
 
     scanner = RepoScanner(
@@ -426,7 +504,7 @@ def main() -> None:
     )
 
     if args.output:
-        with open(args.output, 'w', encoding='utf-8') as out_stream:
+        with open(args.output, "w", encoding="utf-8") as out_stream:
             scanner.scan_and_dump(out_stream)
     else:
         scanner.scan_and_dump(sys.stdout)
