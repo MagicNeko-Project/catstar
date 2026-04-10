@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/MagicNeko-Project/catstar-backup/internal/backup"
@@ -65,9 +67,13 @@ func main() {
 	// 5. Build and Run Orchestrator
 	orchestrator := backup.NewOrchestrator(cfg, logger, notifier, engines)
 
-	// Global context with a safety timeout (e.g., 12 hours)
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Hour)
-	defer cancel()
+	// Global context bound to OS signals for graceful shutdown
+	ctx, cancelSignal := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancelSignal()
+
+	// Wrap the signal context with a safety timeout (e.g., 12 hours)
+	ctx, cancelTimeout := context.WithTimeout(ctx, 12*time.Hour)
+	defer cancelTimeout()
 
 	backupBegin := time.Now()
 	

@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"testing"
 )
 
@@ -18,20 +17,21 @@ func TestGetEnvBool(t *testing.T) {
 		{"Falsy 0", "0", true, false},
 		{"Falsy false", "false", true, false},
 		{"Falsy no", "no", true, false},
-		{"Empty string", "", true, true}, // empty string parsing fails, returns fallback
+		{"Empty string", "", true, true},
 		{"Invalid string", "invalid", true, true},
 		{"Unset", "UNSET", false, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Construct a unique key so previous test runs don't interfere
+			envKey := "TEST_ENV_BOOL_" + tt.name
+			
 			if tt.envVal != "UNSET" {
-				t.Setenv("TEST_ENV_BOOL", tt.envVal)
-			} else {
-				os.Unsetenv("TEST_ENV_BOOL")
+				t.Setenv(envKey, tt.envVal)
 			}
 
-			result := getEnvBool("TEST_ENV_BOOL", tt.fallback)
+			result := getEnvBool(envKey, tt.fallback)
 			if result != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, result)
 			}
@@ -40,9 +40,6 @@ func TestGetEnvBool(t *testing.T) {
 }
 
 func TestLoadAndValidate(t *testing.T) {
-	// Clear environments to prevent host contamination
-	os.Clearenv()
-
 	t.Run("Valid Configuration", func(t *testing.T) {
 		t.Setenv("MACHINE_NAME", "TestNode")
 		t.Setenv("TELEGRAM_BOT_TOKEN", "12345:ABCDEF")
@@ -67,9 +64,9 @@ func TestLoadAndValidate(t *testing.T) {
 	})
 
 	t.Run("Invalid Telegram Configuration", func(t *testing.T) {
-		os.Clearenv()
 		t.Setenv("TELEGRAM_BOT_TOKEN", "12345:ABCDEF")
-		// Missing TELEGRAM_BOT_SendMsg_User
+		// Explicitly blank out the dependent field
+		t.Setenv("TELEGRAM_BOT_SendMsg_User", "")
 
 		_, err := Load()
 		if err == nil {

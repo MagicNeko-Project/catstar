@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/MagicNeko-Project/catstar-backup/internal/config"
@@ -84,10 +85,23 @@ func TestTarSSHPipeline_DataFlow(t *testing.T) {
 
 func TestTarSSHPipeline_ContextCancellation(t *testing.T) {
 	cfg, logger, notifier := createPipelineTestDeps()
-	mockFactory := &MockCommandFactory{}
+	mockFactory := &MockCommandFactory{
+		FailOnCreate: "ssh",
+	}
 	
 	engine := NewTarSSHEngine(cfg, logger, notifier, mockFactory)
-	if engine == nil {
-		t.Fatalf("failed to create engine")
+	
+	err := engine.Execute(context.Background())
+	if err == nil {
+		t.Fatalf("expected pipeline to fail when ssh process fails to start")
 	}
+
+	// Verify the error bubbles up correctly, identifying the failure point
+	if !strings.Contains(err.Error(), "ssh") {
+		t.Errorf("expected error to originate from ssh process, got: %v", err)
+	}
+
+	// The errgroup will abort early, meaning some processes might have started 
+	// while others didn't. The test passes if the orchestrator correctly halted
+	// execution upon the first error (the forced ssh failure).
 }

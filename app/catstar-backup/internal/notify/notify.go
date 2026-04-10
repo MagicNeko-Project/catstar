@@ -118,12 +118,16 @@ type TelegramNotifier struct {
 	Token       string
 	ChatID      string
 	SkipSummary bool
+	BaseURL     string // Allows overriding for tests
 }
 
 func (t *TelegramNotifier) Name() string { return "telegram" }
 
 func (t *TelegramNotifier) Send(ctx context.Context, message string) error {
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", t.Token)
+	url := t.BaseURL
+	if url == "" {
+		url = fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", t.Token)
+	}
 
 	var b bytes.Buffer
 	w := multipart.NewWriter(&b)

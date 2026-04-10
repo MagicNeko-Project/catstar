@@ -30,6 +30,10 @@ func (m *MockCommandFactory) Create(ctx context.Context, name string, args ...st
 		outBuf:   &bytes.Buffer{},
 	}
 	
+	if m.FailOnCreate != "" && name == m.FailOnCreate {
+		p.FailOnStart = true
+	}
+	
 	m.Processes = append(m.Processes, p)
 	return p
 }

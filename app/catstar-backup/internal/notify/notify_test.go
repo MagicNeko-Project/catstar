@@ -83,22 +83,29 @@ func TestTelegramNotifier_Integration(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Intercept the default URL format inside the struct by cheating or replacing HTTP client
-	// For purity without modifying the production struct's internals, we'll just test the logic here.
-	// Since TelegramNotifier hardcodes the URL, it's hard to test directly without an interface.
-	// However, we'll verify it returns an error on invalid host (no network).
-	
+	// Test the valid mock server connection
 	tn := &TelegramNotifier{
-		Token:  "BAD_TOKEN",
-		ChatID: "123",
+		Token:   "TEST_TOKEN",
+		ChatID:  "123",
+		BaseURL: ts.URL + "/botTEST_TOKEN/sendMessage",
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	err := tn.Send(ctx, "test")
-	if err == nil {
-		t.Fatalf("expected error sending to invalid telegram host, got nil")
+	if err := tn.Send(ctx, "test"); err != nil {
+		t.Fatalf("expected successful send to mock server, got error: %v", err)
+	}
+
+	// Test invalid routing (404 Not Found)
+	tnBad := &TelegramNotifier{
+		Token:   "BAD_TOKEN",
+		ChatID:  "123",
+		BaseURL: ts.URL + "/bad_path",
+	}
+
+	if err := tnBad.Send(ctx, "test"); err == nil {
+		t.Fatalf("expected error from 404 response, got nil")
 	}
 }
 

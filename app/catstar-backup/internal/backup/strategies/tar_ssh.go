@@ -3,6 +3,7 @@ package strategies
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -56,24 +57,41 @@ func (e *TarSSHEngine) Execute(ctx context.Context) error {
 	// 2. Safely inject the OpenSSL password strictly into that process's environment space.
 	sslCmd.SetEnv(append(os.Environ(), "CATSTAR_SSL_PASS="+e.cfg.TarOpenSSLPassword))
 
-	// 3. Chain Stdio Pipes
+	// 3. Chain Stdio Pipes safely
+	// If pipeline construction fails halfway, we must explicitly close any pipes 
+	// already created to prevent file descriptor leaks.
+	var pipesToClose []io.Closer
+	defer func() {
+		for _, p := range pipesToClose {
+			p.Close()
+		}
+	}()
+
 	tarOut, err := tarCmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create tar stdout pipe: %w", err)
 	}
+	pipesToClose = append(pipesToClose, tarOut)
 	sslCmd.SetStdin(tarOut)
 
 	sslOut, err := sslCmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create openssl stdout pipe: %w", err)
 	}
+	pipesToClose = append(pipesToClose, sslOut)
 	ddCmd.SetStdin(sslOut)
 
 	ddOut, err := ddCmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create dd stdout pipe: %w", err)
 	}
+	pipesToClose = append(pipesToClose, ddOut)
 	sshCmd.SetStdin(ddOut)
+
+	// Clear the closure array so the pipes aren't prematurely closed
+	// if the entire setup completes successfully. The processes will
+	// handle closing their own pipes during Wait().
+	pipesToClose = nil
 
 	// 4. Route telemetry directly to slog instead of a generic shell output buffer
 	tarCmd.SetStderr(newSlogWriter(e.logger, "error", "tar"))
