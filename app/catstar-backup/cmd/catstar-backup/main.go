@@ -42,19 +42,19 @@ func main() {
 
 	// 4. Initialize Backup Engines
 	var engines []backup.Engine
-	executor := strategies.NewDefaultCommandExecutor(logger)
+	factory := strategies.NewDefaultCommandFactory(logger)
 
 	if cfg.BackupTest {
 		engines = append(engines, strategies.NewTestEngine(cfg, logger, notifier))
 	}
 	if cfg.TarSSHServer != "" {
-		engines = append(engines, strategies.NewTarSSHEngine(cfg, logger, notifier, executor))
+		engines = append(engines, strategies.NewTarSSHEngine(cfg, logger, notifier, factory))
 	}
 	if cfg.ResticRoot != "" {
-		engines = append(engines, strategies.NewResticEngine(cfg, logger, notifier, executor))
+		engines = append(engines, strategies.NewResticEngine(cfg, logger, notifier, factory))
 	}
 	if cfg.BtrfsSnapshotsRoot != "" {
-		engines = append(engines, strategies.NewBtrfsResticEngine(cfg, logger, notifier, executor))
+		engines = append(engines, strategies.NewBtrfsResticEngine(cfg, logger, notifier, factory))
 	}
 
 	if len(engines) == 0 {
