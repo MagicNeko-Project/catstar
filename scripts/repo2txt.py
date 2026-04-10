@@ -470,7 +470,7 @@ def build_rules(args) -> list[Rule]:
         for p in patterns:
             rules.append(VisibilityMatcher.compile_pattern(p, vis, reason))
 
-    # 1. Base Opinionated Defaults
+    # 1. Base Opinionated Defaults (Lowest Precedence Baseline)
     append_patterns(PRUNE_VCS, Visibility.PRUNED, "VCS SYSTEM")
     append_patterns(PRUNE_OS, Visibility.PRUNED, "OS SYSTEM")
     
@@ -483,15 +483,7 @@ def build_rules(args) -> list[Rule]:
     if not args.allow_secrets:
         append_patterns(REDACT_SECRETS, Visibility.REDACTED, "SECURITY RISK")
 
-    # 2. CLI Overrides
-    if args.prune:
-        append_patterns(args.prune, Visibility.PRUNED, "CLI MANUAL PRUNE")
-    if args.ghost:
-        append_patterns(args.ghost, Visibility.GHOSTED, "CLI MANUAL GHOST")
-    if args.redact:
-        append_patterns(args.redact, Visibility.REDACTED, "CLI MANUAL REDACT")
-
-    # 3. Gitignore Integration (Defaults to GHOSTED, negations to INCLUDED)
+    # 2. Gitignore Integration (Overrides Defaults with Project Intent)
     gitignore_path = Path(".gitignore")
     if gitignore_path.exists():
         try:
@@ -500,11 +492,18 @@ def build_rules(args) -> list[Rule]:
                     line = line.strip()
                     if not line or line.startswith("#"):
                         continue
-                    # The compile_pattern handles mapping `!` to Visibility.INCLUDED
                     # Standard gitignore patterns map to GHOSTED as requested.
                     rules.append(VisibilityMatcher.compile_pattern(line, Visibility.GHOSTED, ".gitignore"))
         except PermissionError:
             print(f"[warning] Permission denied reading .gitignore", file=sys.stderr)
+
+    # 3. CLI Overrides (Highest Precedence - Absolute User Authority)
+    if args.prune:
+        append_patterns(args.prune, Visibility.PRUNED, "CLI MANUAL PRUNE")
+    if args.ghost:
+        append_patterns(args.ghost, Visibility.GHOSTED, "CLI MANUAL GHOST")
+    if args.redact:
+        append_patterns(args.redact, Visibility.REDACTED, "CLI MANUAL REDACT")
 
     return rules
 
