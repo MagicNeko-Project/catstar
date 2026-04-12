@@ -26,12 +26,12 @@ type AppConfig struct {
 
 // NotificationsConfig defines all possible notification sinks and settings.
 type NotificationsConfig struct {
-	SendSummary      bool  `yaml:"send_summary"`
-	SendVerbose      bool  `yaml:"send_verbose"`
-	SummaryHours     []int `yaml:"summary_hours" validate:"omitempty,dive,min=0,max=23"`
-	Telegram         *TelegramConfig `yaml:"telegram,omitempty"`
-	Discord          *DiscordConfig  `yaml:"discord,omitempty"`
-	Debug            *DebugConfig    `yaml:"debug,omitempty"`
+	SendSummary  bool            `yaml:"send_summary"`
+	SendVerbose  bool            `yaml:"send_verbose"`
+	SummaryHours []int           `yaml:"summary_hours" validate:"omitempty,dive,min=0,max=23"`
+	Telegram     *TelegramConfig `yaml:"telegram,omitempty"`
+	Discord      *DiscordConfig  `yaml:"discord,omitempty"`
+	Debug        *DebugConfig    `yaml:"debug,omitempty"`
 }
 
 type TelegramConfig struct {
@@ -53,10 +53,10 @@ type DebugConfig struct {
 
 // TelemetryConfig defines HTTP endpoints for logging and status tracking.
 type TelemetryConfig struct {
-	PingStartURL      string `yaml:"ping_start_url" validate:"omitempty,url"`
-	PingEndURL        string `yaml:"ping_end_url" validate:"omitempty,url"`
-	PingAppendStatus  bool   `yaml:"ping_append_status"`
-	JournalUploadURL  string `yaml:"journal_upload_url" validate:"omitempty,url"`
+	PingStartURL     string `yaml:"ping_start_url" validate:"omitempty,url"`
+	PingEndURL       string `yaml:"ping_end_url" validate:"omitempty,url"`
+	PingAppendStatus bool   `yaml:"ping_append_status"`
+	JournalUploadURL string `yaml:"journal_upload_url" validate:"omitempty,url"`
 }
 
 // JobConfig represents a single backup strategy task.

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/MagicNeko-Project/catstar-backup/internal/config"
 )
@@ -37,18 +36,22 @@ func (l *LogBuffer) String() string {
 	return l.buf.String()
 }
 
+// HTTPDoer represents a network transport capability. Abstracting this
+// enables payload construction testing without an actual TCP socket.
+type HTTPDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 // TelemetryClient handles start/stop HTTP pings and log uploads.
 type TelemetryClient struct {
 	cfg    *config.Config
-	client *http.Client
+	client HTTPDoer
 }
 
-func NewTelemetryClient(cfg *config.Config) *TelemetryClient {
+func NewTelemetryClient(cfg *config.Config, httpClient HTTPDoer) *TelemetryClient {
 	return &TelemetryClient{
-		cfg: cfg,
-		client: &http.Client{
-			Timeout: 15 * time.Second,
-		},
+		cfg:    cfg,
+		client: httpClient,
 	}
 }
 
@@ -114,7 +117,7 @@ func (t *TelemetryClient) UploadLogs(ctx context.Context, logText string) string
 
 	var b bytes.Buffer
 	w := multipart.NewWriter(&b)
-	
+
 	// Create a form file field named "logs"
 	fw, err := w.CreateFormFile("logs", "backup.log")
 	if err != nil {

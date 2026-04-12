@@ -36,7 +36,7 @@ func NewOrchestrator(cfg *config.Config, logger *slog.Logger, n *notify.Composit
 // Run executes all configured engines sequentially.
 func (o *Orchestrator) Run(ctx context.Context) error {
 	o.logger.Info("Starting backup orchestration")
-	
+
 	if o.cfg.Notifications.SendVerbose {
 		msg := fmt.Sprintf("%s 开始备份时间: %s", o.cfg.App.MachineName, "TODO_TIME")
 		o.notifier.Send(ctx, msg)
@@ -46,10 +46,10 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 
 	for _, engine := range o.engines {
 		o.logger.Info("Executing engine", "engine", engine.Name())
-		
+
 		if err := engine.Execute(ctx); err != nil {
-			o.logger.Error("Engine execution failed", 
-				"engine", engine.Name(), 
+			o.logger.Error("Engine execution failed",
+				"engine", engine.Name(),
 				"error", err,
 			)
 			hasErrors = true

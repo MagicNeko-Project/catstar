@@ -65,7 +65,7 @@ func TestTelemetryClient_Ping(t *testing.T) {
 		},
 	}
 
-	client := NewTelemetryClient(cfg)
+	client := NewTelemetryClient(cfg, ts.Client())
 	ctx := context.Background()
 
 	t.Run("PingStart Success", func(t *testing.T) {

@@ -19,21 +19,21 @@ type MockCommandFactory struct {
 func (m *MockCommandFactory) Create(ctx context.Context, name string, args ...string) Process {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	fullCmd := name + " " + strings.Join(args, " ")
-	
+
 	p := &MockProcess{
-		Name:     name,
-		FullCmd:  fullCmd,
-		Env:      make([]string, 0),
-		inBuf:    &bytes.Buffer{},
-		outBuf:   &bytes.Buffer{},
+		Name:    name,
+		FullCmd: fullCmd,
+		Env:     make([]string, 0),
+		inBuf:   &bytes.Buffer{},
+		outBuf:  &bytes.Buffer{},
 	}
-	
+
 	if m.FailOnCreate != "" && name == m.FailOnCreate {
 		p.FailOnStart = true
 	}
-	
+
 	m.Processes = append(m.Processes, p)
 	return p
 }
@@ -53,7 +53,7 @@ type MockProcess struct {
 
 	FailOnStart bool
 	FailOnWait  bool
-	
+
 	Started bool
 	Waited  bool
 }
@@ -72,7 +72,7 @@ func (p *MockProcess) Wait() error {
 		return fmt.Errorf("mock Wait() failure for %s", p.Name)
 	}
 
-	// Simulate data processing during Wait() so pipeline executes sequentially 
+	// Simulate data processing during Wait() so pipeline executes sequentially
 	// based on the way errgroup handles them.
 	if p.Stdin != nil {
 		data, _ := io.ReadAll(p.Stdin)
@@ -103,8 +103,7 @@ func (p *MockProcess) StdinPipe() (io.WriteCloser, error) {
 	return nil, fmt.Errorf("not implemented in mock")
 }
 
-func (p *MockProcess) SetStdin(r io.Reader) { p.Stdin = r }
+func (p *MockProcess) SetStdin(r io.Reader)  { p.Stdin = r }
 func (p *MockProcess) SetStdout(w io.Writer) { p.Stdout = w }
 func (p *MockProcess) SetStderr(w io.Writer) { p.Stderr = w }
-func (p *MockProcess) SetEnv(env []string) { p.Env = env }
-
+func (p *MockProcess) SetEnv(env []string)   { p.Env = env }

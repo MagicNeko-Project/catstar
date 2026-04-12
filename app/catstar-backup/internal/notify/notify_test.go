@@ -44,10 +44,10 @@ func (m *MockNotifier) SendSummary(ctx context.Context, msg string) error {
 func TestCompositeNotifier_FanOut(t *testing.T) {
 	mockA := &MockNotifier{name: "MockA"}
 	mockB := &MockNotifier{name: "MockB"}
-	
+
 	// Create logger that discards output
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	
+
 	comp := &CompositeNotifier{
 		notifiers: []Notifier{mockA, mockB},
 		logger:    logger,
@@ -55,10 +55,10 @@ func TestCompositeNotifier_FanOut(t *testing.T) {
 
 	ctx := context.Background()
 	comp.Send(ctx, "hello world")
-	
+
 	// Since Send is asynchronous under the hood but blocked by WaitGroup,
 	// when it returns, all children should have completed.
-	
+
 	if len(mockA.sentMessages) != 1 || mockA.sentMessages[0] != "hello world" {
 		t.Fatalf("MockA did not receive expected message")
 	}
@@ -127,7 +127,8 @@ func TestNewCompositeNotifier_Builder(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	comp := NewCompositeNotifier(cfg, logger)
+	dummyHTTP := &http.Client{} // Safe to use real empty client struct here as it's not actually invoked
+	comp := NewCompositeNotifier(cfg, logger, dummyHTTP)
 
 	if len(comp.notifiers) != 3 {
 		t.Fatalf("expected 3 notifiers based on config, got %d", len(comp.notifiers))

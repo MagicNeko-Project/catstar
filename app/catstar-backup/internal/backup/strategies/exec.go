@@ -90,7 +90,7 @@ func (p *DefaultProcess) SetEnv(env []string) {
 // Helper to run a simple, blocking command using the factory (for simple strategies).
 func runSimpleCommand(ctx context.Context, factory CommandFactory, logger *slog.Logger, cmdStr string, args ...string) error {
 	cmd := factory.Create(ctx, cmdStr, args...)
-	
+
 	// Create an inline writer that pipes output straight to slog for simple tracking
 	writer := newSlogWriter(logger, "info", cmdStr)
 	cmd.SetStdout(writer)

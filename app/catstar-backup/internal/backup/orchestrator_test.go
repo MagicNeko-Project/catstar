@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"testing"
 
 	"github.com/MagicNeko-Project/catstar-backup/internal/config"
@@ -12,9 +13,9 @@ import (
 )
 
 type MockEngine struct {
-	name        string
-	shouldFail  bool
-	executed    bool
+	name       string
+	shouldFail bool
+	executed   bool
 }
 
 func (m *MockEngine) Name() string { return m.name }
@@ -36,7 +37,8 @@ func TestOrchestrator_Run(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	notifier := notify.NewCompositeNotifier(cfg, logger)
+	dummyHTTP := &http.Client{}
+	notifier := notify.NewCompositeNotifier(cfg, logger, dummyHTTP)
 
 	t.Run("All Engines Succeed", func(t *testing.T) {
 		e1 := &MockEngine{name: "Engine1"}

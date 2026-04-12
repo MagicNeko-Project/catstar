@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -21,7 +22,8 @@ func createPipelineTestDeps() (*config.Config, *slog.Logger, *notify.CompositeNo
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	notifier := notify.NewCompositeNotifier(cfg, logger)
+	dummyHTTP := &http.Client{}
+	notifier := notify.NewCompositeNotifier(cfg, logger, dummyHTTP)
 	return cfg, logger, notifier
 }
 
@@ -99,10 +101,10 @@ func TestTarSSHPipeline_ContextCancellation(t *testing.T) {
 	mockFactory := &MockCommandFactory{
 		FailOnCreate: "ssh",
 	}
-	
+
 	jobCfg := getTarSSHJobConfig()
 	engine := NewTarSSHEngine("tar_job", cfg.App.MachineName, cfg.Notifications.SendVerbose, jobCfg, logger, notifier, mockFactory)
-	
+
 	err := engine.Execute(context.Background())
 	if err == nil {
 		t.Fatalf("expected pipeline to fail when ssh process fails to start")
@@ -113,7 +115,7 @@ func TestTarSSHPipeline_ContextCancellation(t *testing.T) {
 		t.Errorf("expected error to originate from ssh process, got: %v", err)
 	}
 
-	// The errgroup will abort early, meaning some processes might have started 
+	// The errgroup will abort early, meaning some processes might have started
 	// while others didn't. The test passes if the orchestrator correctly halted
 	// execution upon the first error (the forced ssh failure).
 }

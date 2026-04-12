@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -21,7 +22,8 @@ func createTestDeps() (*config.Config, *slog.Logger, *notify.CompositeNotifier) 
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	notifier := notify.NewCompositeNotifier(cfg, logger)
+	dummyHTTP := &http.Client{}
+	notifier := notify.NewCompositeNotifier(cfg, logger, dummyHTTP)
 	return cfg, logger, notifier
 }
 
@@ -71,7 +73,7 @@ func TestBtrfsResticEngine_FailureCleanup(t *testing.T) {
 	cfg, logger, notifier := createTestDeps()
 	mockFactory := &MockCommandFactory{
 		FailOnCreate: "restic backup", // Note: The factory matches the initial command name.
-		// If we want to fail `restic backup` but allow `restic version`, we'd have to extend MockCommandFactory. 
+		// If we want to fail `restic backup` but allow `restic version`, we'd have to extend MockCommandFactory.
 		// For simplicity, failing "restic" altogether tests the deferred cleanup.
 	}
 	mockFactory.FailOnCreate = "restic"

@@ -13,6 +13,12 @@ import (
 	"github.com/MagicNeko-Project/catstar-backup/internal/config"
 )
 
+// HTTPDoer represents a network transport capability. Abstracting this
+// enables payload construction testing without an actual TCP socket.
+type HTTPDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 // Notifier defines the interface for sending backup notifications.
 type Notifier interface {
 	Send(ctx context.Context, message string) error
@@ -27,13 +33,8 @@ type CompositeNotifier struct {
 }
 
 // NewCompositeNotifier builds a notifier based on the configuration.
-func NewCompositeNotifier(cfg *config.Config, logger *slog.Logger) *CompositeNotifier {
+func NewCompositeNotifier(cfg *config.Config, logger *slog.Logger, httpClient HTTPDoer) *CompositeNotifier {
 	var notifiers []Notifier
-
-	// Production-hardened HTTP client for dispatching
-	httpClient := &http.Client{
-		Timeout: 10 * time.Second,
-	}
 
 	if cfg.Notifications.Telegram != nil {
 		notifiers = append(notifiers, &TelegramNotifier{
@@ -77,7 +78,7 @@ func (c *CompositeNotifier) Send(ctx context.Context, message string) {
 		wg.Add(1)
 		go func(notifier Notifier) {
 			defer wg.Done()
-			
+
 			// Give each network call a reasonable timeout
 			timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
@@ -104,7 +105,7 @@ func (c *CompositeNotifier) SendSummary(ctx context.Context, message string) {
 		wg.Add(1)
 		go func(notifier Notifier) {
 			defer wg.Done()
-			
+
 			timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
 
@@ -126,7 +127,7 @@ type TelegramNotifier struct {
 	ChatID      string
 	SkipSummary bool
 	BaseURL     string // Allows overriding for tests
-	client      *http.Client
+	client      HTTPDoer
 }
 
 func (t *TelegramNotifier) Name() string { return "telegram" }
@@ -172,7 +173,7 @@ type DiscordNotifier struct {
 	WebhookURL  string
 	Username    string
 	SkipSummary bool
-	client      *http.Client
+	client      HTTPDoer
 }
 
 func (d *DiscordNotifier) Name() string { return "discord" }

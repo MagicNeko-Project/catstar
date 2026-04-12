@@ -35,7 +35,7 @@ func (e *TestEngine) Execute(ctx context.Context) error {
 	for i := 1; i <= 2; i++ {
 		e.logger.Info(fmt.Sprintf("测试备份消息：123*%d", i))
 	}
-	
+
 	return nil
 }
 
@@ -97,9 +97,9 @@ func (e *BtrfsResticEngine) Execute(ctx context.Context) error {
 	}
 
 	deleteCmd := fmt.Sprintf("btrfs subvolume delete %s/* || true", e.cfg.SnapshotsRoot)
-	
+
 	// 1. Initial cleanup of lingering snapshots
-	_ = runSimpleCommand(ctx, e.factory, e.logger, "bash", "-c", deleteCmd) 
+	_ = runSimpleCommand(ctx, e.factory, e.logger, "bash", "-c", deleteCmd)
 
 	// ALWAYS attempt cleanup upon exit to prevent leaked btrfs subvolumes on disk
 	defer func() {
