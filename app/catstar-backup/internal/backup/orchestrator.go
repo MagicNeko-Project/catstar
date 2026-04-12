@@ -17,14 +17,14 @@ type Engine interface {
 
 // Orchestrator manages the lifecycle of multiple backup engines.
 type Orchestrator struct {
-	cfg      *config.AppConfig
+	cfg      *config.Config
 	logger   *slog.Logger
 	notifier *notify.CompositeNotifier
 	engines  []Engine
 }
 
 // NewOrchestrator wires up the requested backup strategies.
-func NewOrchestrator(cfg *config.AppConfig, logger *slog.Logger, n *notify.CompositeNotifier, engines []Engine) *Orchestrator {
+func NewOrchestrator(cfg *config.Config, logger *slog.Logger, n *notify.CompositeNotifier, engines []Engine) *Orchestrator {
 	return &Orchestrator{
 		cfg:      cfg,
 		logger:   logger,
@@ -37,8 +37,8 @@ func NewOrchestrator(cfg *config.AppConfig, logger *slog.Logger, n *notify.Compo
 func (o *Orchestrator) Run(ctx context.Context) error {
 	o.logger.Info("Starting backup orchestration")
 	
-	if o.cfg.NotifySendVerbose {
-		msg := fmt.Sprintf("%s 开始备份时间: %s", o.cfg.MachineName, "TODO_TIME")
+	if o.cfg.Notifications.SendVerbose {
+		msg := fmt.Sprintf("%s 开始备份时间: %s", o.cfg.App.MachineName, "TODO_TIME")
 		o.notifier.Send(ctx, msg)
 	}
 
@@ -58,8 +58,8 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 		}
 	}
 
-	if o.cfg.NotifySendVerbose {
-		msg := fmt.Sprintf("%s 结束备份时间: %s", o.cfg.MachineName, "TODO_TIME")
+	if o.cfg.Notifications.SendVerbose {
+		msg := fmt.Sprintf("%s 结束备份时间: %s", o.cfg.App.MachineName, "TODO_TIME")
 		o.notifier.Send(ctx, msg)
 	}
 

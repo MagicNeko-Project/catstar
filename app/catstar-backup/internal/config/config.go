@@ -3,149 +3,133 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 	"time"
+
+	"github.com/go-playground/validator/v10"
+	"gopkg.in/yaml.v3"
 )
 
-// AppConfig represents the strictly typed configuration for the Catstar backup runner.
+// Config represents the root configuration structure for Catstar Backup.
+type Config struct {
+	App           AppConfig           `yaml:"app" validate:"required"`
+	Notifications NotificationsConfig `yaml:"notifications"`
+	Telemetry     TelemetryConfig     `yaml:"telemetry"`
+	Jobs          []JobConfig         `yaml:"jobs" validate:"dive"`
+}
+
+// AppConfig defines global application settings.
 type AppConfig struct {
-	MachineName string
-
-	// Restic Engine Configurations
-	ResticRoot       string
-	ResticRepository string
-	ResticPassword   string
-	ResticPackSize   string
-	ResticCacheDir   string
-
-	// Tar/SSH Engine Configurations
-	TarSSHServer       string
-	TarOpenSSLType     string
-	TarOpenSSLPassword string
-	TarFileName        string
-
-	// BTRFS Engine Configurations
-	BtrfsSnapshotsRoot string
-	BtrfsSnapshots     map[string]string // Dynamically populated from BTRFS_SNAPSHOT_*
-
-	// Notification and Monitoring
-	TelegramBotToken        string
-	TelegramSendMsgUser     string
-	TelegramSkipSummary     bool
-	DiscordWebhookURL       string
-	DiscordUsername         string
-	DiscordSkipSummary      bool
-	DebugSkipSummary        bool
-	NotifyDebug             bool
-	NotifySendSummary       bool
-	NotifySendSummaryHours  []int
-	NotifySendVerbose       bool
-
-	// Healthcheck Ping Config
-	HTTPPingURL           string
-	HTTPPingAppendStatus  bool
-	HTTPPingStartURL      string
-	JournalUploadURL      string
-
-	// Flags
-	BackupTest bool
-	TimeZone   string
+	MachineName string `yaml:"machine_name" validate:"required"`
+	TimeZone    string `yaml:"timezone" validate:"required,timezone"`
+	LogLevel    string `yaml:"log_level" validate:"omitempty,oneof=debug info warn error"`
 }
 
-// Load reads environment variables and parses them into the strongly typed AppConfig.
-// It returns an error if essential configuration validation fails.
-func Load() (*AppConfig, error) {
-	cfg := &AppConfig{
-		MachineName:             getEnv("MACHINE_NAME", "Catstar-Node"),
-		ResticRoot:              getEnv("RESTIC_ROOT", ""),
-		ResticRepository:        getEnv("RESTIC_REPOSITORY", ""),
-		ResticPassword:          getEnv("RESTIC_PASSWORD", ""),
-		ResticPackSize:          getEnv("RESTIC_PACK_SIZE", "64"),
-		ResticCacheDir:          getEnv("RESTIC_CACHE_DIR", "/tmp/restic-cache"),
-		TarSSHServer:            getEnv("TAR_SSH_SERVER", ""),
-		TarOpenSSLType:          getEnv("TAR_OPENSSL_TYPE", "aes-128-cbc"),
-		TarOpenSSLPassword:      getEnv("TAR_OPENSSL_PASSWORD", ""),
-		TarFileName:             getEnv("TAR_FILE_NAME", "/data/backup-%(%F_%H%M%S)T.tar.zstd.aes-128-cbc"),
-		BtrfsSnapshotsRoot:      getEnv("BTRFS_SNAPSHOTS_ROOT", ""),
-		BtrfsSnapshots:          make(map[string]string),
-		TelegramBotToken:        getEnv("TELEGRAM_BOT_TOKEN", ""),
-		TelegramSendMsgUser:     getEnv("TELEGRAM_BOT_SendMsg_User", ""),
-		TelegramSkipSummary:     getEnvBool("TELEGRAM_SKIP_SUMMARY", true),
-		DiscordWebhookURL:       getEnv("DISCORD_WEBHOOK_URL", ""),
-		DiscordUsername:         getEnv("DISCORD_USERNAME", "Catstar Backup"),
-		DiscordSkipSummary:      getEnvBool("DISCORD_SKIP_SUMMARY", true),
-		DebugSkipSummary:        getEnvBool("DEBUG_SKIP_SUMMARY", false),
-		NotifyDebug:             getEnvBool("NOTIFY_DEBUG", false),
-		NotifySendSummary:       getEnvBool("NOTIFY_SEND_SUMMARY", true),
-		NotifySendVerbose:       getEnvBool("NOTIFY_SEND_VERBOSE", false),
-		HTTPPingURL:             getEnv("HTTP_PING_URL", ""),
-		HTTPPingAppendStatus:    getEnvBool("HTTP_PING_APPEND_STATUS", true),
-		HTTPPingStartURL:        getEnv("HTTP_PING_START_URL", ""),
-		JournalUploadURL:        getEnv("JOURNAL_UPLOAD_URL", ""),
-		BackupTest:              getEnvBool("BACKUP_TEST", false),
-		TimeZone:                getEnv("TZ", "Asia/Shanghai"),
+// NotificationsConfig defines all possible notification sinks and settings.
+type NotificationsConfig struct {
+	SendSummary      bool  `yaml:"send_summary"`
+	SendVerbose      bool  `yaml:"send_verbose"`
+	SummaryHours     []int `yaml:"summary_hours" validate:"omitempty,dive,min=0,max=23"`
+	Telegram         *TelegramConfig `yaml:"telegram,omitempty"`
+	Discord          *DiscordConfig  `yaml:"discord,omitempty"`
+	Debug            *DebugConfig    `yaml:"debug,omitempty"`
+}
+
+type TelegramConfig struct {
+	BotToken    string `yaml:"bot_token" validate:"required"`
+	ChatID      string `yaml:"chat_id" validate:"required"`
+	SkipSummary bool   `yaml:"skip_summary"`
+}
+
+type DiscordConfig struct {
+	WebhookURL  string `yaml:"webhook_url" validate:"required,url"`
+	Username    string `yaml:"username" validate:"required"`
+	SkipSummary bool   `yaml:"skip_summary"`
+}
+
+type DebugConfig struct {
+	Enabled     bool `yaml:"enabled"`
+	SkipSummary bool `yaml:"skip_summary"`
+}
+
+// TelemetryConfig defines HTTP endpoints for logging and status tracking.
+type TelemetryConfig struct {
+	PingStartURL      string `yaml:"ping_start_url" validate:"omitempty,url"`
+	PingEndURL        string `yaml:"ping_end_url" validate:"omitempty,url"`
+	PingAppendStatus  bool   `yaml:"ping_append_status"`
+	JournalUploadURL  string `yaml:"journal_upload_url" validate:"omitempty,url"`
+}
+
+// JobConfig represents a single backup strategy task.
+type JobConfig struct {
+	Name        string             `yaml:"name" validate:"required"`
+	Type        string             `yaml:"type" validate:"required,oneof=restic btrfs_restic tar_ssh test"`
+	Restic      *ResticConfig      `yaml:"restic,omitempty"`
+	BtrfsRestic *BtrfsResticConfig `yaml:"btrfs_restic,omitempty"`
+	TarSSH      *TarSSHConfig      `yaml:"tar_ssh,omitempty"`
+}
+
+type ResticConfig struct {
+	Root       string `yaml:"root" validate:"required,dir"`
+	Repository string `yaml:"repository" validate:"required"`
+	Password   string `yaml:"password" validate:"required"`
+	PackSize   string `yaml:"pack_size" validate:"omitempty,numeric"`
+	CacheDir   string `yaml:"cache_dir" validate:"omitempty,dir"`
+}
+
+type BtrfsResticConfig struct {
+	SnapshotsRoot string            `yaml:"snapshots_root" validate:"required,dir"`
+	Repository    string            `yaml:"repository" validate:"required"`
+	Password      string            `yaml:"password" validate:"required"`
+	Subvolumes    map[string]string `yaml:"subvolumes" validate:"required,min=1"`
+	CacheDir      string            `yaml:"cache_dir" validate:"omitempty,dir"`
+}
+
+type TarSSHConfig struct {
+	Target          string `yaml:"target" validate:"required,dir"`
+	SSHServer       string `yaml:"ssh_server" validate:"required"`
+	OpenSSLType     string `yaml:"openssl_type" validate:"required"`
+	OpenSSLPassword string `yaml:"openssl_password" validate:"required"`
+	FileName        string `yaml:"file_name" validate:"required"`
+}
+
+// Load reads the YAML configuration file from the specified path, performs
+// environment variable expansion (e.g., ${RESTIC_PASSWORD}), unmarshals it
+// into the Config struct, and rigorously validates the structure.
+func Load(path string) (*Config, error) {
+	fileBytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Parse Summary Hours
-	hoursStr := getEnv("NOTIFY_SEND_SUMMARY_HOURS", "")
-	if hoursStr != "" {
-		for _, h := range strings.Fields(hoursStr) {
-			if parsedHour, err := strconv.Atoi(h); err == nil {
-				cfg.NotifySendSummaryHours = append(cfg.NotifySendSummaryHours, parsedHour)
-			}
-		}
+	// 2026 Standard: Expand environment variables prior to parsing.
+	// This prevents hardcoded secrets in the YAML file.
+	expandedYAML := os.ExpandEnv(string(fileBytes))
+
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(expandedYAML), &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal YAML: %w", err)
 	}
 
-	// Parse Dynamic BTRFS Snapshots
-	for _, env := range os.Environ() {
-		if key, val, ok := strings.Cut(env, "="); ok && strings.HasPrefix(key, "BTRFS_SNAPSHOT_") {
-			dest := strings.TrimPrefix(key, "BTRFS_SNAPSHOT_")
-			cfg.BtrfsSnapshots[dest] = val
-		}
+	// Set sane defaults where optional
+	if cfg.App.TimeZone == "" {
+		cfg.App.TimeZone = "UTC"
+	}
+	if cfg.App.LogLevel == "" {
+		cfg.App.LogLevel = "info"
 	}
 
-	if err := validate(cfg); err != nil {
-		return nil, err
+	// Validate the complete structure
+	validate := validator.New(validator.WithRequiredStructEnabled())
+	if err := validate.Struct(&cfg); err != nil {
+		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 
-	// Set timezone globally if specified
-	if loc, err := time.LoadLocation(cfg.TimeZone); err == nil {
+	// Globally apply timezone
+	if loc, err := time.LoadLocation(cfg.App.TimeZone); err == nil {
 		time.Local = loc
+	} else {
+		return nil, fmt.Errorf("invalid timezone %q: %w", cfg.App.TimeZone, err)
 	}
 
-	return cfg, nil
-}
-
-func validate(cfg *AppConfig) error {
-	// Basic validation to fail-fast
-	if cfg.TelegramBotToken != "" && cfg.TelegramSendMsgUser == "" {
-		return fmt.Errorf("TELEGRAM_BOT_SendMsg_User is required when TELEGRAM_BOT_TOKEN is set")
-	}
-	return nil
-}
-
-func getEnv(key, fallback string) string {
-	if val, ok := os.LookupEnv(key); ok {
-		return val
-	}
-	return fallback
-}
-
-func getEnvBool(key string, fallback bool) bool {
-	if val, ok := os.LookupEnv(key); ok {
-		b, err := strconv.ParseBool(val)
-		if err == nil {
-			return b
-		}
-		// Also handle common bash truthy strings
-		v := strings.ToLower(strings.TrimSpace(val))
-		if v == "1" || v == "true" || v == "yes" {
-			return true
-		}
-		if v == "0" || v == "false" || v == "no" {
-			return false
-		}
-	}
-	return fallback
+	return &cfg, nil
 }

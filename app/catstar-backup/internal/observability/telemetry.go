@@ -39,11 +39,11 @@ func (l *LogBuffer) String() string {
 
 // TelemetryClient handles start/stop HTTP pings and log uploads.
 type TelemetryClient struct {
-	cfg    *config.AppConfig
+	cfg    *config.Config
 	client *http.Client
 }
 
-func NewTelemetryClient(cfg *config.AppConfig) *TelemetryClient {
+func NewTelemetryClient(cfg *config.Config) *TelemetryClient {
 	return &TelemetryClient{
 		cfg: cfg,
 		client: &http.Client{
@@ -54,11 +54,11 @@ func NewTelemetryClient(cfg *config.AppConfig) *TelemetryClient {
 
 // PingStart sends the initialization payload.
 func (t *TelemetryClient) PingStart(ctx context.Context, message string) error {
-	if t.cfg.HTTPPingStartURL == "" {
+	if t.cfg.Telemetry.PingStartURL == "" {
 		return nil
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.cfg.HTTPPingStartURL, strings.NewReader(message))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.cfg.Telemetry.PingStartURL, strings.NewReader(message))
 	if err != nil {
 		return err
 	}
@@ -78,12 +78,12 @@ func (t *TelemetryClient) PingStart(ctx context.Context, message string) error {
 
 // PingEnd sends the final state payload, appending the status code if configured.
 func (t *TelemetryClient) PingEnd(ctx context.Context, statusCode int, logText string) error {
-	if t.cfg.HTTPPingURL == "" {
+	if t.cfg.Telemetry.PingEndURL == "" {
 		return nil
 	}
 
-	url := t.cfg.HTTPPingURL
-	if t.cfg.HTTPPingAppendStatus {
+	url := t.cfg.Telemetry.PingEndURL
+	if t.cfg.Telemetry.PingAppendStatus {
 		url = fmt.Sprintf("%s/%d", url, statusCode)
 	}
 
@@ -108,7 +108,7 @@ func (t *TelemetryClient) PingEnd(ctx context.Context, statusCode int, logText s
 // UploadLogs uploads the captured logs to a pastebin-like service (e.g., ix.io).
 // It returns the URL of the uploaded logs or the raw logs if upload fails/is unconfigured.
 func (t *TelemetryClient) UploadLogs(ctx context.Context, logText string) string {
-	if t.cfg.JournalUploadURL == "" {
+	if t.cfg.Telemetry.JournalUploadURL == "" {
 		return logText // Fallback to returning raw text if no URL configured
 	}
 
@@ -125,7 +125,7 @@ func (t *TelemetryClient) UploadLogs(ctx context.Context, logText string) string
 	}
 	w.Close()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.cfg.JournalUploadURL, &b)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.cfg.Telemetry.JournalUploadURL, &b)
 	if err != nil {
 		return logText
 	}

@@ -19,47 +19,47 @@ import (
 // tar | openssl | dd | ssh
 // It guarantees 0 zombie processes and secures the OpenSSL password via environment variables.
 type TarSSHEngine struct {
-	cfg      *config.AppConfig
+	jobName  string
+	machine  string
+	verbose  bool
+	cfg      *config.TarSSHConfig
 	logger   *slog.Logger
 	notifier *notify.CompositeNotifier
 	factory  CommandFactory
 }
 
-func NewTarSSHEngine(cfg *config.AppConfig, logger *slog.Logger, notifier *notify.CompositeNotifier, factory CommandFactory) *TarSSHEngine {
-	return &TarSSHEngine{cfg: cfg, logger: logger, notifier: notifier, factory: factory}
+func NewTarSSHEngine(jobName, machineName string, verbose bool, cfg *config.TarSSHConfig, logger *slog.Logger, notifier *notify.CompositeNotifier, factory CommandFactory) *TarSSHEngine {
+	return &TarSSHEngine{
+		jobName:  jobName,
+		machine:  machineName,
+		verbose:  verbose,
+		cfg:      cfg,
+		logger:   logger.With("job", jobName),
+		notifier: notifier,
+		factory:  factory,
+	}
 }
 
-func (e *TarSSHEngine) Name() string { return "tar_ssh" }
+func (e *TarSSHEngine) Name() string { return e.jobName }
 
 func (e *TarSSHEngine) Execute(ctx context.Context) error {
 	e.logger.Info("Executing Tar SSH Backup Pipeline")
-	if e.cfg.NotifySendVerbose {
-		e.notifier.Send(ctx, fmt.Sprintf("%s 开始备份：tar.zst", e.cfg.MachineName))
+	if e.verbose {
+		e.notifier.Send(ctx, fmt.Sprintf("%s 开始备份 (%s)：tar.zst", e.machine, e.jobName))
 	}
 
-	// This errgroup shares a cancelable context. If *any* process fails,
-	// the context is canceled, signaling all active processes instantly.
 	eg, egCtx := errgroup.WithContext(ctx)
 
 	// Replace the simple bash date format for the target filename
-	fileName := strings.ReplaceAll(e.cfg.TarFileName, "%(%F_%H%M%S)T", time.Now().Format("2006-01-02_150405"))
+	fileName := strings.ReplaceAll(e.cfg.FileName, "%(%F_%H%M%S)T", time.Now().Format("2006-01-02_150405"))
 
-	// 1. Create native Go processes via the abstract factory
-	tarCmd := e.factory.Create(egCtx, "tar", "-I", "zstd", "-cp", "--one-file-system", "/")
-	
-	// SECURITY: Instead of `-k`, we explicitly use `-pass env:CATSTAR_SSL_PASS`
-	sslCmd := e.factory.Create(egCtx, "openssl", e.cfg.TarOpenSSLType, "-salt", "-pass", "env:CATSTAR_SSL_PASS")
-	
+	tarCmd := e.factory.Create(egCtx, "tar", "-I", "zstd", "-cp", "--one-file-system", e.cfg.Target)
+	sslCmd := e.factory.Create(egCtx, "openssl", e.cfg.OpenSSLType, "-salt", "-pass", "env:CATSTAR_SSL_PASS")
 	ddCmd := e.factory.Create(egCtx, "dd", "bs=64K")
-	
-	sshCmd := e.factory.Create(egCtx, "ssh", e.cfg.TarSSHServer, fmt.Sprintf("cat > '%s'", fileName))
+	sshCmd := e.factory.Create(egCtx, "ssh", e.cfg.SSHServer, fmt.Sprintf("cat > '%s'", fileName))
 
-	// 2. Safely inject the OpenSSL password strictly into that process's environment space.
-	sslCmd.SetEnv(append(os.Environ(), "CATSTAR_SSL_PASS="+e.cfg.TarOpenSSLPassword))
+	sslCmd.SetEnv(append(os.Environ(), "CATSTAR_SSL_PASS="+e.cfg.OpenSSLPassword))
 
-	// 3. Chain Stdio Pipes safely
-	// If pipeline construction fails halfway, we must explicitly close any pipes 
-	// already created to prevent file descriptor leaks.
 	var pipesToClose []io.Closer
 	defer func() {
 		for _, p := range pipesToClose {
@@ -88,18 +88,13 @@ func (e *TarSSHEngine) Execute(ctx context.Context) error {
 	pipesToClose = append(pipesToClose, ddOut)
 	sshCmd.SetStdin(ddOut)
 
-	// Clear the closure array so the pipes aren't prematurely closed
-	// if the entire setup completes successfully. The processes will
-	// handle closing their own pipes during Wait().
 	pipesToClose = nil
 
-	// 4. Route telemetry directly to slog instead of a generic shell output buffer
 	tarCmd.SetStderr(newSlogWriter(e.logger, "error", "tar"))
 	sslCmd.SetStderr(newSlogWriter(e.logger, "error", "openssl"))
 	ddCmd.SetStderr(newSlogWriter(e.logger, "error", "dd"))
 	sshCmd.SetStderr(newSlogWriter(e.logger, "error", "ssh"))
 
-	// 5. Orchestrate concurrently
 	processes := []Process{tarCmd, sslCmd, ddCmd, sshCmd}
 	for _, p := range processes {
 		eg.Go(func() error {
@@ -110,7 +105,6 @@ func (e *TarSSHEngine) Execute(ctx context.Context) error {
 		})
 	}
 
-	// 6. Wait for resolution. Will return the first error encountered, cancelling the rest.
 	if err := eg.Wait(); err != nil {
 		e.logger.Error("Tar SSH Pipeline failed", "error", err)
 		return err

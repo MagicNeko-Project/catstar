@@ -27,7 +27,7 @@ type CompositeNotifier struct {
 }
 
 // NewCompositeNotifier builds a notifier based on the configuration.
-func NewCompositeNotifier(cfg *config.AppConfig, logger *slog.Logger) *CompositeNotifier {
+func NewCompositeNotifier(cfg *config.Config, logger *slog.Logger) *CompositeNotifier {
 	var notifiers []Notifier
 
 	// Production-hardened HTTP client for dispatching
@@ -35,27 +35,27 @@ func NewCompositeNotifier(cfg *config.AppConfig, logger *slog.Logger) *Composite
 		Timeout: 10 * time.Second,
 	}
 
-	if cfg.TelegramBotToken != "" {
+	if cfg.Notifications.Telegram != nil {
 		notifiers = append(notifiers, &TelegramNotifier{
-			Token:       cfg.TelegramBotToken,
-			ChatID:      cfg.TelegramSendMsgUser,
-			SkipSummary: cfg.TelegramSkipSummary,
+			Token:       cfg.Notifications.Telegram.BotToken,
+			ChatID:      cfg.Notifications.Telegram.ChatID,
+			SkipSummary: cfg.Notifications.Telegram.SkipSummary,
 			client:      httpClient,
 		})
 	}
 
-	if cfg.DiscordWebhookURL != "" {
+	if cfg.Notifications.Discord != nil {
 		notifiers = append(notifiers, &DiscordNotifier{
-			WebhookURL:  cfg.DiscordWebhookURL,
-			Username:    cfg.DiscordUsername,
-			SkipSummary: cfg.DiscordSkipSummary,
+			WebhookURL:  cfg.Notifications.Discord.WebhookURL,
+			Username:    cfg.Notifications.Discord.Username,
+			SkipSummary: cfg.Notifications.Discord.SkipSummary,
 			client:      httpClient,
 		})
 	}
 
-	if cfg.NotifyDebug {
+	if cfg.Notifications.Debug != nil && cfg.Notifications.Debug.Enabled {
 		notifiers = append(notifiers, &DebugNotifier{
-			SkipSummary: cfg.DebugSkipSummary,
+			SkipSummary: cfg.Notifications.Debug.SkipSummary,
 			logger:      logger,
 		})
 	}

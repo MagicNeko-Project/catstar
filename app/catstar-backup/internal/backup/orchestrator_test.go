@@ -27,9 +27,13 @@ func (m *MockEngine) Execute(ctx context.Context) error {
 }
 
 func TestOrchestrator_Run(t *testing.T) {
-	cfg := &config.AppConfig{
-		MachineName:       "TestHost",
-		NotifySendVerbose: false,
+	cfg := &config.Config{
+		App: config.AppConfig{
+			MachineName: "TestHost",
+		},
+		Notifications: config.NotificationsConfig{
+			SendVerbose: false,
+		},
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	notifier := notify.NewCompositeNotifier(cfg, logger)

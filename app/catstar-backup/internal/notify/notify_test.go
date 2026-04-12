@@ -112,10 +112,18 @@ func TestTelegramNotifier_Integration(t *testing.T) {
 }
 
 func TestNewCompositeNotifier_Builder(t *testing.T) {
-	cfg := &config.AppConfig{
-		TelegramBotToken:  "test",
-		DiscordWebhookURL: "http://test",
-		NotifyDebug:       true,
+	cfg := &config.Config{
+		Notifications: config.NotificationsConfig{
+			Telegram: &config.TelegramConfig{
+				BotToken: "test",
+			},
+			Discord: &config.DiscordConfig{
+				WebhookURL: "http://test",
+			},
+			Debug: &config.DebugConfig{
+				Enabled: true,
+			},
+		},
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))

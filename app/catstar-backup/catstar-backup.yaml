@@ -1,0 +1,59 @@
+app:
+  machine_name: "Catstar-Node-01"
+  timezone: "Asia/Shanghai"
+  log_level: "debug"
+
+notifications:
+  send_summary: true
+  send_verbose: true
+  summary_hours: [8, 20]
+  telegram:
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
+    skip_summary: false
+  discord:
+    webhook_url: "${DISCORD_WEBHOOK_URL}"
+    username: "Catstar Backup Bot"
+    skip_summary: true
+  debug:
+    enabled: true
+    skip_summary: false
+
+telemetry:
+  ping_start_url: "https://hc-ping.com/start-uuid"
+  ping_end_url: "https://hc-ping.com/end-uuid"
+  ping_append_status: true
+  journal_upload_url: "https://ix.io"
+
+jobs:
+  - name: "Test Execution Job"
+    type: "test"
+
+  - name: "System Root Restic"
+    type: "restic"
+    restic:
+      root: "/mnt/root_mount"
+      repository: "sftp:user@host:/backups/root"
+      password: "${RESTIC_PASSWORD}"
+      pack_size: "64"
+      cache_dir: "/tmp/restic-cache"
+
+  - name: "Docker Volumes BTRFS"
+    type: "btrfs_restic"
+    btrfs_restic:
+      snapshots_root: "/mnt/btrfs_snapshots"
+      repository: "sftp:user@host:/backups/docker"
+      password: "${RESTIC_PASSWORD}"
+      cache_dir: "/tmp/restic-cache"
+      subvolumes:
+        docker_data: "/var/lib/docker/volumes"
+        app_configs: "/etc/opt"
+
+  - name: "Legacy Tar Streaming"
+    type: "tar_ssh"
+    tar_ssh:
+      target: "/"
+      ssh_server: "user@legacy-nas.local"
+      openssl_type: "aes-128-cbc"
+      openssl_password: "${TAR_OPENSSL_PASSWORD}"
+      file_name: "/data/backup-%(%F_%H%M%S)T.tar.zstd.aes-128-cbc"

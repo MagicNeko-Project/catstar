@@ -56,11 +56,13 @@ func TestTelemetryClient_Ping(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	cfg := &config.AppConfig{
-		HTTPPingStartURL:     ts.URL + "/start",
-		HTTPPingURL:          ts.URL + "/end",
-		HTTPPingAppendStatus: true,
-		JournalUploadURL:     ts.URL + "/upload",
+	cfg := &config.Config{
+		Telemetry: config.TelemetryConfig{
+			PingStartURL:     ts.URL + "/start",
+			PingEndURL:       ts.URL + "/end",
+			PingAppendStatus: true,
+			JournalUploadURL: ts.URL + "/upload",
+		},
 	}
 
 	client := NewTelemetryClient(cfg)

@@ -11,24 +11,35 @@ import (
 	"github.com/MagicNeko-Project/catstar-backup/internal/notify"
 )
 
-func createPipelineTestDeps() (*config.AppConfig, *slog.Logger, *notify.CompositeNotifier) {
-	cfg := &config.AppConfig{
-		MachineName:        "TestHost",
-		NotifySendVerbose:  false,
-		TarSSHServer:       "user@host",
-		TarOpenSSLType:     "aes-128-cbc",
-		TarOpenSSLPassword: "supersecretpassword",
-		TarFileName:        "test.tar.zst",
+func createPipelineTestDeps() (*config.Config, *slog.Logger, *notify.CompositeNotifier) {
+	cfg := &config.Config{
+		App: config.AppConfig{
+			MachineName: "TestHost",
+		},
+		Notifications: config.NotificationsConfig{
+			SendVerbose: false,
+		},
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	notifier := notify.NewCompositeNotifier(cfg, logger)
 	return cfg, logger, notifier
 }
 
+func getTarSSHJobConfig() *config.TarSSHConfig {
+	return &config.TarSSHConfig{
+		Target:          "/",
+		SSHServer:       "user@host",
+		OpenSSLType:     "aes-128-cbc",
+		OpenSSLPassword: "supersecretpassword",
+		FileName:        "test.tar.zst",
+	}
+}
+
 func TestTarSSHPipeline_DataFlow(t *testing.T) {
 	cfg, logger, notifier := createPipelineTestDeps()
 	mockFactory := &MockCommandFactory{}
-	engine := NewTarSSHEngine(cfg, logger, notifier, mockFactory)
+	jobCfg := getTarSSHJobConfig()
+	engine := NewTarSSHEngine("tar_job", cfg.App.MachineName, cfg.Notifications.SendVerbose, jobCfg, logger, notifier, mockFactory)
 
 	err := engine.Execute(context.Background())
 	if err != nil {
@@ -89,7 +100,8 @@ func TestTarSSHPipeline_ContextCancellation(t *testing.T) {
 		FailOnCreate: "ssh",
 	}
 	
-	engine := NewTarSSHEngine(cfg, logger, notifier, mockFactory)
+	jobCfg := getTarSSHJobConfig()
+	engine := NewTarSSHEngine("tar_job", cfg.App.MachineName, cfg.Notifications.SendVerbose, jobCfg, logger, notifier, mockFactory)
 	
 	err := engine.Execute(context.Background())
 	if err == nil {

@@ -13,21 +13,23 @@ import (
 // Test Engine
 // ----------------------------------------------------------------------------
 type TestEngine struct {
-	cfg      *config.AppConfig
+	jobName  string
+	machine  string
+	verbose  bool
 	logger   *slog.Logger
 	notifier *notify.CompositeNotifier
 }
 
-func NewTestEngine(cfg *config.AppConfig, logger *slog.Logger, notifier *notify.CompositeNotifier) *TestEngine {
-	return &TestEngine{cfg: cfg, logger: logger, notifier: notifier}
+func NewTestEngine(jobName, machineName string, verbose bool, logger *slog.Logger, notifier *notify.CompositeNotifier) *TestEngine {
+	return &TestEngine{jobName: jobName, machine: machineName, verbose: verbose, logger: logger.With("job", jobName), notifier: notifier}
 }
 
-func (e *TestEngine) Name() string { return "test" }
+func (e *TestEngine) Name() string { return e.jobName }
 
 func (e *TestEngine) Execute(ctx context.Context) error {
 	e.logger.Info("Executing Test Backup Engine")
-	if e.cfg.NotifySendVerbose {
-		e.notifier.Send(ctx, fmt.Sprintf("%s 开始备份：测试，只输出消息", e.cfg.MachineName))
+	if e.verbose {
+		e.notifier.Send(ctx, fmt.Sprintf("%s 开始备份 (%s)：测试，只输出消息", e.machine, e.jobName))
 	}
 
 	for i := 1; i <= 2; i++ {
@@ -41,58 +43,71 @@ func (e *TestEngine) Execute(ctx context.Context) error {
 // Restic Engine
 // ----------------------------------------------------------------------------
 type ResticEngine struct {
-	cfg      *config.AppConfig
+	jobName  string
+	machine  string
+	verbose  bool
+	cfg      *config.ResticConfig
 	logger   *slog.Logger
 	notifier *notify.CompositeNotifier
 	factory  CommandFactory
 }
 
-func NewResticEngine(cfg *config.AppConfig, logger *slog.Logger, notifier *notify.CompositeNotifier, factory CommandFactory) *ResticEngine {
-	return &ResticEngine{cfg: cfg, logger: logger, notifier: notifier, factory: factory}
+func NewResticEngine(jobName, machineName string, verbose bool, cfg *config.ResticConfig, logger *slog.Logger, notifier *notify.CompositeNotifier, factory CommandFactory) *ResticEngine {
+	return &ResticEngine{jobName: jobName, machine: machineName, verbose: verbose, cfg: cfg, logger: logger.With("job", jobName), notifier: notifier, factory: factory}
 }
 
-func (e *ResticEngine) Name() string { return "restic_root" }
+func (e *ResticEngine) Name() string { return e.jobName }
 
 func (e *ResticEngine) Execute(ctx context.Context) error {
-	e.logger.Info("Executing Restic Root Backup Engine")
-	if e.cfg.NotifySendVerbose {
-		e.notifier.Send(ctx, fmt.Sprintf("%s 开始备份：restic", e.cfg.MachineName))
+	e.logger.Info("Executing Restic Backup Engine")
+	if e.verbose {
+		e.notifier.Send(ctx, fmt.Sprintf("%s 开始备份 (%s)：restic", e.machine, e.jobName))
 	}
 
 	if err := runSimpleCommand(ctx, e.factory, e.logger, "restic", "version"); err != nil {
 		return err
 	}
 
-	return runSimpleCommand(ctx, e.factory, e.logger, "restic", "backup", "--exclude-caches", "--one-file-system", e.cfg.ResticRoot)
+	return runSimpleCommand(ctx, e.factory, e.logger, "restic", "backup", "--exclude-caches", "--one-file-system", e.cfg.Root)
 }
 
 // ----------------------------------------------------------------------------
 // BTRFS Restic Engine
 // ----------------------------------------------------------------------------
 type BtrfsResticEngine struct {
-	cfg      *config.AppConfig
+	jobName  string
+	machine  string
+	verbose  bool
+	cfg      *config.BtrfsResticConfig
 	logger   *slog.Logger
 	notifier *notify.CompositeNotifier
 	factory  CommandFactory
 }
 
-func NewBtrfsResticEngine(cfg *config.AppConfig, logger *slog.Logger, notifier *notify.CompositeNotifier, factory CommandFactory) *BtrfsResticEngine {
-	return &BtrfsResticEngine{cfg: cfg, logger: logger, notifier: notifier, factory: factory}
+func NewBtrfsResticEngine(jobName, machineName string, verbose bool, cfg *config.BtrfsResticConfig, logger *slog.Logger, notifier *notify.CompositeNotifier, factory CommandFactory) *BtrfsResticEngine {
+	return &BtrfsResticEngine{jobName: jobName, machine: machineName, verbose: verbose, cfg: cfg, logger: logger.With("job", jobName), notifier: notifier, factory: factory}
 }
 
-func (e *BtrfsResticEngine) Name() string { return "btrfs_restic" }
+func (e *BtrfsResticEngine) Name() string { return e.jobName }
 
 func (e *BtrfsResticEngine) Execute(ctx context.Context) error {
 	e.logger.Info("Executing BTRFS Restic Backup Engine")
-	if e.cfg.NotifySendVerbose {
-		e.notifier.Send(ctx, fmt.Sprintf("%s 开始备份：btrfs 子卷快照 + restic", e.cfg.MachineName))
+	if e.verbose {
+		e.notifier.Send(ctx, fmt.Sprintf("%s 开始备份 (%s)：btrfs 子卷快照 + restic", e.machine, e.jobName))
 	}
 
-	deleteCmd := fmt.Sprintf("btrfs subvolume delete %s/* || true", e.cfg.BtrfsSnapshotsRoot)
+	deleteCmd := fmt.Sprintf("btrfs subvolume delete %s/* || true", e.cfg.SnapshotsRoot)
+	
+	// 1. Initial cleanup of lingering snapshots
 	_ = runSimpleCommand(ctx, e.factory, e.logger, "bash", "-c", deleteCmd) 
 
-	for dest, src := range e.cfg.BtrfsSnapshots {
-		destPath := fmt.Sprintf("%s/%s", e.cfg.BtrfsSnapshotsRoot, dest)
+	// ALWAYS attempt cleanup upon exit to prevent leaked btrfs subvolumes on disk
+	defer func() {
+		_ = runSimpleCommand(context.Background(), e.factory, e.logger, "bash", "-c", deleteCmd)
+	}()
+
+	for dest, src := range e.cfg.Subvolumes {
+		destPath := fmt.Sprintf("%s/%s", e.cfg.SnapshotsRoot, dest)
 		if err := runSimpleCommand(ctx, e.factory, e.logger, "btrfs", "subvolume", "snapshot", "-r", src, destPath); err != nil {
 			e.logger.Error("Failed to create btrfs snapshot", "src", src, "dest", destPath, "error", err)
 			return err
@@ -103,12 +118,10 @@ func (e *BtrfsResticEngine) Execute(ctx context.Context) error {
 		return err
 	}
 
-	if err := runSimpleCommand(ctx, e.factory, e.logger, "restic", "backup", "--exclude-caches", e.cfg.BtrfsSnapshotsRoot); err != nil {
+	if err := runSimpleCommand(ctx, e.factory, e.logger, "restic", "backup", "--exclude-caches", e.cfg.SnapshotsRoot); err != nil {
 		e.logger.Error("Restic backup of btrfs snapshots failed", "error", err)
-		_ = runSimpleCommand(ctx, e.factory, e.logger, "bash", "-c", deleteCmd)
 		return err
 	}
 
-	_ = runSimpleCommand(ctx, e.factory, e.logger, "bash", "-c", deleteCmd)
 	return nil
 }
