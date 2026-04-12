@@ -99,10 +99,9 @@ func Load() (*AppConfig, error) {
 
 	// Parse Dynamic BTRFS Snapshots
 	for _, env := range os.Environ() {
-		parts := strings.SplitN(env, "=", 2)
-		if len(parts) == 2 && strings.HasPrefix(parts[0], "BTRFS_SNAPSHOT_") {
-			dest := strings.TrimPrefix(parts[0], "BTRFS_SNAPSHOT_")
-			cfg.BtrfsSnapshots[dest] = parts[1]
+		if key, val, ok := strings.Cut(env, "="); ok && strings.HasPrefix(key, "BTRFS_SNAPSHOT_") {
+			dest := strings.TrimPrefix(key, "BTRFS_SNAPSHOT_")
+			cfg.BtrfsSnapshots[dest] = val
 		}
 	}
 

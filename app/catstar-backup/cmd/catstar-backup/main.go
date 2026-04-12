@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 
@@ -126,13 +127,7 @@ func main() {
 		// Handle Success (if summary is enabled and within the time window)
 		shouldSend := len(cfg.NotifySendSummaryHours) == 0
 		if !shouldSend {
-			currentHour := time.Now().Hour()
-			for _, h := range cfg.NotifySendSummaryHours {
-				if currentHour == h {
-					shouldSend = true
-					break
-				}
-			}
+			shouldSend = slices.Contains(cfg.NotifySendSummaryHours, time.Now().Hour())
 		}
 
 		if shouldSend {

@@ -88,6 +88,7 @@ func TestTelegramNotifier_Integration(t *testing.T) {
 		Token:   "TEST_TOKEN",
 		ChatID:  "123",
 		BaseURL: ts.URL + "/botTEST_TOKEN/sendMessage",
+		client:  ts.Client(),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -102,6 +103,7 @@ func TestTelegramNotifier_Integration(t *testing.T) {
 		Token:   "BAD_TOKEN",
 		ChatID:  "123",
 		BaseURL: ts.URL + "/bad_path",
+		client:  ts.Client(),
 	}
 
 	if err := tnBad.Send(ctx, "test"); err == nil {

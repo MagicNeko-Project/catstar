@@ -30,11 +30,17 @@ type CompositeNotifier struct {
 func NewCompositeNotifier(cfg *config.AppConfig, logger *slog.Logger) *CompositeNotifier {
 	var notifiers []Notifier
 
+	// Production-hardened HTTP client for dispatching
+	httpClient := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
 	if cfg.TelegramBotToken != "" {
 		notifiers = append(notifiers, &TelegramNotifier{
 			Token:       cfg.TelegramBotToken,
 			ChatID:      cfg.TelegramSendMsgUser,
 			SkipSummary: cfg.TelegramSkipSummary,
+			client:      httpClient,
 		})
 	}
 
@@ -43,6 +49,7 @@ func NewCompositeNotifier(cfg *config.AppConfig, logger *slog.Logger) *Composite
 			WebhookURL:  cfg.DiscordWebhookURL,
 			Username:    cfg.DiscordUsername,
 			SkipSummary: cfg.DiscordSkipSummary,
+			client:      httpClient,
 		})
 	}
 
@@ -119,6 +126,7 @@ type TelegramNotifier struct {
 	ChatID      string
 	SkipSummary bool
 	BaseURL     string // Allows overriding for tests
+	client      *http.Client
 }
 
 func (t *TelegramNotifier) Name() string { return "telegram" }
@@ -141,7 +149,7 @@ func (t *TelegramNotifier) Send(ctx context.Context, message string) error {
 	}
 	req.Header.Set("Content-Type", w.FormDataContentType())
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := t.client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -164,6 +172,7 @@ type DiscordNotifier struct {
 	WebhookURL  string
 	Username    string
 	SkipSummary bool
+	client      *http.Client
 }
 
 func (d *DiscordNotifier) Name() string { return "discord" }
@@ -181,7 +190,7 @@ func (d *DiscordNotifier) Send(ctx context.Context, message string) error {
 	}
 	req.Header.Set("Content-Type", w.FormDataContentType())
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := d.client.Do(req)
 	if err != nil {
 		return err
 	}

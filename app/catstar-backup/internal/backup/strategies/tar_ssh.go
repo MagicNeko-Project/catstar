@@ -102,12 +102,11 @@ func (e *TarSSHEngine) Execute(ctx context.Context) error {
 	// 5. Orchestrate concurrently
 	processes := []Process{tarCmd, sslCmd, ddCmd, sshCmd}
 	for _, p := range processes {
-		proc := p // Shadow for closure
 		eg.Go(func() error {
-			if err := proc.Start(); err != nil {
+			if err := p.Start(); err != nil {
 				return fmt.Errorf("failed to start process: %w", err)
 			}
-			return proc.Wait()
+			return p.Wait()
 		})
 	}
 
