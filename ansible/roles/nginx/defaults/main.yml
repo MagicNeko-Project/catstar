@@ -3,31 +3,31 @@
 # install: true  # Use apt to install nginx
 
 # Paths
-web_root: /srv
-html_root: /srv/html
-data_root: /data
-ssl_root: /ssl
+nginx_web_root: /srv
+nginx_html_root: /srv/html
+nginx_data_root: /data
+nginx_ssl_root: /ssl
 
 nginx_root: /etc/nginx
 
-nginx_sites_enabled: sites-enabled
-nginx_sites_available: sites-available
+nginx_sites_enabled_dir: sites-enabled
+nginx_sites_available_dir: sites-available
 nginx_ssl_snippets: snippets/ssl
 
-php_enabled: false
-php_version: 7.4 # 7.4 for ubuntu focal
-php_root: "/etc/php/{{ php_version }}"
-php_pool_root: "{{ php_root }}/fpm/pool.d"
-fastcgi_listen: "/run/php/php{{ php_version }}-fpm-user.sock"
+nginx_php_enabled: false
+nginx_php_version: 7.4 # 7.4 for ubuntu focal
+nginx_php_root: "/etc/php/{{ nginx_php_version }}"
+nginx_php_pool_root: "{{ nginx_php_root }}/fpm/pool.d"
+nginx_fastcgi_listen: "/run/php/php{{ nginx_php_version }}-fpm-user.sock"
 
-content_enabled: false
+nginx_content_enabled: false
 
 # User
-new_user: www-data
+nginx_new_user: www-data
 
 # Generate conf.d/upstreams.conf
-upstreams: {}
-upstreams_default:
+nginx_upstreams: {}
+nginx_upstreams_default:
   transmission: 9091
   jupyter: 8888
   zeronet: 43110
@@ -41,22 +41,22 @@ nginx_config_dirs:
   - snippets
   - modules-available
   - modules-enabled
-  - "{{ nginx_sites_enabled }}"
-  - "{{ nginx_sites_available }}"
+  - "{{ nginx_sites_enabled_dir }}"
+  - "{{ nginx_sites_available_dir }}"
   - "{{ nginx_ssl_snippets }}"
 
 # config file -> config values dict
-sites_enabled: {}
-sites_disabled: []
-stream: []
-proxy_cache_paths: []
+nginx_sites_enabled: {}
+nginx_sites_disabled: []
+nginx_stream: []
+nginx_proxy_cache_paths: []
 # vars file for nginx
-redirect_code: 301 # Choose 301 or 302
-http_port: 80
-https_port: 443
+nginx_redirect_code: 301 # Choose 301 or 302
+nginx_http_port: 80
+nginx_https_port: 443
 
-php_configs:
+nginx_php_configs:
   - www-user.conf
 
-html_files:
+nginx_html_files:
   - index.html

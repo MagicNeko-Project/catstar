@@ -1,7 +1,7 @@
 ---
-apache_packages: apache2
+nginx_apache_packages: apache2
 nginx_packages: nginx
-php_fpm_packages:
+nginx_php_fpm_packages:
   - php-fpm
   - php-mysql
   - php-curl

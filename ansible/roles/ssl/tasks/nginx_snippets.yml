@@ -1,13 +1,13 @@
 ---
 - name: Create nginx SSL snippets directory
   ansible.builtin.file:
-    path: "{{ (nginx_root, nginx_snippets_ssl) | path_join }}"
+    path: "{{ (ssl_nginx_root, ssl_nginx_snippets_ssl) | path_join }}"
     state: directory
     mode: "0755"
 
 - name: Create nginx SSL snippet files
   ansible.builtin.template:
     src: ssl.conf.j2
-    dest: "{{ (nginx_root, nginx_snippets_ssl) | path_join }}/{{ item }}.conf"
+    dest: "{{ (ssl_nginx_root, ssl_nginx_snippets_ssl) | path_join }}/{{ item }}.conf"
     mode: "0644"
   loop: "{{ ssl_all }}"

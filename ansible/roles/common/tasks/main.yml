@@ -4,14 +4,14 @@
     path: "{{ item.key }}"
     state: directory
     mode: "{{ item.value }}"
-  loop: "{{ create_directories | dict2items }}"
+  loop: "{{ common_create_directories | dict2items }}"
 
 - name: Create Files
   ansible.builtin.copy:
     dest: "{{ item.key }}"
     content: "{{ item.value }}"
     mode: "0644"
-  loop: "{{ create_files | dict2items }}"
+  loop: "{{ common_create_files | dict2items }}"
 
 - name: Create Configs
   ansible.builtin.copy:
@@ -21,12 +21,12 @@
       {{ k }}={{ v }}
       {% endfor %}
     mode: "0644"
-  loop: "{{ create_configs | dict2items }}"
+  loop: "{{ common_create_configs | dict2items }}"
 
 - name: Find a list of existing cache directories
   ansible.builtin.stat:
     path: "{{ item }}"
-  loop: "{{ cache_dirs }}"
+  loop: "{{ common_cache_dirs }}"
   register: common_cache_dir_stats
 
 - name: Copy CACHEDIR.TAG to valid cache directories
@@ -46,18 +46,18 @@
     - .bash_logout
     - .bashrc
     - .profile
-  when: copy_bash_skel_to_root
+  when: common_copy_bash_skel_to_root
 
 - name: Copy BBR sysctl configuration
   ansible.builtin.copy:
     src: files/98-bbr.conf
     dest: /etc/sysctl.d/98-bbr.conf
     mode: "0644"
-  when: sysctl_bbr
+  when: common_sysctl_bbr
 
 - name: Copy swappiness sysctl configuration
   ansible.builtin.copy:
     src: files/90-swappiness.conf
     dest: /etc/sysctl.d/90-swappiness.conf
     mode: "0644"
-  when: sysctl_swappiness
+  when: common_sysctl_swappiness

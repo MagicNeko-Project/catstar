@@ -1,18 +1,18 @@
 ---
-cache_dirs:
+common_cache_dirs:
   - /var/cache/pacman
   - /var/cache/apt
   - /var/lib/apt/lists
 
-copy_bash_skel_to_root: false
+common_copy_bash_skel_to_root: false
 
 # vm.swappiness = 10
-sysctl_swappiness: false
+common_sysctl_swappiness: false
 
 # net.core.default_qdisc = cake
 # net.ipv4.tcp_congestion_control = bbr
-sysctl_bbr: true
+common_sysctl_bbr: true
 
-create_directories: {}
-create_files: {}
-create_configs: {}
+common_create_directories: {}
+common_create_files: {}
+common_create_configs: {}

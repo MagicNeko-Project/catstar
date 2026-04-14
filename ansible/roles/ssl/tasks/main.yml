@@ -19,4 +19,4 @@
 
 - name: Generate nginx snippets
   ansible.builtin.import_tasks: nginx_snippets.yml
-  when: nginx_snippets_enabled
+  when: ssl_nginx_snippets_enabled

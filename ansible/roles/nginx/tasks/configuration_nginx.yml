@@ -20,33 +20,33 @@
     mode: "0640"
     owner: root
     group: "{{ nginx_user }}"
-  loop: "{{ htpasswd | dict2items }}"
-  when: htpasswd is defined
+  loop: "{{ nginx_htpasswd | dict2items }}"
+  when: nginx_htpasswd is defined
 
 - name: Copy Nginx sites available files templates
   ansible.builtin.template:
     src: "sites-available/{{ site.template | default('generic') }}.j2"
-    dest: "{{ (nginx_root, nginx_sites_available, item.key) | path_join }}"
+    dest: "{{ (nginx_root, nginx_sites_available_dir, item.key) | path_join }}"
     mode: "0644"
     lstrip_blocks: true
   vars:
     site_name: "{{ item.key }}"
     site: "{{ item.value }}"
-  with_dict: "{{ sites_enabled }}"
+  with_dict: "{{ nginx_sites_enabled }}"
   notify: reload nginx
 
 - name: Enable Nginx sites
   ansible.builtin.file:
-    src: "{{ (nginx_root, nginx_sites_available, item.key) | path_join }}"
-    dest: "{{ (nginx_root, nginx_sites_enabled, item.key) | path_join }}"
+    src: "{{ (nginx_root, nginx_sites_available_dir, item.key) | path_join }}"
+    dest: "{{ (nginx_root, nginx_sites_enabled_dir, item.key) | path_join }}"
     state: link
-  with_dict: "{{ sites_enabled }}"
+  with_dict: "{{ nginx_sites_enabled }}"
   when: item.value.enabled | default(True)
   notify: reload nginx
 
 - name: Disable Nginx sites
   ansible.builtin.file:
-    path: "{{ (nginx_root, nginx_sites_enabled, item) | path_join }}"
+    path: "{{ (nginx_root, nginx_sites_enabled_dir, item) | path_join }}"
     state: absent
-  loop: "{{ sites_disabled | default([], true) }}"
+  loop: "{{ nginx_sites_disabled | default([], true) }}"
   notify: reload nginx

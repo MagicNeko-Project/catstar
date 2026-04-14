@@ -1,19 +1,18 @@
 ---
-- name: Create Web Root
+- name: Create html and web root
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
-    owner: "{{ new_user }}"
-    group: "{{ new_user }}"
+    owner: "{{ nginx_new_user }}"
+    group: "{{ nginx_new_user }}"
     mode: "0755"
   loop:
-    - "{{ web_root }}"
-    - "{{ html_root }}"
+    - "{{ nginx_web_root }}"
+    - "{{ nginx_html_root }}"
 
-- name: Copy HTML templates
+- name: Create html index
   ansible.builtin.template:
     src: "html/{{ item }}.j2"
-    dest: "{{ html_root }}/{{ item }}"
+    dest: "{{ nginx_html_root }}/{{ item }}"
     mode: "0644"
-  loop:
-    - index.html
+  loop: "{{ nginx_html_files }}"

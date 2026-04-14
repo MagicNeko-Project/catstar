@@ -11,9 +11,9 @@
   block:
     - name: Remove Apache
       ansible.builtin.apt:
-        name: "{{ apache_packages }}"
+        name: "{{ nginx_apache_packages }}"
         state: absent
-      when: apache_packages is defined
+      when: nginx_apache_packages is defined
 
     - name: Install Nginx
       ansible.builtin.package:
@@ -23,9 +23,9 @@
 
     - name: Install PHP
       ansible.builtin.package:
-        name: "{{ php_fpm_packages }}"
+        name: "{{ nginx_php_fpm_packages }}"
       notify: start php-fpm
-      when: php_enabled and php_fpm_packages is defined
+      when: nginx_php_enabled and nginx_php_fpm_packages is defined
 
     - name: Create nginx config directories
       ansible.builtin.file:
@@ -45,8 +45,8 @@
 
 - name: Create PHP configurations
   ansible.builtin.import_tasks: configuration_php.yml
-  when: php_enabled
+  when: nginx_php_enabled
 
-- name: Create initial contents
+- name: Create contents
   ansible.builtin.import_tasks: contents.yml
-  when: content_enabled
+  when: nginx_content_enabled

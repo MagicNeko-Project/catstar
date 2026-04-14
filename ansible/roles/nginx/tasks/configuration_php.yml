@@ -1,8 +1,8 @@
 ---
-- name: Copy PHP configuration template
+- name: Create PHP pool configuration
   ansible.builtin.template:
     src: "php/{{ item }}.j2"
-    dest: "{{ php_pool_root }}/{{ item }}"
+    dest: "{{ nginx_php_pool_root }}/{{ item }}"
     mode: "0644"
-  loop: "{{ php_configs }}"
+  loop: "{{ nginx_php_configs }}"
   notify: restart php-fpm
