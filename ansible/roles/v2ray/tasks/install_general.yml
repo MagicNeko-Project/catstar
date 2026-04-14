@@ -7,6 +7,7 @@
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
+    mode: "0755"
   loop:
     - "{{ v2ray_prefix }}"
     - "{{ v2ray_install }}"
@@ -17,12 +18,13 @@
   ansible.builtin.get_url:
     url: "{{ v2ray_url }}"
     dest: "{{ v2ray_archive }}"
+    mode: "0644"
   notify:
     - Restart v2ray
 
 - name: Extract contents
   ansible.builtin.unarchive:
-    remote_src: yes
+    remote_src: true
     src: "{{ v2ray_archive }}"
     dest: "{{ v2ray_prefix }}"
 
@@ -38,6 +40,7 @@
   ansible.builtin.template:
     src: v2ray.service
     dest: /etc/systemd/system/
+    mode: "0644"
   notify:
     - Reload systemd
     - Start v2ray

@@ -16,5 +16,6 @@
   ansible.builtin.copy:
     content: "{{ lookup('template', 'config.yml.j2') | from_yaml | to_json }}"
     dest: "{{ v2ray_install }}/etc/v2ray/config.json"
+    mode: "0644"
   notify:
     - Restart v2ray

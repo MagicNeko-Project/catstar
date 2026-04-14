@@ -5,24 +5,25 @@
     - "../vars/{{ ansible_os_family }}.yml"
     - "../vars/default.yml"
 
-- tags:
+- name: Installation block
+  tags:
     - install
   block:
     - name: Remove Apache
       ansible.builtin.apt:
-        name: '{{ apache_packages }}'
+        name: "{{ apache_packages }}"
         state: absent
       when: apache_packages is defined
 
     - name: Install Nginx
       ansible.builtin.package:
-        name: '{{ nginx_packages }}'
+        name: "{{ nginx_packages }}"
       notify: start nginx
       when: nginx_packages is defined
 
     - name: Install PHP
       ansible.builtin.package:
-        name: '{{ php_fpm_packages }}'
+        name: "{{ php_fpm_packages }}"
       notify: start php-fpm
       when: php_enabled and php_fpm_packages is defined
 
@@ -30,13 +31,14 @@
       ansible.builtin.file:
         path: "{{ nginx_root }}/{{ item }}"
         state: directory
-        mode: 0755
+        mode: "0755"
       loop: "{{ nginx_config_dirs }}"
 
     - name: Copy static config files
       ansible.builtin.copy:
         src: nginx/
         dest: "{{ nginx_root }}"
+        mode: "0644"
 
 - name: Create configurations
   ansible.builtin.import_tasks: configuration_nginx.yml

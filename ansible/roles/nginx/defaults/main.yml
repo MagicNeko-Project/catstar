@@ -15,7 +15,7 @@ nginx_sites_available: sites-available
 nginx_ssl_snippets: snippets/ssl
 
 php_enabled: false
-php_version: 7.4  # 7.4 for ubuntu focal
+php_version: 7.4 # 7.4 for ubuntu focal
 php_root: "/etc/php/{{ php_version }}"
 php_pool_root: "{{ php_root }}/fpm/pool.d"
 fastcgi_listen: "/run/php/php{{ php_version }}-fpm-user.sock"
@@ -50,9 +50,8 @@ sites_enabled: {}
 sites_disabled: []
 stream: []
 proxy_cache_paths: []
-
 # vars file for nginx
-redirect_code: 301  # Choose 301 or 302
+redirect_code: 301 # Choose 301 or 302
 http_port: 80
 https_port: 443
 

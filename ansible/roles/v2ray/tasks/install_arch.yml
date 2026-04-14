@@ -4,7 +4,8 @@
     name: v2ray
     state: present
   notify: Start v2ray
-  ignore_errors: true
+  register: pacman_result
+  failed_when: false
 
 - name: Update variables
   ansible.builtin.set_fact:
@@ -14,6 +15,7 @@
   ansible.builtin.template:
     src: v2ray.service
     dest: /etc/systemd/system/
+    mode: "0644"
   notify:
     - Reload systemd
     - Start v2ray

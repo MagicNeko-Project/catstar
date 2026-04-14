@@ -1,9 +1,10 @@
+---
 - name: Copy Nginx Configuration
   ansible.builtin.template:
     src: "{{ item }}"
     dest: "{{ (nginx_root, dest) | path_join }}"
-    mode: 0644
-    lstrip_blocks: yes
+    mode: "0644"
+    lstrip_blocks: true
   vars:
     dest: "{{ item | regex_replace('.*templates/nginx/(.+)\\.j2$', '\\1') }}"
   notify: reload nginx
@@ -16,7 +17,7 @@
   ansible.builtin.template:
     src: htpasswd.j2
     dest: /etc/nginx/htpasswd_{{ item.key }}
-    mode: 0640
+    mode: "0640"
     owner: root
     group: "{{ nginx_user }}"
   loop: "{{ htpasswd | dict2items }}"
@@ -26,8 +27,8 @@
   ansible.builtin.template:
     src: "sites-available/{{ site.template | default('generic') }}.j2"
     dest: "{{ (nginx_root, nginx_sites_available, item.key) | path_join }}"
-    mode: 0644
-    lstrip_blocks: yes
+    mode: "0644"
+    lstrip_blocks: true
   vars:
     site_name: "{{ item.key }}"
     site: "{{ item.value }}"
