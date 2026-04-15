@@ -2,7 +2,7 @@
 
 {% for s in site | nginx_server_block(site_name) %}
 
-{% for option in site.options_global | nginx_options %}
+{% for option in s.options_global | nginx_options %}
 {{ option }}
 {% endfor %}
 

@@ -59,7 +59,7 @@ http {
 
     # Load configs
     include                conf.d/*.conf;
-    include                {{ nginx_sites_enabled }}/*;
+    include                {{ nginx_sites_enabled_dir }}/*;
     include                cloudflare;
 }
 
