@@ -19,3 +19,16 @@
       dest: "key.pem"
       mode: "0600"
   when: ssl_cert_folder.stat.exists
+
+- name: Copy fallback certificates if real certs do not exist
+  ansible.builtin.copy:
+    src: "{{ ssl_root }}/_/{{ item.dest }}"
+    dest: "{{ ssl_root }}/{{ name }}/{{ item.dest }}"
+    mode: "{{ item.mode }}"
+    remote_src: true
+  loop:
+    - dest: full.pem
+      mode: "0644"
+    - dest: "key.pem"
+      mode: "0600"
+  when: not ssl_cert_folder.stat.exists

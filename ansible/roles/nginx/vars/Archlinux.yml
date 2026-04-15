@@ -1,2 +1,6 @@
 ---
+nginx_packages: nginx
+nginx_php_fpm_packages:
+  - php-fpm
 nginx_user: http
+nginx_new_user: http
