@@ -15,10 +15,10 @@ v2ray_file: "v2ray-{{ v2ray_arch[ansible_architecture] }}.zip"
 v2ray_url: "https://github.com/v2fly/v2ray-core/releases/download/{{ v2ray_version }}/{{ v2ray_file }}"
 v2ray_archive: "{{ v2ray_prefix }}/{{ v2ray_version }}.zip"
 
-v2inbounds: []
-v2outbounds: []
-v2rules: []
-v2outbounds_default:
+v2ray_inbounds: []
+v2ray_outbounds: []
+v2ray_rules: []
+v2ray_outbounds_default:
   - protocol: freedom
     tag: direct
   - protocol: blackhole
@@ -30,7 +30,7 @@ v2outbounds_default:
         - address: localhost
           port: 9050
 
-v2rules_default:
+v2ray_rules_default:
   - ip:
       - geoip:private
     outboundTag: blocked
@@ -38,7 +38,7 @@ v2rules_default:
       - domain:onion
     outboundTag: tor
 
-v2_ads_domains:
+v2ray_ads_domains:
   - vungle.com
   - unityads.unity3d.com
   - supersonicads.com
@@ -49,7 +49,7 @@ v2_ads_domains:
   - tpc.googlesyndication.com
   - ironsrc.mob
 
-v2_telegram_ips:
+v2ray_telegram_ips:
   # https://core.telegram.org/resources/cidr.txt
   - 2a0a:f280::/32
   - 91.105.192.0/23

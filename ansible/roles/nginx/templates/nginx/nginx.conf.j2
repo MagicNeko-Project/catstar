@@ -63,7 +63,7 @@ http {
     include                cloudflare;
 }
 
-{% if stream | length %}
+{% if nginx_stream | length %}
 stream {
     include conf.d/stream;
     include conf.d/*.streamconf;

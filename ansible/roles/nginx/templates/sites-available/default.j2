@@ -1,23 +1,23 @@
-# Redirect all {{ http_port }} requests
+# Redirect all {{ nginx_http_port }} requests
 server {
-  listen {{ http_port }} default_server;
-  listen [::]:{{ http_port }} default_server;
+  listen {{ nginx_http_port }} default_server;
+  listen [::]:{{ nginx_http_port }} default_server;
 
   # Allow ACME to use HTTP
   location /.well-known/acme-challenge/ {
-    root {{ html_root }};
+    root {{ nginx_html_root }};
   }
 
-  # {{ redirect_code }} redirect
+  # {{ nginx_redirect_code }} redirect
   location / {
-    return {{ redirect_code }} https://$host$request_uri;
+    return {{ nginx_redirect_code }} https://$host$request_uri;
   }
 }
 
 # Deny SSL without proper SNI
 server {
-  listen {{ https_port }} ssl http2 default_server;
-  listen [::]:{{ https_port }} ssl http2 default_server;
+  listen {{ nginx_https_port }} ssl http2 default_server;
+  listen [::]:{{ nginx_https_port }} ssl http2 default_server;
 
   ssl_reject_handshake on;
 }

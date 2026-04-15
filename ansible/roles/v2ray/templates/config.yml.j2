@@ -2,10 +2,12 @@
 log:
   loglevel: info
 
+{% set tcp_relay_tags = [] %}
+
 ### Inbounds ###
 inbounds:
 
-{% for i in v2inbounds %}
+{% for i in v2ray_inbounds %}
 
 {% if i.vmess is defined %}
   - {{ {
@@ -42,7 +44,7 @@ inbounds:
       'method': i.method | default('aes-256-gcm'),
       'password': i.password
     },
-    'streamSettings': s.stream_settings | default({})
+    'streamSettings': i.stream_settings | default({})
   } | to_json }}
 
 {% elif i.socks is defined %}
@@ -54,7 +56,7 @@ inbounds:
     'settings': {
       'auth': 'noauth'
     },
-    'streamSettings': s.stream_settings | default({})
+    'streamSettings': i.stream_settings | default({})
   } | to_json }}
 
 {% elif i.http is defined %}
@@ -66,15 +68,14 @@ inbounds:
     'settings': {
       'auth': 'noauth'
     },
-    'streamSettings': s.stream_settings | default({})
+    'streamSettings': i.stream_settings | default({})
   } | to_json }}
 
 {% elif i.tcp is defined %}
-{% set tcp_relay_tags = [] %}
 
 {% for t in i.tcp | dict2items %}
   {% set current_tag = 'tcp_relay_' ~ t.key %}
-  {{ tcp_relay_tags.append(current_tag) }}
+  {% set _ = tcp_relay_tags.append(current_tag) %}
   - {{ {
     'protocol': 'dokodemo-door',
     'port': t.key,
@@ -91,7 +92,7 @@ inbounds:
 {% elif i.tg is defined %}
   - protocol: socks
     port: {{ i.tg }}
-    listen: "{{ t.listen | default('::') }}"
+    listen: "{{ i.listen | default('::') }}"
     tag: inbound-tg
     settings:
 {% if i.accounts is defined %}
@@ -109,7 +110,7 @@ inbounds:
 ### Outbounds ###
 
 outbounds:
-{% for outbound in v2outbounds_default + v2outbounds %}
+{% for outbound in v2ray_outbounds_default + v2ray_outbounds %}
   - {{ outbound | to_json }}
 {% endfor %}
 
@@ -124,29 +125,29 @@ transport:
 
 routing:
   rules:
-{% if tcp_relay_tags is defined %}
+{% if tcp_relay_tags | length > 0 %}
     - type: field
       inboundTag: {{ tcp_relay_tags | to_json }}
       outboundTag: direct
 {% endif %}
 
-{% for rule in v2rules_default %}
+{% for rule in v2ray_rules_default %}
     - {{ {'type': 'field'} | combine(rule) | to_json }}
 {% endfor %}
 
-{% if v2_ads_domains %}
+{% if v2ray_ads_domains %}
     - type: field
       domain:
-{% for ads in v2_ads_domains %}
+{% for ads in v2ray_ads_domains %}
         - domain:{{ ads }}
 {% endfor %}
       outboundTag: blocked
 {% endif %}
 
-{% if v2_telegram_ips %}
+{% if v2ray_telegram_ips %}
     - type: field
       ip:
-{% for ip in v2_telegram_ips %}
+{% for ip in v2ray_telegram_ips %}
         - {{ ip }}
 {% endfor %}
       inboundTag:
@@ -159,6 +160,6 @@ routing:
       outboundTag: blocked
 {% endif %}
 
-{% for rule in v2rules %}
+{% for rule in v2ray_rules %}
     - {{ {'type': 'field'} | combine(rule) | to_json }}
 {% endfor %}

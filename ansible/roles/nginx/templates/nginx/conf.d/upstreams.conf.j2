@@ -1,6 +1,6 @@
 # Managed by Ansible - DO NOT EDIT!
 
-{% for item in upstreams_default | combine(upstreams) | dict2items %}
+{% for item in nginx_upstreams_default | combine(nginx_upstreams) | dict2items %}
 upstream {{ item.key }} {
   {% if item.value is number %}
   server 127.0.0.1:{{ item.value }};
