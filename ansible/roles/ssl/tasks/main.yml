@@ -4,7 +4,7 @@
     path: "{{ ssl_root }}/{{ item }}"
     state: directory
     mode: "0700"
-  loop: "{{ ssl_all }}"
+  loop: "{{ ssl_all + ['_'] }}"
 
 - name: Copy certificates
   ansible.builtin.include_tasks: copycert.yml

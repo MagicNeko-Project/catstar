@@ -12,11 +12,11 @@
 
 - name: Restart php-fpm
   ansible.builtin.service:
-    name: "php{{ php_version }}-fpm"
+    name: "php{{ nginx_php_version }}-fpm"
     state: restarted
 
 - name: Start php-fpm
   ansible.builtin.service:
-    name: "php{{ php_version }}-fpm"
+    name: "php{{ nginx_php_version }}-fpm"
     state: started
     enabled: true

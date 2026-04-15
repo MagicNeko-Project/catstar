@@ -113,6 +113,7 @@ class FilterModule:
         return [
             site.ssl_host for name, server in sites_enabled_config.items()
             for site in self.nginx_server_block(server, name)
+            if site.ssl_host is not None
         ]
 
     def _create_nginx_location(self, location_block):
