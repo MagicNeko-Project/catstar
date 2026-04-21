@@ -1,34 +1,35 @@
 ---
-- name: Check if certificate folder exists
+- name: Check if real certificate exists on localhost
   delegate_to: localhost
   ansible.builtin.stat:
-    path: "{{ ssl_cert_src | expanduser }}/{{ name }}"
-  register: ssl_cert_folder
+    path: "{{ ssl_cert_src | expanduser }}/{{ ssl_cert_name }}/fullchain.cer"
+  register: local_cert_stat
   become: false
 
-- name: Copy certificates from cert folder
+- name: Copy real certificates to host
   ansible.builtin.copy:
     src: "{{ ssl_cert_src | expanduser }}/{{ item.src }}"
-    dest: "{{ ssl_root }}/{{ name }}/{{ item.dest }}"
+    dest: "{{ ssl_root }}/{{ ssl_cert_name }}/{{ item.dest }}"
     mode: "{{ item.mode }}"
   loop:
-    - src: "{{ name }}/fullchain.cer"
+    - src: "{{ ssl_cert_name }}/fullchain.cer"
       dest: full.pem
       mode: "0644"
-    - src: "{{ name }}/{{ name }}.key"
-      dest: "key.pem"
+    - src: "{{ ssl_cert_name }}/{{ ssl_cert_name }}.key"
+      dest: key.pem
       mode: "0600"
-  when: ssl_cert_folder.stat.exists
+  when: local_cert_stat.stat.exists
+  register: real_cert_copy
 
-- name: Copy fallback certificates if real certs do not exist
+- name: Copy fallback certificates if real certificates are missing
   ansible.builtin.copy:
     src: "{{ ssl_root }}/_/{{ item.dest }}"
-    dest: "{{ ssl_root }}/{{ name }}/{{ item.dest }}"
+    dest: "{{ ssl_root }}/{{ ssl_cert_name }}/{{ item.dest }}"
     mode: "{{ item.mode }}"
     remote_src: true
   loop:
     - dest: full.pem
       mode: "0644"
-    - dest: "key.pem"
+    - dest: key.pem
       mode: "0600"
-  when: not ssl_cert_folder.stat.exists
+  when: not local_cert_stat.stat.exists

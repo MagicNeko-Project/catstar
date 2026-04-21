@@ -6,16 +6,16 @@
     mode: "0700"
   loop: "{{ ssl_all + ['_'] }}"
 
-- name: Copy certificates
-  ansible.builtin.include_tasks: copycert.yml
-  loop: "{{ ssl_all }}"
-  loop_control:
-    loop_var: name
-
 - name: Generate default certificate
   ansible.builtin.command:
     cmd: openssl req -nodes -x509 -newkey rsa:2048 -keyout {{ ssl_root }}/_/key.pem -out {{ ssl_root }}/_/full.pem -days 709 -subj /
     creates: "{{ ssl_root }}/_/full.pem"
+
+- name: Copy certificates
+  ansible.builtin.include_tasks: copycert.yml
+  loop: "{{ ssl_all }}"
+  loop_control:
+    loop_var: ssl_cert_name
 
 - name: Generate nginx snippets
   ansible.builtin.import_tasks: nginx_snippets.yml
