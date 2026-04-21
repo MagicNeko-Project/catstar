@@ -9,3 +9,8 @@ nginx_php_fpm_packages:
   - php-gd
   - php-xml
 nginx_user: www-data
+
+nginx_php_root: "/etc/php/{{ nginx_php_version }}"
+nginx_php_pool_root: "{{ nginx_php_root }}/fpm/pool.d"
+nginx_fastcgi_listen: "/run/php/php{{ nginx_php_version }}-fpm-user.sock"
+nginx_php_fpm_service: "php{{ nginx_php_version }}-fpm"

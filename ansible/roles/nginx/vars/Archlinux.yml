@@ -4,3 +4,8 @@ nginx_php_fpm_packages:
   - php-fpm
 nginx_user: http
 nginx_new_user: http
+
+nginx_php_root: "/etc/php"
+nginx_php_pool_root: "/etc/php/php-fpm.d"
+nginx_fastcgi_listen: "/run/php-fpm/php-fpm-user.sock"
+nginx_php_fpm_service: "php-fpm"

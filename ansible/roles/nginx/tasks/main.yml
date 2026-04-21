@@ -2,7 +2,7 @@
 - name: Include os-specific variables
   ansible.builtin.include_vars: "{{ item }}"
   with_first_found:
-    - "../vars/{{ ansible_os_family }}.yml"
+    - "../vars/{{ ansible_facts.os_family }}.yml"
     - "../vars/default.yml"
 
 - name: Installation block
@@ -18,13 +18,13 @@
     - name: Install Nginx
       ansible.builtin.package:
         name: "{{ nginx_packages }}"
-      notify: start nginx
+      notify: Start nginx
       when: nginx_packages is defined
 
     - name: Install PHP
       ansible.builtin.package:
         name: "{{ nginx_php_fpm_packages }}"
-      notify: start php-fpm
+      notify: Start php-fpm
       when: nginx_php_enabled and nginx_php_fpm_packages is defined
 
     - name: Create nginx config directories

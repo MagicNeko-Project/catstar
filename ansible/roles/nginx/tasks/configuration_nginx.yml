@@ -7,7 +7,7 @@
     lstrip_blocks: true
   vars:
     dest: "{{ item | regex_replace('.*templates/nginx/(.+)\\.j2$', '\\1') }}"
-  notify: reload nginx
+  notify: Reload nginx
   with_fileglob:
     - "templates/nginx/*.j2"
     - "templates/nginx/conf.d/*.j2"
@@ -33,7 +33,7 @@
     site_name: "{{ item.key }}"
     site: "{{ item.value }}"
   with_dict: "{{ nginx_sites_enabled }}"
-  notify: reload nginx
+  notify: Reload nginx
 
 - name: Enable Nginx sites
   ansible.builtin.file:
@@ -42,11 +42,11 @@
     state: link
   with_dict: "{{ nginx_sites_enabled }}"
   when: item.value.enabled | default(True)
-  notify: reload nginx
+  notify: Reload nginx
 
 - name: Disable Nginx sites
   ansible.builtin.file:
     path: "{{ (nginx_root, nginx_sites_enabled_dir, item) | path_join }}"
     state: absent
   loop: "{{ nginx_sites_disabled | default([], true) }}"
-  notify: reload nginx
+  notify: Reload nginx

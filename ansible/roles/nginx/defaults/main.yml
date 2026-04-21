@@ -16,9 +16,6 @@ nginx_ssl_snippets: snippets/ssl
 
 nginx_php_enabled: false
 nginx_php_version: 7.4 # 7.4 for ubuntu focal
-nginx_php_root: "/etc/php/{{ nginx_php_version }}"
-nginx_php_pool_root: "{{ nginx_php_root }}/fpm/pool.d"
-nginx_fastcgi_listen: "/run/php/php{{ nginx_php_version }}-fpm-user.sock"
 
 nginx_content_enabled: false
 

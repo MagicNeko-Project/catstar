@@ -5,4 +5,4 @@
     dest: "{{ nginx_php_pool_root }}/{{ item }}"
     mode: "0644"
   loop: "{{ nginx_php_configs }}"
-  notify: restart php-fpm
+  notify: Restart php-fpm
