@@ -74,8 +74,8 @@ inbounds:
 {% elif i.tcp is defined %}
 
 {% for t in i.tcp | dict2items %}
-  {% set current_tag = 'tcp_relay_' ~ t.key %}
-  {% set _ = tcp_relay_tags.append(current_tag) %}
+{% set current_tag = 'tcp_relay_' ~ t.key %}
+{% set _ = tcp_relay_tags.append(current_tag) %}
   - {{ {
     'protocol': 'dokodemo-door',
     'port': t.key,
@@ -97,7 +97,7 @@ inbounds:
     settings:
 {% if i.accounts is defined %}
       auth: password
-      accounts: {{ i.accounts }}
+      accounts: {{ i.accounts | to_json }}
 {% else %}
       auth: noauth
 {% endif %}

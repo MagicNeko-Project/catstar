@@ -1,12 +1,12 @@
 ---
 - name: Install Packages (Ubuntu)
   ansible.builtin.import_tasks: install_general.yml
-  when: ansible_os_family == "Debian"
+  when: ansible_facts.os_family == "Debian"
   tags: install
 
 - name: Install Packages (Arch)
   ansible.builtin.import_tasks: install_arch.yml
-  when: ansible_os_family == "Archlinux"
+  when: ansible_facts.os_family == "Archlinux"
   tags: install
 
 # - debug:
