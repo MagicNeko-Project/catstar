@@ -1,4 +1,2 @@
 profile: production
 strict: true
-skip_list:
-  - var-naming[no-role-prefix]

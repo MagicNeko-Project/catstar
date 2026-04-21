@@ -4,7 +4,7 @@
     name: v2ray
     state: present
   notify: Start v2ray
-  register: pacman_result
+  register: v2ray_pacman_result
   failed_when: false
 
 - name: Update variables

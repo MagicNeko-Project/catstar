@@ -1,0 +1,26 @@
+---
+- name: Master playbook for Catstar infrastructure
+  hosts: all
+  become: true
+  vars:
+    ssl_cert_src: ~/.acme.sh/certs
+
+  roles:
+    - role: common
+      tags:
+        - common
+
+    - role: ssl
+      tags:
+        - ssl
+      when: not (skip_nginx | default(false))
+
+    - role: nginx
+      tags:
+        - nginx
+      when: not (skip_nginx | default(false))
+
+    - role: v2ray
+      tags:
+        - v2ray
+      when: not (skip_v2ray | default(false))
