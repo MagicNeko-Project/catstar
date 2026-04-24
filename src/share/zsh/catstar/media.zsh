@@ -1,7 +1,21 @@
-# Media processing wrappers
-# Heavy heavy hitters are autoloaded
+# Catstar Media Utilities
+# -----------------------------------------------------------------------------
+# This file provides wrappers for media processing (audio extraction, video
+# conversion, etc.) leveraging FFmpeg.
+# -----------------------------------------------------------------------------
 
-extractopus() { extractaudio "$1" "opus" }
-extractm4a() { extractaudio "$1" "m4a" }
+# --- Audio Extraction ---
+# These functions use the autoloaded 'extractaudio' function.
 
-# Stub for simple ffmpeg calls if needed, but primary logic is in functions/ directory
+# Extract audio as Opus (high quality, modern codec)
+extractopus() { 
+  extractaudio "$1" "opus" 
+}
+
+# Extract audio as M4A (high compatibility, AAC)
+extractm4a() { 
+  extractaudio "$1" "m4a" 
+}
+
+# --- Future Media Logic ---
+# Add more media-related wrappers below as needed.

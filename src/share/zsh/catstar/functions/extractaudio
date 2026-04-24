@@ -1,5 +1,10 @@
-# Extract audio from video using FFmpeg
+# Catstar Function: extractaudio
+# -----------------------------------------------------------------------------
+# Extract audio from a video file using FFmpeg.
+#
 # Usage: extractaudio <video_file> <output_format>
+# Example: extractaudio video.mp4 opus
+# -----------------------------------------------------------------------------
 
 if (( $# != 2 )); then
   print -u2 "Usage: extractaudio <video_file> <output_format>"
@@ -10,19 +15,34 @@ local video_file=$1
 local output_format=$2
 local audio_file="${video_file%.*}.$output_format"
 
+# 1. Dependency Check
+if ! (( $+commands[ffmpeg] )); then
+  print -u2 "Error: FFmpeg is not installed or not in PATH."
+  return 1
+fi
+
+# 2. Argument Validation
+if [[ ! -f "$video_file" ]]; then
+  print -u2 "Error: Source file '$video_file' not found."
+  return 1
+fi
+
 if [[ "$video_file" == "$audio_file" ]]; then
   print -u2 "Error: Source and destination files are the same."
   return 1
 fi
 
-if [[ ! -f $audio_file ]]; then
-  ffmpeg -i "$video_file" -vn -c:a copy "$audio_file"
+# 3. Extraction Logic
+if [[ ! -f "$audio_file" ]]; then
+  print "Extracting audio to $audio_file ..."
+  ffmpeg -v error -i "$video_file" -vn -c:a copy "$audio_file"
   if (( $? != 0 )); then
-    print -u2 "ffmpeg failed to extract audio."
+    print -u2 "Error: FFmpeg failed to extract audio."
     return 1
   fi
 else
   print "Audio file already exists: $audio_file"
 fi
 
+# 4. Finalization: Preserve timestamp
 touch -r "$video_file" "$audio_file"

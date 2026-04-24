@@ -1,15 +1,43 @@
-# Git repository management wrappers
-# Managed by autoloaded functions
+# Catstar Git & Development Utilities
+# -----------------------------------------------------------------------------
+# This file contains wrappers for managing Git repositories and development
+# environments (pyenv, rbenv, etc.)
+# -----------------------------------------------------------------------------
 
-update_pyenv() { update_repo pyenv/pyenv ~/.pyenv }
+# --- Environment Manager Updates ---
+# These functions use the autoloaded 'update_repo' function to pull changes
+# for various version managers and tools.
+
+# Update pyenv (Python version manager)
+update_pyenv() { 
+  update_repo "pyenv/pyenv" "$HOME/.pyenv" 
+}
+
+# Update rbenv and ruby-build (Ruby version manager)
 update_rbenv() {
-    update_repo rbenv/rbenv ~/.rbenv
-    update_repo rbenv/ruby-build ~/.rbenv/plugins/ruby-build
+  update_repo "rbenv/rbenv" "$HOME/.rbenv"
+  update_repo "rbenv/ruby-build" "$HOME/.rbenv/plugins/ruby-build"
 }
+
+# Update nodenv and node-build (Node.js version manager)
 update_nodenv() {
-    update_repo nodenv/nodenv ~/.nodenv
-    update_repo nodenv/node-build ~/.nodenv/plugins/node-build
+  update_repo "nodenv/nodenv" "$HOME/.nodenv"
+  update_repo "nodenv/node-build" "$HOME/.nodenv/plugins/node-build"
 }
-update_vim_plug() { update_repo junegunn/vim-plug ~/.vim/vim-plug }
-update_oh_my_zsh() { update_repo ohmyzsh/oh-my-zsh ~/.oh-my-zsh }
-update_nvm() { update_repo nvm-sh/nvm ~/.nvm }
+
+# --- Editor & Plugin Updates ---
+
+# Update vim-plug (Vim plugin manager)
+update_vim_plug() { 
+  update_repo "junegunn/vim-plug" "$HOME/.vim/vim-plug" 
+}
+
+# Update Oh My Zsh
+update_oh_my_zsh() { 
+  update_repo "ohmyzsh/oh-my-zsh" "$HOME/.oh-my-zsh" 
+}
+
+# Update nvm (Node Version Manager)
+update_nvm() { 
+  update_repo "nvm-sh/nvm" "$HOME/.nvm" 
+}
