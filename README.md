@@ -31,4 +31,4 @@ A custom, standalone program written in Go that handles system backups. It reads
 ### `src/`
 This folder mirrors a standard Linux filesystem (`/bin`, `/etc`, `/lib`). It contains the raw files that get copied directly onto a server, usually managed by a tool like GNU Stow.
 *   **`src/lib/systemd/`**: Contains all the custom `systemd` service and timer files. These are what tell the server to run the backup program every night, auto-start Docker containers, or run maintenance tasks like `pacman` updates.
-*   **`src/zsh/`**: Custom aliases, functions, and settings for the Zsh shell, making the command line easier to use.
+*   **`src/share/zsh/`**: Custom aliases, functions, and settings for the Zsh shell, making the command line easier to use.
