@@ -1,12 +1,56 @@
 # Set local git configuration from commit author
 # Usage: gcauthor [commit-ref]
+#        gcauthor {-l|--list} [commit-ref|--all]
 
-local commit_ref="${1:-HEAD}"
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    print "Usage: gcauthor [commit-ref]"
+    print "       gcauthor {-l|--list} [commit-ref|--all]"
+    print "Set local git configuration from a commit author."
+    print "\nOptions:"
+    print "  -l, --list [ref]   List unique authors in the repository and an associated commit-ref."
+    print "                     You can specify a branch/commit or --all to search beyond HEAD."
+    return 0
+fi
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     print -u2 "Error: Not a git repository."
     return 1
 fi
+
+if [[ "$1" == "-l" || "$1" == "--list" ]]; then
+    local list_ref="${2:-}"
+    local -a git_args=(--format="%h%x09%an <%ae>")
+    
+    if [[ -n "$list_ref" ]]; then
+        if [[ "$list_ref" != "--all" ]] && ! git rev-parse --verify --quiet "$list_ref^{commit}" >/dev/null; then
+            print -u2 "Error: '$list_ref' is not a valid commit reference."
+            return 1
+        fi
+        git_args+=("$list_ref")
+    else
+        # Default to all branches if no specific ref is provided
+        git_args+=(--all)
+    fi
+
+    local -A seen
+    local line commit author
+    
+    printf "%-10s %s\n" "COMMIT" "AUTHOR"
+    printf "%-10s %s\n" "------" "------"
+    
+    # Process git log output natively
+    for line in "${(@f)$(git log "${git_args[@]}")}"; do
+        commit="${line%%$'\t'*}"
+        author="${line#*$'\t'}"
+        if (( ! $+seen[$author] )); then
+            seen[$author]=$commit
+            printf "%-10s %s\n" "$commit" "$author"
+        fi
+    done
+    return 0
+fi
+
+local commit_ref="${1:-HEAD}"
 
 if ! git rev-parse --verify --quiet "$commit_ref^{commit}" >/dev/null; then
     print -u2 "Error: '$commit_ref' is not a valid commit reference."
