@@ -127,7 +127,8 @@ class Telemetry:
 
     def print_summary(self) -> None:
         """Outputs a formatted telemetry summary to stderr."""
-        print("\n" + "="*55, file=sys.stderr)
+        print(file=sys.stderr)
+        print("="*55, file=sys.stderr)
         print(" EXECUTION TELEMETRY SUMMARY", file=sys.stderr)
         print("="*55, file=sys.stderr)
         print(f" Total Paths Scanned : {self.scanned_paths}", file=sys.stderr)
@@ -140,14 +141,17 @@ class Telemetry:
         print(f" Output Size         : {output_mb:.2f} MB", file=sys.stderr)
 
         if self.limit_reached:
-            print("\n [!] LIMIT ENFORCEMENT TRIGGERED", file=sys.stderr)
+            print(file=sys.stderr)
+            print(" [!] LIMIT ENFORCEMENT TRIGGERED", file=sys.stderr)
             print(" The configured output size limit was reached. Data stream truncated.", file=sys.stderr)
 
         if self.secrets_redacted > 0:
-            print("\n [!] SECURITY NOTICE", file=sys.stderr)
+            print(file=sys.stderr)
+            print(" [!] SECURITY NOTICE", file=sys.stderr)
             print(f" {self.secrets_redacted} credential files were redacted.", file=sys.stderr)
             print(" Use --allow-secrets to override if intentional.", file=sys.stderr)
-        print("="*55 + "\n", file=sys.stderr)
+        print("="*55, file=sys.stderr)
+        print(file=sys.stderr)
 
 
 # ==============================================================================
@@ -651,7 +655,8 @@ def main() -> None:
 
     # Guard against accidental stdout flooding in interactive sessions.
     if not args.output and sys.stdout.isatty() and not args.force and not args.dry_run:
-        print("\n[!] WARNING: Output destination not specified.", file=sys.stderr)
+        print(file=sys.stderr)
+        print("[!] WARNING: Output destination not specified.", file=sys.stderr)
         print("    You are about to stream the repository context to the interactive terminal.", file=sys.stderr)
         resp = input("    Proceed? [y/N]: ")
         if resp.strip().lower() != 'y':
