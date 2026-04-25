@@ -6,7 +6,8 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     print "Usage: gcauthor [commit-ref]"
     print "       gcauthor {-l|--list} [commit-ref|--all]"
     print "Set local git configuration from a commit author."
-    print "\nOptions:"
+    print
+    print "Options:"
     print "  -l, --list [ref]   List unique authors in the repository and an associated commit-ref."
     print "                     You can specify a branch/commit or --all to search beyond HEAD."
     return 0
