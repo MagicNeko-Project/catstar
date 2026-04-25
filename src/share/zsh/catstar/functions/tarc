@@ -42,7 +42,7 @@ if [[ -n $compression_level ]]; then
     zstd_cmd+=" --ultra"
   fi
   zstd_cmd+=" -$compression_level"
-  
+
   tar_opts=(--use-compress-program="$zstd_cmd" "${tar_opts[@]}")
 else
   # Default compression

@@ -2,9 +2,9 @@
 """
 Repository Extraction Utility for LLM Context Generation.
 
-This module provides a robust, highly configurable scanner and formatter designed to 
-extract source code repositories into a structured XML format optimized for Large 
-Language Models (LLMs). It utilizes a 4-tier visibility model to efficiently manage 
+This module provides a robust, highly configurable scanner and formatter designed to
+extract source code repositories into a structured XML format optimized for Large
+Language Models (LLMs). It utilizes a 4-tier visibility model to efficiently manage
 context window limits while preserving structural directory information.
 
 Features:
@@ -86,7 +86,7 @@ def parse_size_to_bytes(size_str: Optional[str], default_bytes: int) -> int:
     match = re.match(r"^(\d+(?:\.\d+)?)\s*([KMG]?B)$", size_str.strip(), re.IGNORECASE)
     if not match:
         raise ValueError(f"Invalid size format: {size_str}. Use e.g., '2MB', '500KB', '1.5GB'.")
-    
+
     val = float(match.group(1))
     unit = match.group(2).upper()
     multipliers = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3}
@@ -135,7 +135,7 @@ class Telemetry:
         print(f" Paths Ghosted       : {self.ghosted_paths}", file=sys.stderr)
         print(f" Files Redacted      : {self.redacted_files}", file=sys.stderr)
         print(f" Paths Pruned        : {self.pruned_paths}", file=sys.stderr)
-        
+
         output_mb = self.bytes_written / (1024 * 1024)
         print(f" Output Size         : {output_mb:.2f} MB", file=sys.stderr)
 
@@ -214,12 +214,12 @@ class VisibilityMatcher:
         regex = rf"^(?:{core}){tail}$" if anchored else rf"^(?:.*?/)*(?:{core}){tail}$"
 
         return Rule(
-            raw=raw, 
-            pattern=pat, 
-            regex=re.compile(regex), 
-            visibility=vis, 
-            anchored=anchored, 
-            dir_only=dir_only, 
+            raw=raw,
+            pattern=pat,
+            regex=re.compile(regex),
+            visibility=vis,
+            anchored=anchored,
+            dir_only=dir_only,
             reason=reason
         )
 
@@ -236,7 +236,7 @@ class VisibilityMatcher:
             if rule.regex.match(path):
                 current_vis = rule.visibility
                 current_reason = rule.reason
-        
+
         return current_vis, current_reason
 
     def can_skip_dir(self, rel_dir: str, current_vis: Visibility) -> bool:
@@ -246,11 +246,11 @@ class VisibilityMatcher:
 
         path = self._norm_posix(rel_dir)
         last_match_idx = -1
-        
+
         for i, rule in enumerate(self.rules):
             if rule.regex.match(path):
                 last_match_idx = i
-                
+
         for i in range(last_match_idx + 1, len(self.rules)):
             rule = self.rules[i]
             if rule.visibility in (Visibility.INCLUDED, Visibility.REDACTED):
@@ -268,7 +268,7 @@ class FileReader:
     @staticmethod
     def read_text(file_path: Path) -> Tuple[Optional[str], int, bool]:
         """Reads file text, managing fallbacks and binary detection.
-        
+
         Returns:
             Tuple containing: (decoded_text, line_count, is_binary_flag)
         """
@@ -302,7 +302,7 @@ class RepoScanner:
     """Traverses target paths and generates the directory structure map."""
 
     def __init__(
-        self, root_dir: Path, matcher: VisibilityMatcher, telemetry: Telemetry, 
+        self, root_dir: Path, matcher: VisibilityMatcher, telemetry: Telemetry,
         file_types: Optional[List[str]], max_file_bytes: int, output_file: Optional[Path]
     ):
         self.root_dir = root_dir
@@ -321,7 +321,7 @@ class RepoScanner:
         for target in target_paths:
             if not target.exists():
                 continue
-            
+
             if target.is_file():
                 self._process_file(target, root_node, included_files, redacted_files)
             elif target.is_dir():
@@ -343,7 +343,7 @@ class RepoScanner:
             return
 
         rel_current = current_dir.relative_to(self.root_dir).as_posix() if current_dir != self.root_dir else "."
-        
+
         if rel_current != ".":
             vis, _ = self.matcher.get_visibility(rel_current)
             if vis == Visibility.PRUNED:
@@ -376,7 +376,7 @@ class RepoScanner:
             return
 
         self.telemetry.scanned_paths += 1
-        
+
         try:
             rel_f = file_path.relative_to(self.root_dir).as_posix()
         except ValueError:
@@ -384,16 +384,16 @@ class RepoScanner:
 
         vis, reason = self.matcher.get_visibility(rel_f)
         is_explicit_override = (reason == "EXPLICIT_INCLUDE")
-        
+
         if vis == Visibility.PRUNED:
             self.telemetry.pruned_paths += 1
             return
-            
+
         if vis == Visibility.GHOSTED:
             self.telemetry.ghosted_paths += 1
             self._insert_into_tree(root_node, rel_f, is_file=True)
             return
-            
+
         if vis == Visibility.REDACTED:
             self.telemetry.redacted_files += 1
             if reason and "SECURITY" in reason:
@@ -401,7 +401,7 @@ class RepoScanner:
             self._insert_into_tree(root_node, rel_f, is_file=True)
             redacted.append((file_path, reason or "USER_OVERRIDE"))
             return
-            
+
         if vis == Visibility.INCLUDED:
             if self.file_types and file_path.suffix not in self.file_types and not is_explicit_override:
                 self.telemetry.pruned_paths += 1
@@ -416,7 +416,7 @@ class RepoScanner:
                     redacted.append((file_path, f"EXCEEDS_FILE_SIZE_LIMIT (> {mb_size:.1f} MB)"))
                     return
             except OSError:
-                pass 
+                pass
 
             self.telemetry.included_files += 1
             self._insert_into_tree(root_node, rel_f, is_file=True)
@@ -454,14 +454,14 @@ class XMLRepoRenderer:
             raise LimitReachedError()
 
         chunk_size = len(text.encode('utf-8'))
-        
+
         if self.max_bytes and self.telemetry.bytes_written + chunk_size > self.max_bytes:
             self.telemetry.limit_reached = True
             warning = "\n  <warning>Extraction halted: Global size limit reached. Context is incomplete.</warning>\n  </files>\n</repository>\n"
             if self.stream:
                 self.stream.write(warning)
             raise LimitReachedError()
-        
+
         if self.stream:
             self.stream.write(text)
         self.telemetry.bytes_written += chunk_size
@@ -469,17 +469,17 @@ class XMLRepoRenderer:
     def render(self, tree_root: DirectoryNode, included: List[Path], redacted: List[Tuple[Path, str]], target_paths: List[Path], out_stream: TextIO) -> None:
         self.stream = out_stream
         norm_paths = ", ".join(sorted(p.relative_to(self.root_dir).as_posix() if self.root_dir in p.parents else p.as_posix() for p in target_paths))
-        
+
         try:
             self._write("<repository>\n")
             self._write("  <system_note>\n    This is a read-only repository snapshot. Some files are GHOSTED (in tree only) or REDACTED (content hidden). Do not hallucinate missing content.\n  </system_note>\n\n")
-            
+
             self._write("  <metadata>\n")
             self._write(f"    <root>{self.root_dir.resolve()}</root>\n")
             self._write(f"    <included_paths>{norm_paths}</included_paths>\n")
             self._write(f"    <date>{datetime.now(timezone.utc).isoformat()}</date>\n")
             self._write("  </metadata>\n\n")
-            
+
             self._write("  <directory_tree>\n")
             lines: List[str] = ["/"]
             self._render_tree_nodes(tree_root, lines)
@@ -505,7 +505,7 @@ class XMLRepoRenderer:
         dirs = sorted(node.directories.keys(), key=str.lower)
         files = sorted(list(node.files), key=str.lower)
         entries = [(d, True) for d in dirs] + [(f, False) for f in files]
-        
+
         for idx, (name, is_dir) in enumerate(entries):
             is_last = (idx == len(entries) - 1)
             connector = "└── " if is_last else "├── "
@@ -516,15 +516,15 @@ class XMLRepoRenderer:
                 lines.append(f"{prefix}{connector}{name}")
 
     def _build_redacted_xml(self, file_path: Path, reason: str) -> str:
-        try: 
+        try:
             rel_path = file_path.relative_to(self.root_dir).as_posix()
-        except ValueError: 
+        except ValueError:
             rel_path = file_path.as_posix()
 
         summary = "Content omitted."
-        if "SECURITY" in reason: 
+        if "SECURITY" in reason:
             summary = "File content redacted to prevent credential exposure."
-        elif "LIMIT" in reason: 
+        elif "LIMIT" in reason:
             summary = "File content omitted due to exceeding maximum per-file size policy."
 
         return (
@@ -537,20 +537,20 @@ class XMLRepoRenderer:
         )
 
     def _build_included_xml(self, file_path: Path) -> Optional[str]:
-        try: 
+        try:
             rel_path = file_path.relative_to(self.root_dir).as_posix()
-        except ValueError: 
+        except ValueError:
             rel_path = file_path.as_posix()
-        
+
         text, line_count, is_binary = FileReader.read_text(file_path)
 
         if is_binary:
             self.telemetry.ghosted_paths += 1
             self.telemetry.included_files -= 1
-            return None 
+            return None
 
         lang = EXT_TO_LANG.get(file_path.suffix, "text")
-        
+
         content = text or ""
         escaped_cdata = content.replace("]]>", "]]]]><![CDATA[>")
 
@@ -574,7 +574,7 @@ def build_rules(args: argparse.Namespace) -> List[Rule]:
     rules: List[Rule] = []
 
     def append(patterns: List[str], vis: Visibility, reason: Optional[str] = None) -> None:
-        for p in patterns: 
+        for p in patterns:
             rules.append(VisibilityMatcher.compile_pattern(p, vis, reason))
 
     # 1. Base Configuration Defaults
@@ -582,7 +582,7 @@ def build_rules(args: argparse.Namespace) -> List[Rule]:
     append(DEFAULT_PRUNE_OS, Visibility.PRUNED, "OS_SYSTEM")
     append(DEFAULT_GHOST_MEDIA, Visibility.GHOSTED, "MEDIA_BINARY")
     append(DEFAULT_GHOST_COMPILED, Visibility.GHOSTED, "COMPILED_BINARY")
-    
+
     if not args.include_deps: append(DEFAULT_GHOST_DEPS, Visibility.GHOSTED, "DEPENDENCY")
     if not args.include_build: append(DEFAULT_GHOST_BUILD, Visibility.GHOSTED, "BUILD_ARTIFACT")
     if not args.include_lockfiles: append(DEFAULT_GHOST_LOCKFILES, Visibility.GHOSTED, "LOCKFILE")
@@ -595,28 +595,28 @@ def build_rules(args: argparse.Namespace) -> List[Rule]:
             for line in p_git.read_text("utf-8").splitlines():
                 if line.strip() and not line.startswith("#"):
                     rules.append(VisibilityMatcher.compile_pattern(line.strip(), Visibility.GHOSTED, ".gitignore"))
-        except Exception: 
+        except Exception:
             pass
 
     # 3. Explicit LLM Exclusion Configurations
     ex_files = [Path(".llmignore")]
-    if args.exclusion_file: 
+    if args.exclusion_file:
         ex_files.extend(Path(p) for p in args.exclusion_file)
-        
+
     for p_ex in ex_files:
         if p_ex.exists():
             try:
                 for line in p_ex.read_text("utf-8").splitlines():
                     if line.strip() and not line.startswith("#"):
                         rules.append(VisibilityMatcher.compile_pattern(line.strip(), Visibility.PRUNED, p_ex.name))
-            except Exception: 
+            except Exception:
                 pass
 
     # 4. Command Line Overrides
     if args.prune: append(args.prune, Visibility.PRUNED, "EXPLICIT_PRUNE")
     if args.ghost: append(args.ghost, Visibility.GHOSTED, "EXPLICIT_GHOST")
     if args.redact: append(args.redact, Visibility.REDACTED, "EXPLICIT_REDACT")
-    
+
     # 5. Absolute Overrides
     if args.include: append(args.include, Visibility.INCLUDED, "EXPLICIT_INCLUDE")
 
@@ -628,10 +628,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Extracts repository structures into LLM-optimized XML.")
     parser.add_argument("paths", nargs="+", help="Target paths to include in the scan.")
     parser.add_argument("-o", "--output", type=str, help="Destination file path (defaults to standard output).")
-    
+
     parser.add_argument("--dry-run", action="store_true", help="Calculate metrics without generating physical output.")
     parser.add_argument("--force", action="store_true", help="Bypass interactive terminal confirmation prompts.")
-    
+
     parser.add_argument("--max-size", type=str, help="Enforce a global output byte limit (e.g., '2MB', '500KB').")
     parser.add_argument("--max-file-size", type=str, default="2MB", help="Enforce a per-file byte limit. Exceeding files are REDACTED.")
     parser.add_argument("-t", "--file-types", type=str, nargs="*", help="Restrict inclusion to specific file extensions.")
@@ -641,12 +641,12 @@ def main() -> None:
     parser.add_argument("--prune", type=str, nargs="*", help="Explicitly force paths to be PRUNED.")
     parser.add_argument("--ghost", type=str, nargs="*", help="Explicitly force paths to be GHOSTED.")
     parser.add_argument("--redact", type=str, nargs="*", help="Explicitly force paths to be REDACTED.")
-    
+
     parser.add_argument("--include-deps", action="store_true", help="Include dependencies (e.g., node_modules, venv).")
     parser.add_argument("--include-build", action="store_true", help="Include build artifacts (e.g., dist, build).")
     parser.add_argument("--include-lockfiles", action="store_true", help="Include package lockfiles.")
     parser.add_argument("--allow-secrets", action="store_true", help="Disable secret redaction. WARNING: May leak credentials.")
-    
+
     args = parser.parse_args()
 
     # Guard against accidental stdout flooding in interactive sessions.
@@ -672,7 +672,7 @@ def main() -> None:
     telemetry = Telemetry()
     rules = build_rules(args)
     matcher = VisibilityMatcher(rules)
-    
+
     scanner = RepoScanner(root_dir, matcher, telemetry, args.file_types, max_file_bytes, output_path)
     tree_root, included_files, redacted_files = scanner.scan(target_paths)
 

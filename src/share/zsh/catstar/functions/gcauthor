@@ -20,7 +20,7 @@ fi
 if [[ "$1" == "-l" || "$1" == "--list" ]]; then
     local list_ref="${2:-}"
     local -a git_args=(--format="%h%x09%an <%ae>")
-    
+
     if [[ -n "$list_ref" ]]; then
         if [[ "$list_ref" != "--all" ]] && ! git rev-parse --verify --quiet "$list_ref^{commit}" >/dev/null; then
             print -u2 "Error: '$list_ref' is not a valid commit reference."
@@ -34,10 +34,10 @@ if [[ "$1" == "-l" || "$1" == "--list" ]]; then
 
     local -A seen
     local line commit author
-    
+
     printf "%-10s %s\n" "COMMIT" "AUTHOR"
     printf "%-10s %s\n" "------" "------"
-    
+
     # Process git log output natively
     for line in "${(@f)$(git log "${git_args[@]}")}"; do
         commit="${line%%$'\t'*}"

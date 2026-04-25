@@ -9,8 +9,8 @@
 # for various version managers and tools.
 
 # Update pyenv (Python version manager)
-update_pyenv() { 
-  update_repo "pyenv/pyenv" "$HOME/.pyenv" 
+update_pyenv() {
+  update_repo "pyenv/pyenv" "$HOME/.pyenv"
 }
 
 # Update rbenv and ruby-build (Ruby version manager)
@@ -28,16 +28,16 @@ update_nodenv() {
 # --- Editor & Plugin Updates ---
 
 # Update vim-plug (Vim plugin manager)
-update_vim_plug() { 
-  update_repo "junegunn/vim-plug" "$HOME/.vim/vim-plug" 
+update_vim_plug() {
+  update_repo "junegunn/vim-plug" "$HOME/.vim/vim-plug"
 }
 
 # Update Oh My Zsh
-update_oh_my_zsh() { 
-  update_repo "ohmyzsh/oh-my-zsh" "$HOME/.oh-my-zsh" 
+update_oh_my_zsh() {
+  update_repo "ohmyzsh/oh-my-zsh" "$HOME/.oh-my-zsh"
 }
 
 # Update nvm (Node Version Manager)
-update_nvm() { 
-  update_repo "nvm-sh/nvm" "$HOME/.nvm" 
+update_nvm() {
+  update_repo "nvm-sh/nvm" "$HOME/.nvm"
 }

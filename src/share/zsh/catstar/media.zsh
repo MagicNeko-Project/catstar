@@ -8,13 +8,13 @@
 # These functions use the autoloaded 'extractaudio' function.
 
 # Extract audio as Opus (high quality, modern codec)
-extractopus() { 
-  extractaudio "$1" "opus" 
+extractopus() {
+  extractaudio "$1" "opus"
 }
 
 # Extract audio as M4A (high compatibility, AAC)
-extractm4a() { 
-  extractaudio "$1" "m4a" 
+extractm4a() {
+  extractaudio "$1" "m4a"
 }
 
 # --- Future Media Logic ---

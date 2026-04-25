@@ -1,6 +1,6 @@
 # Catstar Backup
 
-Catstar Backup is a modernized, strongly-typed Go application designed to orchestrate system backups. It abstracts the execution of strategies like BTRFS snapshots, Restic uploads, and Tar streaming. 
+Catstar Backup is a modernized, strongly-typed Go application designed to orchestrate system backups. It abstracts the execution of strategies like BTRFS snapshots, Restic uploads, and Tar streaming.
 
 This project evolved from a monolithic Bash script into a domain-driven Go project designed for reliability, concurrency, and observability.
 
@@ -10,7 +10,7 @@ The application is structured following clean architecture principles to maximiz
 
 * **`cmd/catstar-backup/`**: The main entry point. Bootstraps the application, parses configurations, wires dependencies, and triggers the orchestrator.
 * **`internal/config/`**: Strictly parses and validates system environment variables. Instead of checking configurations during backup execution, it fails fast on startup.
-* **`internal/backup/`**: Contains the core business logic. 
+* **`internal/backup/`**: Contains the core business logic.
   * **`orchestrator.go`**: Manages the sequential/concurrent lifecycle of configured backup strategies and logs outputs.
   * **`strategies/`**: Implements the execution engines (e.g., `BtrfsResticEngine`, `TarSSHEngine`). Uses a `CommandExecutor` interface to decouple shell commands from the execution logic, enabling destructive tests to run safely via mocks.
 * **`internal/notify/`**: Implements the Composite/Fan-Out pattern to dispatch notifications (Telegram, Discord, Debug) concurrently without blocking.

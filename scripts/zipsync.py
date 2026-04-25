@@ -2,8 +2,8 @@
 """
 A tool to mirror a directory structure while recursively extracting zip files.
 This script walks a source directory and copies all files to a destination,
-but if it encounters a zip file, it extracts its contents into a folder 
-instead of copying the zip file itself. It then recursively handles any 
+but if it encounters a zip file, it extracts its contents into a folder
+instead of copying the zip file itself. It then recursively handles any
 zip files found within the extracted content.
 """
 
@@ -32,7 +32,7 @@ class ZipSyncer:
     @staticmethod
     def _sanitize_zip_path(target_dir: Path, relative_path: str) -> Path:
         """
-        Prevents Zip Slip / Zip Bomb attacks by ensuring the extracted path 
+        Prevents Zip Slip / Zip Bomb attacks by ensuring the extracted path
         is within the target directory.
 
         Args:
@@ -93,7 +93,7 @@ class ZipSyncer:
                     try:
                         extract_dir.mkdir(parents=True, exist_ok=True)
                         self._safe_extract(file_path, extract_dir)
-                        
+
                         # Remove the nested zip file
                         file_path.unlink()
 
@@ -133,13 +133,13 @@ class ZipSyncer:
                     # For Zip files: Extract instead of Copy
                     target_folder_name = src_file.stem
                     target_extract_path = current_dest_dir / target_folder_name
-                    
+
                     print(f"Extracting: {src_file} -> {target_extract_path}")
 
                     try:
                         target_extract_path.mkdir(parents=True, exist_ok=True)
                         self._safe_extract(src_file, target_extract_path)
-                        
+
                         # Post-process the extracted folder to handle nested zips
                         self.recursive_explode_zips(target_extract_path)
                     except Exception as e:
@@ -171,7 +171,7 @@ def main():
     destination_dir = Path(args.destination)
 
     syncer = ZipSyncer(verbose=args.verbose)
-    
+
     print(f"Starting sync from {source_dir} to {destination_dir}...")
     syncer.sync(source_dir, destination_dir)
     print("Sync complete.")

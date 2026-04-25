@@ -1,4 +1,4 @@
-# Catstar 
+# Catstar
 
 Catstar is a personal, multi-language repository for managing servers, automating daily tasks, and backing up data. It acts as the central hub for the configuration files, shell scripts, and compiled programs that keep the infrastructure running.
 
@@ -12,7 +12,7 @@ The repository is split into several main folders, each handling a different par
 This folder holds the Ansible playbooks and roles used to set up servers automatically. Instead of running commands by hand, these scripts install packages, configure the firewall, and deploy services like Nginx, PHP, and v2ray. It ensures every server is set up exactly the same way.
 
 ### `config/` & `ssl/`
-These directories store static configuration files that are deployed to the servers. 
+These directories store static configuration files that are deployed to the servers.
 *   **`config/nftables.conf`**: The main firewall ruleset.
 *   **`ssl/`**: Contains the SSL/TLS certificate configurations and Diffie-Hellman parameters needed to secure web traffic.
 

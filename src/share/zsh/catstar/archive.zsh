@@ -25,9 +25,9 @@ tarc22() { tarc "$1" 22 "${@:2}" }
     print -u2 "Usage: 7zc <directory_or_file> [7z_options...]"
     return 1
   fi
-  local input=$1 
+  local input=$1
   local output="${1}.7z"
-  
+
   if [[ -e "$output" ]]; then
     print -u2 "Error: The file '$output' already exists."
     return 1
@@ -66,18 +66,18 @@ zip_directory() {
 # --- SquashFS Utilities ---
 # mksquashfss0: Create a root-owned SquashFS image with Zstandard compression
 mksquashfss0() {
-  local fn=$1 
+  local fn=$1
   local dst=${2:-$1}
-  
-  if [[ -z "$fn" ]]; then 
+
+  if [[ -z "$fn" ]]; then
     print -u2 "Usage: mksquashfss0 <source> [destination_name]"
-    return 1 
+    return 1
   fi
-  
+
   if [[ -f "$dst.squashfs" ]]; then
     print -u2 "Error: $dst.squashfs already exists."
     return 1
   fi
-  
+
   sudo mksquashfs "$fn" "$dst.squashfs" -comp zstd -not-reproducible -root-owned -no-xattrs
 }

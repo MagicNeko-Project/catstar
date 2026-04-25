@@ -26,7 +26,7 @@
     if [[ "${fpath[(r)$functions_dir]}" != "$functions_dir" ]]; then
       fpath=("$functions_dir" $fpath)
     fi
-    
+
     # Autoload all non-hidden files in the functions directory
     # -U: suppress alias expansion, -z: use zsh style
     # (N:t): N for nullglob (don't error if empty), t for tail (basename only)
