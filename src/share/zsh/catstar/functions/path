@@ -1,2 +1,0 @@
-# Print $PATH one entry per line using Zsh native array expansion
-print -l $path
