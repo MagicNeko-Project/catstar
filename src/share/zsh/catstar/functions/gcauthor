@@ -61,7 +61,5 @@ fi
 local author_name=$(git show -s --format='%an' "$commit_ref")
 local author_email=$(git show -s --format='%ae' "$commit_ref")
 
-git config user.name "$author_name"
-git config user.email "$author_email"
-
-print "Git user set to: $author_name <$author_email>"
+# Delegate the actual application to git-profile's shared logic
+git-profile --local _apply "$author_name" "$author_email"
