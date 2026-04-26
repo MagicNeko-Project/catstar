@@ -1,6 +1,9 @@
 # Manage Git author profiles
 # Usage: git-profile [--local | --global] <subcommand> ...
 
+# =============================================================================
+# 1. Documentation & Help
+# =============================================================================
 _git_profile_help() {
     cat << 'EOF'
 Usage: git-profile [options] <command> [args...]
@@ -18,38 +21,100 @@ Commands:
   remove <name>               Delete a profile
 
 Options:
-  --local                     Target local config (default for use, clear, current)
+  --local                     Target local config (default for use, clear)
   --global                    Target global config
   -h, --help                  Show this help message
 EOF
 }
 
-# Internal helper for applying identity
+# =============================================================================
+# 2. Internal Helpers
+# =============================================================================
+
+# Loads all global profiles into associative arrays via dynamic scoping.
+# The caller MUST declare:
+#   local -A names emails keys
+#   local -a list
+_git_profile_load_all() {
+    local key value rest p_name p_key
+    
+    while read -r key value; do
+        rest="${key#profile.}"
+        p_name="${rest%.*}"
+        p_key="${rest##*.}"
+        
+        # Add to list if not already present to preserve order and uniqueness
+        if (( ! ${list[(Ie)$p_name]} )); then
+            list+=("$p_name")
+        fi
+        
+        case "$p_key" in
+            name) names[$p_name]="$value" ;;
+            email) emails[$p_name]="$value" ;;
+            signingkey) keys[$p_name]="$value" ;;
+        esac
+    done < <(git config --global --get-regexp '^profile\.' 2>/dev/null)
+}
+
+# Finds a profile name that perfectly matches the provided identity.
+_git_profile_find_match() {
+    local target_name="$1"
+    local target_email="$2"
+    local target_key="$3"
+
+    local -A names emails keys
+    local -a list
+    _git_profile_load_all
+    
+    local profile_name
+    for profile_name in "$list[@]"; do
+        local match_name="$names[$profile_name]"
+        local match_email="$emails[$profile_name]"
+        local match_key="$keys[$profile_name]"
+
+        if [[ "$match_name" == "$target_name" && "$match_email" == "$target_email" && ("$match_key" == "$target_key" || (-z "$match_key" && -z "$target_key")) ]]; then
+            echo "$profile_name"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Applies a specific identity to the requested configuration scope.
 _git_profile_apply_internal() {
-    local s="$1" name="$2" email="$3" key="$4"
-    if [[ "$s" == "--local" ]] && ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        print -u2 "Error: Not a git repository."
+    local target_scope="$1"
+    local name="$2"
+    local email="$3"
+    local key="$4"
+
+    if [[ "$target_scope" == "--local" ]] && ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        print -u2 "Error: Not a git repository. Cannot apply local identity."
         return 1
     fi
     
-    git config $s user.name "$name"
-    git config $s user.email "$email"
+    git config $target_scope user.name "$name"
+    git config $target_scope user.email "$email"
+    
     if [[ -n "$key" ]]; then
-        git config $s user.signingkey "$key"
+        git config $target_scope user.signingkey "$key"
     else
-        git config $s --unset user.signingkey 2>/dev/null
+        git config $target_scope --unset user.signingkey 2>/dev/null
     fi
-    print "Git identity ($s) set to: $name <$email>${key:+ (Key: $key)}"
+    
+    print "Git identity ($target_scope) set to: $name <$email>${key:+ (Key: $key)}"
 }
+
+# =============================================================================
+# 3. CLI Parsing & Option Resolution
+# =============================================================================
 
 local -A opts
 zparseopts -D -E -A opts -local -global h -help
 
-local scope_arg=""
+# Default scope is local for operations interacting with the [user] section
+local scope_arg="--local"
 if (( $+opts[--global] )); then
     scope_arg="--global"
-elif (( $+opts[--local] )); then
-    scope_arg="--local"
 fi
 
 if (( $+opts[-h] )) || (( $+opts[--help] )); then
@@ -65,59 +130,51 @@ else
     shift
 fi
 
+# =============================================================================
+# 4. Command Execution
+# =============================================================================
+
 case "$subcommand" in
-    _apply) # Hidden subcommand for shared logic (e.g., from gcauthor)
-        _git_profile_apply_internal "${scope_arg:---local}" "$@"
+    _apply) 
+        # Hidden subcommand for shared logic (e.g., invoked from gcauthor)
+        _git_profile_apply_internal "$scope_arg" "$@"
         ;;
 
     current)
-        local s="${scope_arg:---local}"
-        local name=$(git config $s user.name 2>/dev/null)
-        local email=$(git config $s user.email 2>/dev/null)
-        local key=$(git config $s user.signingkey 2>/dev/null)
+        local active_name=$(git config $scope_arg user.name 2>/dev/null)
+        local active_email=$(git config $scope_arg user.email 2>/dev/null)
+        local active_key=$(git config $scope_arg user.signingkey 2>/dev/null)
         
-        if [[ -z "$name" && -z "$email" ]]; then
-            print "No identity set in $s configuration."
-        else
-            print "Active identity ($s):"
-            print "  Name:  $name"
-            print "  Email: $email"
-            if [[ -n "$key" ]]; then
-                print "  Key:   $key"
-            fi
+        if [[ -z "$active_name" && -z "$active_email" ]]; then
+            print "No identity set in $scope_arg configuration."
+            return 0
         fi
+
+        local matched_profile=$(_git_profile_find_match "$active_name" "$active_email" "$active_key")
+
+        if [[ -n "$matched_profile" ]]; then
+            print "Active profile ($scope_arg): $matched_profile"
+        else
+            print "Active identity ($scope_arg) [No matching profile]:"
+        fi
+        
+        print "  Name:  $active_name"
+        print "  Email: $active_email"
+        [[ -n "$active_key" ]] && print "  Key:   $active_key"
+        
         return 0
         ;;
 
     list)
-        local active_name=$(git config user.name 2>/dev/null)
-        local active_email=$(git config user.email 2>/dev/null)
-        local active_key=$(git config user.signingkey 2>/dev/null)
+        local active_name=$(git config $scope_arg user.name 2>/dev/null)
+        local active_email=$(git config $scope_arg user.email 2>/dev/null)
+        local active_key=$(git config $scope_arg user.signingkey 2>/dev/null)
 
-        local -A p_names p_emails p_keys
-        local -a p_list
+        local -A names emails keys
+        local -a list
+        _git_profile_load_all
 
-        # Profiles are always managed globally
-        local -a cmd=(git config --global --get-regexp '^profile\.')
-
-        while read -r key value; do
-            local rest="${key#profile.}"
-            local p_name="${rest%.*}"
-            local p_key="${rest##*.}"
-            
-            if [[ -z "$p_names[$p_name]" ]]; then
-                p_list+=("$p_name")
-                p_names[$p_name]=""
-            fi
-            
-            case "$p_key" in
-                name) p_names[$p_name]="$value" ;;
-                email) p_emails[$p_name]="$value" ;;
-                signingkey) p_keys[$p_name]="$value" ;;
-            esac
-        done < <("${cmd[@]}" 2>/dev/null)
-
-        if [[ ${#p_list} -eq 0 ]]; then
+        if [[ ${#list} -eq 0 ]]; then
             print "No profiles found in global configuration."
             return 0
         fi
@@ -125,81 +182,64 @@ case "$subcommand" in
         print "Available profiles:"
         printf "  %-1s %-15s %s\n" "" "PROFILE" "IDENTITY"
         printf "  %-1s %-15s %s\n" "" "-------" "--------"
-        for p in "${(@n)p_list}"; do
-            local name="$p_names[$p]"
-            local email="$p_emails[$p]"
-            local key="$p_keys[$p]"
+        
+        local p
+        for p in "${(@n)list}"; do
             local mark=" "
-            if [[ "$name" == "$active_name" && "$email" == "$active_email" && ("$key" == "$active_key" || ( -z "$key" && -z "$active_key" )) ]]; then
+            if [[ "$names[$p]" == "$active_name" && "$emails[$p]" == "$active_email" && ("$keys[$p]" == "$active_key" || (-z "$keys[$p]" && -z "$active_key")) ]]; then
                 mark="*"
             fi
-            printf "  %-1s %-15s %s <%s>%s\n" "$mark" "$p" "$name" "$email" "${key:+ ($key)}"
+            printf "  %-1s %-15s %s <%s>%s\n" "$mark" "$p" "$names[$p]" "$emails[$p]" "${keys[$p]:+ (${keys[$p]})}"
         done
         ;;
 
     use)
-        local p="$1"
-        [[ -z "$p" ]] && { print -u2 "Error: Profile name required."; return 1; }
+        local profile_name="$1"
+        [[ -z "$profile_name" ]] && { print -u2 "Error: Profile name required."; return 1; }
         
-        # Profile templates are always global
-        local name=$(git config --global "profile.$p.name" 2>/dev/null)
-        local email=$(git config --global "profile.$p.email" 2>/dev/null)
-        local key=$(git config --global "profile.$p.signingkey" 2>/dev/null)
+        # Profile templates are strictly read from global config
+        local template_name=$(git config --global "profile.$profile_name.name" 2>/dev/null)
+        local template_email=$(git config --global "profile.$profile_name.email" 2>/dev/null)
+        local template_key=$(git config --global "profile.$profile_name.signingkey" 2>/dev/null)
         
-        if [[ -z "$name" || -z "$email" ]]; then
-            print -u2 "Error: Profile '$p' not found or incomplete."
+        if [[ -z "$template_name" || -z "$template_email" ]]; then
+            print -u2 "Error: Profile '$profile_name' not found or incomplete."
             return 1
         fi
         
-        _git_profile_apply_internal "${scope_arg:---local}" "$name" "$email" "$key"
+        _git_profile_apply_internal "$scope_arg" "$template_name" "$template_email" "$template_key"
         ;;
 
     clear)
-        local s="${scope_arg:---local}"
-        local active_name=$(git config $s user.name 2>/dev/null)
-        local active_email=$(git config $s user.email 2>/dev/null)
-        local active_key=$(git config $s user.signingkey 2>/dev/null)
+        local active_name=$(git config $scope_arg user.name 2>/dev/null)
+        local active_email=$(git config $scope_arg user.email 2>/dev/null)
+        local active_key=$(git config $scope_arg user.signingkey 2>/dev/null)
         
         if [[ -z "$active_name" && -z "$active_email" ]]; then
-            print "No identity set in $s to clear."
+            print "No identity set in $scope_arg to clear."
             return 0
         fi
         
-        # Find a matching global profile to confirm safety
-        local matched_p=""
-        local -a profiles
-        profiles=(${(f)"$(git config --global --get-regexp '^profile\..*\.name$' 2>/dev/null | awk '{print $1}')"})
-        for kp in "${profiles[@]}"; do
-            local p="${kp#profile.}"
-            p="${p%.name}"
-            local pn=$(git config --global "profile.$p.name")
-            local pe=$(git config --global "profile.$p.email")
-            local pk=$(git config --global "profile.$p.signingkey" 2>/dev/null)
-            
-            if [[ "$pn" == "$active_name" && "$pe" == "$active_email" && ("$pk" == "$active_key" || (-z "$pk" && -z "$active_key")) ]]; then
-                matched_p="$p"
-                break
-            fi
-        done
+        local matched_profile=$(_git_profile_find_match "$active_name" "$active_email" "$active_key")
         
-        if [[ -n "$matched_p" ]]; then
-            git config $s --unset user.name
-            git config $s --unset user.email
-            git config $s --unset user.signingkey 2>/dev/null
-            print "Cleared identity matching profile '$matched_p' from $s."
+        if [[ -n "$matched_profile" ]]; then
+            git config $scope_arg --unset user.name
+            git config $scope_arg --unset user.email
+            git config $scope_arg --unset user.signingkey 2>/dev/null
+            print "Cleared identity matching profile '$matched_profile' from $scope_arg."
         else
-            print -u2 "Error: Current identity in $s does not strictly match any known profile."
+            print -u2 "Error: Current identity in $scope_arg does not strictly match any known profile."
             print -u2 "Manual cleanup required if you wish to bypass safety check."
             return 1
         fi
         ;;
 
     add)
-        local p="$1"
-        [[ -z "$p" ]] && { print -u2 "Error: Profile name required."; return 1; }
+        local profile_name="$1"
+        [[ -z "$profile_name" ]] && { print -u2 "Error: Profile name required."; return 1; }
         
-        if git config --global --get "profile.$p.name" >/dev/null 2>&1; then
-            print -u2 "Error: Profile '$p' already exists globally."
+        if git config --global --get "profile.$profile_name.name" >/dev/null 2>&1; then
+            print -u2 "Error: Profile '$profile_name' already exists globally."
             return 1
         fi
         
@@ -214,63 +254,66 @@ case "$subcommand" in
         [[ -z "$name" ]] && { print -u2 "Error: Name is required."; return 1; }
         [[ -z "$email" ]] && { print -u2 "Error: Email is required."; return 1; }
         
-        git config --global "profile.$p.name" "$name"
-        git config --global "profile.$p.email" "$email"
-        [[ -n "$key" ]] && git config --global "profile.$p.signingkey" "$key"
-        print "Profile '$p' added globally."
+        git config --global "profile.$profile_name.name" "$name"
+        git config --global "profile.$profile_name.email" "$email"
+        [[ -n "$key" ]] && git config --global "profile.$profile_name.signingkey" "$key"
+        print "Profile '$profile_name' added globally."
         ;;
 
     set)
-        local p="$1" k="$2" v="$3"
-        [[ -z "$p" || -z "$k" || -z "$v" ]] && { print -u2 "Usage: git-profile set <profile> <key> <value>"; return 1; }
+        local profile_name="$1"
+        local key="$2"
+        local value="$3"
+        [[ -z "$profile_name" || -z "$key" || -z "$value" ]] && { print -u2 "Usage: git-profile set <profile> <key> <value>"; return 1; }
         
-        if ! git config --global --get "profile.$p.name" >/dev/null 2>&1; then
-            print -u2 "Error: Profile '$p' not found globally."
+        if ! git config --global --get "profile.$profile_name.name" >/dev/null 2>&1; then
+            print -u2 "Error: Profile '$profile_name' not found globally."
             return 1
         fi
         
-        case "$k" in
+        case "$key" in
             name|email|signingkey)
-                git config --global "profile.$p.$k" "$v"
-                print "Updated profile '$p' globally: $k = $v"
+                git config --global "profile.$profile_name.$key" "$value"
+                print "Updated profile '$profile_name' globally: $key = $value"
                 ;;
             *)
-                print -u2 "Error: Invalid key '$k'. Use name, email, or signingkey."
+                print -u2 "Error: Invalid key '$key'. Use name, email, or signingkey."
                 return 1
                 ;;
         esac
         ;;
 
     rename)
-        local old="$1" new="$2"
-        [[ -z "$old" || -z "$new" ]] && { print -u2 "Usage: git-profile rename <old_name> <new_name>"; return 1; }
+        local old_name="$1"
+        local new_name="$2"
+        [[ -z "$old_name" || -z "$new_name" ]] && { print -u2 "Usage: git-profile rename <old_name> <new_name>"; return 1; }
         
-        local name=$(git config --global "profile.$old.name" 2>/dev/null)
-        local email=$(git config --global "profile.$old.email" 2>/dev/null)
-        local key=$(git config --global "profile.$old.signingkey" 2>/dev/null)
+        local name=$(git config --global "profile.$old_name.name" 2>/dev/null)
+        local email=$(git config --global "profile.$old_name.email" 2>/dev/null)
+        local key=$(git config --global "profile.$old_name.signingkey" 2>/dev/null)
         
         if [[ -z "$name" ]]; then
-            print -u2 "Error: Profile '$old' not found globally."
+            print -u2 "Error: Profile '$old_name' not found globally."
             return 1
         fi
         
-        git config --global "profile.$new.name" "$name"
-        git config --global "profile.$new.email" "$email"
-        [[ -n "$key" ]] && git config --global "profile.$new.signingkey" "$key"
+        git config --global "profile.$new_name.name" "$name"
+        git config --global "profile.$new_name.email" "$email"
+        [[ -n "$key" ]] && git config --global "profile.$new_name.signingkey" "$key"
         
-        git config --global --remove-section "profile.$old"
-        print "Renamed profile '$old' to '$new' globally."
+        git config --global --remove-section "profile.$old_name"
+        print "Renamed profile '$old_name' to '$new_name' globally."
         ;;
 
     remove)
-        local p="$1"
-        [[ -z "$p" ]] && { print -u2 "Error: Profile name required."; return 1; }
+        local profile_name="$1"
+        [[ -z "$profile_name" ]] && { print -u2 "Error: Profile name required."; return 1; }
         
-        if ! git config --global --remove-section "profile.$p" 2>/dev/null; then
-            print -u2 "Error: Profile '$p' not found globally."
+        if ! git config --global --remove-section "profile.$profile_name" 2>/dev/null; then
+            print -u2 "Error: Profile '$profile_name' not found globally."
             return 1
         fi
-        print "Profile '$p' removed globally."
+        print "Profile '$profile_name' removed globally."
         ;;
 
     *)
