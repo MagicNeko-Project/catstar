@@ -49,19 +49,19 @@ alias reload='sudo killall -SIGUSR1'
 alias dns='sudo killall -SIGHUP mDNSResponder'
 
 # --- Universal Package Manager Wrapper ---
-# Support 'y' as the primary package manager, 'yy' for upgrade, and 'yu' for update.
+# Support 'y' as the primary package manager, 'yy' for upgrade, 'yu' for update, and 'yi' for info.
 # This abstraction allows using the same muscle memory across different OSs.
 () {
   local -A pms
   pms=(
-    paru    "paru;paru -Sy;paru -Syu"
-    yay     "yay;yay -Sy;yay -Syu"
-    pacman  "sudo pacman;sudo pacman -Sy;sudo pacman -Syu"
-    brew    "brew;brew update;brew update && brew upgrade"
-    apt     "sudo apt;sudo apt update;sudo apt update && sudo apt upgrade"
-    dnf     "sudo dnf;sudo dnf check-update;sudo dnf upgrade"
-    zypper  "sudo zypper;sudo zypper ref;sudo zypper dup"
-    apk     "sudo apk;sudo apk update;sudo apk update && sudo apk upgrade"
+    paru    "paru;paru -Sy;paru -Syu;paru -Si"
+    yay     "yay;yay -Sy;yay -Syu;yay -Si"
+    pacman  "sudo pacman;sudo pacman -Sy;sudo pacman -Syu;pacman -Si"
+    brew    "brew;brew update;brew update && brew upgrade;brew info"
+    apt     "sudo apt;sudo apt update;sudo apt update && sudo apt upgrade;apt show"
+    dnf     "sudo dnf;sudo dnf check-update;sudo dnf upgrade;dnf info"
+    zypper  "sudo zypper;sudo zypper ref;sudo zypper dup;zypper info"
+    apk     "sudo apk;sudo apk update;sudo apk update && sudo apk upgrade;apk info"
   )
 
   local pm
@@ -73,6 +73,7 @@ alias dns='sudo killall -SIGHUP mDNSResponder'
       alias y=$cmds[1]
       alias yy=$cmds[2]
       alias yu=$cmds[3]
+      alias yi=$cmds[4]
       break
     fi
   done
