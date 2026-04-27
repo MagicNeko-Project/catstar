@@ -10,19 +10,21 @@ Usage: git-profile [options] <command> [args...]
 
 Manage Git author identities.
 
-Commands:
-  current                     Show active identity (default)
-  list                        List available profiles
-  use <name>                  Apply profile to current scope
-  clear                       Remove active identity
+Identity Commands (Options: --local [default], --global):
+  current                     Show active identity in the targeted config
+  list                        List profiles and highlight the active identity
+  use <name>                  Apply a profile to the targeted config
+  clear                       Remove the active identity from the targeted config
+
+Profile Template Commands (Always Global):
   add <name> [commit-ref]     Create a new profile (from ref or interactively)
   set <name> <key> <value>    Update profile (keys: name, email, signingkey)
-  rename <old> <new>          Rename a profile
+  rename <old> <new>          Rename an existing profile
   remove <name>               Delete a profile
 
 Options:
-  --local                     Target local config (default for use, clear)
-  --global                    Target global config
+  --local                     Target repository config (.git/config)
+  --global                    Target user config (~/.gitconfig)
   -h, --help                  Show this help message
 EOF
 }
