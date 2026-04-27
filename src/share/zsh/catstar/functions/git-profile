@@ -22,6 +22,10 @@ Profile Templates:
   rename <old> <new>          Rename a profile
   delete <name>               Delete a profile
 
+Backup & Synchronization:
+  export [<name>...] [-o <f>] Export profiles to stdout or file
+  import [file | -] [--force] Import profiles from file or stdin (default: stdin)
+
 Options:
   --local                     Target repository config (default)
   --global                    Target global config
@@ -37,16 +41,16 @@ EOF
 # Caller must declare: local -A names emails keys; local -a list
 _git_profile_load_all() {
     local key value rest p_name p_key
-    
+
     while read -r key value; do
         rest="${key#profile.}"
         p_name="${rest%.*}"
         p_key="${rest##*.}"
-        
+
         if (( ! ${list[(Ie)$p_name]} )); then
             list+=("$p_name")
         fi
-        
+
         case "$p_key" in
             name) names[$p_name]="$value" ;;
             email) emails[$p_name]="$value" ;;
@@ -64,7 +68,7 @@ _git_profile_find_match() {
     local -A names emails keys
     local -a list
     _git_profile_load_all
-    
+
     local profile_name
     for profile_name in "$list[@]"; do
         local match_name="$names[$profile_name]"
@@ -90,16 +94,16 @@ _git_profile_apply_internal() {
         print -u2 "Error: Not a git repository."
         return 1
     fi
-    
+
     git config $target_scope user.name "$name"
     git config $target_scope user.email "$email"
-    
+
     if [[ -n "$key" ]]; then
         git config $target_scope user.signingkey "$key"
     else
         git config $target_scope --unset user.signingkey 2>/dev/null
     fi
-    
+
     print "Git identity ($target_scope) set to: $name <$email>${key:+ (Key: $key)}"
 }
 
@@ -150,7 +154,7 @@ case "$subcommand" in
         local active_name=$(git config $scope_arg user.name 2>/dev/null)
         local active_email=$(git config $scope_arg user.email 2>/dev/null)
         local active_key=$(git config $scope_arg user.signingkey 2>/dev/null)
-        
+
         if [[ -z "$active_name" && -z "$active_email" ]]; then
             print "No identity set in $scope_arg configuration."
             return 0
@@ -163,11 +167,11 @@ case "$subcommand" in
         else
             print "Active identity ($scope_arg) [No matching profile]:"
         fi
-        
+
         print "  Name:  $active_name"
         print "  Email: $active_email"
         [[ -n "$active_key" ]] && print "  Key:   $active_key"
-        
+
         return 0
         ;;
 
@@ -188,7 +192,7 @@ case "$subcommand" in
         print "Available profiles:"
         printf "  %-1s %-15s %s\n" "" "PROFILE" "IDENTITY"
         printf "  %-1s %-15s %s\n" "" "-------" "--------"
-        
+
         local p
         for p in "${(@n)list}"; do
             local mark=" "
@@ -201,7 +205,7 @@ case "$subcommand" in
 
     use)
         local profile_name="$1"
-        
+
         if [[ -z "$profile_name" ]]; then
             if [[ ! -t 0 ]]; then
                 print -u2 "Error: Profile name required for non-interactive use."
@@ -238,7 +242,7 @@ case "$subcommand" in
             local selection
             print -n "Selection (1-${#profile_names}): "
             read selection
-            
+
             if [[ "$selection" =~ ^[0-9]+$ ]] && (( selection >= 1 && selection <= ${#profile_names} )); then
                 profile_name="$profile_names[$selection]"
             else
@@ -246,16 +250,16 @@ case "$subcommand" in
                 return 1
             fi
         fi
-        
+
         local template_name=$(git config --global "profile.$profile_name.name" 2>/dev/null)
         local template_email=$(git config --global "profile.$profile_name.email" 2>/dev/null)
         local template_key=$(git config --global "profile.$profile_name.signingkey" 2>/dev/null)
-        
+
         if [[ -z "$template_name" || -z "$template_email" ]]; then
             print -u2 "Error: Profile '$profile_name' not found."
             return 1
         fi
-        
+
         _git_profile_apply_internal "$scope_arg" "$template_name" "$template_email" "$template_key"
         ;;
 
@@ -263,14 +267,14 @@ case "$subcommand" in
         local active_name=$(git config $scope_arg user.name 2>/dev/null)
         local active_email=$(git config $scope_arg user.email 2>/dev/null)
         local active_key=$(git config $scope_arg user.signingkey 2>/dev/null)
-        
+
         if [[ -z "$active_name" && -z "$active_email" ]]; then
             print "No identity set in $scope_arg to clear."
             return 0
         fi
-        
+
         local matched_profile=$(_git_profile_find_match "$active_name" "$active_email" "$active_key")
-        
+
         if [[ -n "$matched_profile" ]]; then
             git config $scope_arg --unset user.name
             git config $scope_arg --unset user.email
@@ -286,27 +290,27 @@ case "$subcommand" in
         local profile_name="$1"
         local commit_ref="$2"
         [[ -z "$profile_name" ]] && { print -u2 "Error: Profile name required."; return 1; }
-        
+
         if git config --global --get "profile.$profile_name.name" >/dev/null 2>&1; then
             print -u2 "Error: Profile '$profile_name' already exists."
             return 1
         fi
-        
+
         local name email key
-        
+
         if [[ -n "$commit_ref" ]]; then
             if ! (($+functions[git-commit-author])); then
                 print -u2 "Error: 'git-commit-author' function is required."
                 return 1
             fi
-            
+
             local author_info
             author_info=$(git-commit-author --get "$commit_ref" 2>/dev/null)
             if [[ $? -ne 0 || -z "$author_info" ]]; then
                 print -u2 "Error: Could not retrieve author info from '$commit_ref'."
                 return 1
             fi
-            
+
             name="${author_info%%$'\t'*}"
             email="${author_info#*$'\t'}"
             print "Retrieved identity: $name <$email>"
@@ -318,10 +322,10 @@ case "$subcommand" in
             print -n "Signing Key (optional): "
             read -r key
         fi
-        
+
         [[ -z "$name" ]] && { print -u2 "Error: Name is required."; return 1; }
         [[ -z "$email" ]] && { print -u2 "Error: Email is required."; return 1; }
-        
+
         git config --global "profile.$profile_name.name" "$name"
         git config --global "profile.$profile_name.email" "$email"
         [[ -n "$key" ]] && git config --global "profile.$profile_name.signingkey" "$key"
@@ -337,12 +341,12 @@ case "$subcommand" in
         local key="$2"
         local value="$3"
         [[ -z "$profile_name" || -z "$key" || -z "$value" ]] && { print -u2 "Usage: git-profile set <profile> <key> <value>"; return 1; }
-        
+
         if ! git config --global --get "profile.$profile_name.name" >/dev/null 2>&1; then
             print -u2 "Error: Profile '$profile_name' not found."
             return 1
         fi
-        
+
         case "$key" in
             name|email|signingkey)
                 git config --global "profile.$profile_name.$key" "$value"
@@ -359,20 +363,20 @@ case "$subcommand" in
         local old_name="$1"
         local new_name="$2"
         [[ -z "$old_name" || -z "$new_name" ]] && { print -u2 "Usage: git-profile rename <old_name> <new_name>"; return 1; }
-        
+
         local name=$(git config --global "profile.$old_name.name" 2>/dev/null)
         local email=$(git config --global "profile.$old_name.email" 2>/dev/null)
         local key=$(git config --global "profile.$old_name.signingkey" 2>/dev/null)
-        
+
         if [[ -z "$name" ]]; then
             print -u2 "Error: Profile '$old_name' not found."
             return 1
         fi
-        
+
         git config --global "profile.$new_name.name" "$name"
         git config --global "profile.$new_name.email" "$email"
         [[ -n "$key" ]] && git config --global "profile.$new_name.signingkey" "$key"
-        
+
         git config --global --remove-section "profile.$old_name"
         print "Renamed '$old_name' to '$new_name'."
         ;;
@@ -380,12 +384,114 @@ case "$subcommand" in
     delete)
         local profile_name="$1"
         [[ -z "$profile_name" ]] && { print -u2 "Error: Profile name required."; return 1; }
-        
+
         if ! git config --global --remove-section "profile.$profile_name" 2>/dev/null; then
             print -u2 "Error: Profile '$profile_name' not found."
             return 1
         fi
         print "Profile '$profile_name' deleted."
+        ;;
+
+    export)
+        local -A export_opts
+        zparseopts -D -E -A export_opts o: -out:
+
+        local out_file="${export_opts[-o]}${export_opts[--out]}"
+        local -a requested_profiles=("$@")
+        local -a all_configs filtered_configs
+        local p line found
+
+        all_configs=("${(@f)$(git config --global --get-regexp '^profile\.' 2>/dev/null)}")
+
+        if [[ ${#all_configs} -eq 0 ]]; then
+            if [[ ${#requested_profiles} -gt 0 ]]; then
+                print -u2 "Error: No profiles found."
+                return 1
+            fi
+            return 0
+        fi
+
+        if [[ ${#requested_profiles} -gt 0 ]]; then
+            for p in "$requested_profiles[@]"; do
+                found=0
+                for line in "$all_configs[@]"; do
+                    if [[ "$line" == profile.$p.* ]]; then
+                        filtered_configs+=("$line")
+                        found=1
+                    fi
+                done
+                if (( ! found )); then
+                    print -u2 "Error: Profile '$p' not found."
+                    return 1
+                fi
+            done
+        else
+            filtered_configs=("$all_configs[@]")
+        fi
+
+        if [[ -n "$out_file" ]]; then
+            print -l "$filtered_configs[@]" > "$out_file"
+        else
+            print -l "$filtered_configs[@]"
+        fi
+        ;;
+
+    import)
+        local -A import_opts new_profiles
+        zparseopts -D -E -A import_opts -force
+
+        local input_source="${1:--}"
+        local -a lines import_data
+        local line p_name key value
+
+        if [[ "$input_source" == "-" ]]; then
+            lines=("${(@f)$(cat)}")
+        else
+            if [[ ! -f "$input_source" ]]; then
+                print -u2 "Error: File '$input_source' not found."
+                return 1
+            fi
+            lines=("${(@f)$(< "$input_source")}")
+        fi
+
+        if [[ ${#lines} -eq 0 ]]; then
+            print "Nothing to import."
+            return 0
+        fi
+
+        for line in "$lines[@]"; do
+            [[ -z "${line//[[:space:]]/}" ]] && continue
+            if [[ "$line" =~ ^profile\.([^.]+)\.([^ ]+)[[:space:]](.+)$ ]]; then
+                p_name="$match[1]"
+                new_profiles[$p_name]=1
+                import_data+=("$line")
+            else
+                print -u2 "Error: Invalid import format at line: $line"
+                return 1
+            fi
+        done
+
+        if (( ! ${+import_opts[--force]} )); then
+            for p_name in "${(k)new_profiles[@]}"; do
+                if git config --global --get-regexp "^profile\.$p_name\." >/dev/null 2>&1; then
+                    print -u2 "Error: Profile '$p_name' already exists. Use --force to overwrite."
+                    return 1
+                fi
+            done
+        fi
+
+        if (( ${+import_opts[--force]} )); then
+            for p_name in "${(k)new_profiles[@]}"; do
+                git config --global --remove-section "profile.$p_name" 2>/dev/null
+            done
+        fi
+
+        for line in "$import_data[@]"; do
+            key="${line%% *}"
+            value="${line#* }"
+            git config --global "$key" "$value"
+        done
+        print "Imported ${#new_profiles} profile(s) successfully."
         ;;
 
     *)
