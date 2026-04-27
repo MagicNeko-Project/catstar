@@ -1,11 +1,11 @@
 # Toggle a git remote (default: origin) between HTTP(S) and SSH.
-# Usage: gtremote [remote-name]
+# Usage: git-toggle-remote [remote-name]
 
 local remote_name="${1:-origin}"
 
 # --- 1. Guardrails & Help Menu ---
 if [[ "$remote_name" == "-h" || "$remote_name" == "--help" ]]; then
-    print "Usage: gtremote [remote-name]"
+    print "Usage: git-toggle-remote [remote-name]"
     print "Toggles a git remote (default: origin) between HTTP(S) and SSH."
     return 0
 fi

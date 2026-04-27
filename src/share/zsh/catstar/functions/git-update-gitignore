@@ -1,7 +1,7 @@
 # Update global gitignore using Catstar managed files
 # Strictly avoids aggressive global config unless confirmed.
 
-update_repo github/gitignore.git ~/.cfg/gitignore main
+git-update-repo github/gitignore.git ~/.cfg/gitignore main
 
 if [[ -z $GITIGNORE_INCLUDE ]]; then
     print "No GITIGNORE_INCLUDE defined. Skipping global gitignore update."

@@ -243,14 +243,14 @@ case "$subcommand" in
         local name email key
         
         if [[ -n "$commit_ref" ]]; then
-            # Requires gcauthor to be available in the environment to fetch info
-            if ! (($+functions[gcauthor])); then
-                print -u2 "Error: 'gcauthor' function is required to fetch author info from a commit."
+            # Requires git-commit-author to be available in the environment to fetch info
+            if ! (($+functions[git-commit-author])); then
+                print -u2 "Error: 'git-commit-author' function is required to fetch author info from a commit."
                 return 1
             fi
             
             local author_info
-            author_info=$(gcauthor --get "$commit_ref" 2>/dev/null)
+            author_info=$(git-commit-author --get "$commit_ref" 2>/dev/null)
             if [[ $? -ne 0 || -z "$author_info" ]]; then
                 print -u2 "Error: Could not retrieve author info from '$commit_ref'."
                 return 1

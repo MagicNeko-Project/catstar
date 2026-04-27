@@ -1,8 +1,8 @@
 # Update a git repository - 2026 Edition
-# Usage: update_repo <url_or_slug> [path] [branch]
+# Usage: git-update-repo <url_or_slug> [path] [branch]
 
 if (( $# == 0 )); then
-    print -u2 "Usage: update_repo <url> <path> <branch>"
+    print -u2 "Usage: git-update-repo <url> <path> <branch>"
     return 1
 fi
 

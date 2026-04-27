@@ -1,12 +1,12 @@
 # Set local git configuration from commit author
-# Usage: gcauthor [commit-ref]
-#        gcauthor {-l|--list} [commit-ref|--all]
-#        gcauthor {-g|--get} [commit-ref]
+# Usage: git-commit-author [commit-ref]
+#        git-commit-author {-l|--list} [commit-ref|--all]
+#        git-commit-author {-g|--get} [commit-ref]
 
 if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-    print "Usage: gcauthor [commit-ref]"
-    print "       gcauthor {-l|--list} [commit-ref|--all]"
-    print "       gcauthor {-g|--get} [commit-ref]"
+    print "Usage: git-commit-author [commit-ref]"
+    print "       git-commit-author {-l|--list} [commit-ref|--all]"
+    print "       git-commit-author {-g|--get} [commit-ref]"
     print "Set local git configuration from a commit author."
     print
     print "Options:"
