@@ -13,14 +13,14 @@ Manage Git author identities.
 Identity Management:
   current                     Show active identity
   list                        List profiles and active status
-  use <name>                  Apply a profile to the targeted scope
+  use [<name>]                Apply a profile (interactively or by name)
   clear                       Remove the active identity
 
 Profile Templates:
-  add <name> [ref]            Create a new profile from a ref or interactively
+  add <name> [ref] [--use]    Create a new profile (and optionally apply it)
   set <name> <key> <value>    Update a profile key (name, email, signingkey)
   rename <old> <new>          Rename a profile
-  remove <name>               Delete a profile
+  delete <name>               Delete a profile
 
 Options:
   --local                     Target repository config (default)
@@ -108,7 +108,7 @@ _git_profile_apply_internal() {
 # =============================================================================
 
 local -A opts
-zparseopts -D -E -A opts -local -global h -help
+zparseopts -D -E -A opts -local -global h -help -use
 
 local scope_arg="--local"
 if (( $+opts[--global] )); then
@@ -127,6 +127,19 @@ else
     subcommand="$1"
     shift
 fi
+
+# Pre-flight check: Reject local commands if not in a Git repository
+case "$subcommand" in
+    current|list|clear|add|use)
+        if [[ "$scope_arg" == "--local" ]] && ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            # 'add' is only local if '--use' is present.
+            if [[ "$subcommand" != "add" ]] || (( $+opts[--use] )); then
+                print -u2 "Error: Not a git repository."
+                return 1
+            fi
+        fi
+        ;;
+esac
 
 # =============================================================================
 # 4. Command Execution
@@ -188,7 +201,51 @@ case "$subcommand" in
 
     use)
         local profile_name="$1"
-        [[ -z "$profile_name" ]] && { print -u2 "Error: Profile name required."; return 1; }
+        
+        if [[ -z "$profile_name" ]]; then
+            if [[ ! -t 0 ]]; then
+                print -u2 "Error: Profile name required for non-interactive use."
+                return 1
+            fi
+
+            local -A names emails keys
+            local -a list items
+            _git_profile_load_all
+
+            if [[ ${#list} -eq 0 ]]; then
+                print -u2 "Error: No profiles found."
+                return 1
+            fi
+
+            # Determine active identity to mark in the list
+            local active_name=$(git config $scope_arg user.name 2>/dev/null)
+            local active_email=$(git config $scope_arg user.email 2>/dev/null)
+            local active_key=$(git config $scope_arg user.signingkey 2>/dev/null)
+
+            print "Please select a profile to use:"
+            local p mark i=1
+            local -a profile_names
+            for p in "${(@n)list}"; do
+                mark=" "
+                if [[ "$names[$p]" == "$active_name" && "$emails[$p]" == "$active_email" && ("$keys[$p]" == "$active_key" || (-z "$keys[$p]" && -z "$active_key")) ]]; then
+                    mark="*"
+                fi
+                printf "%2d) %s %s: %s <%s>\n" "$i" "$mark" "$p" "$names[$p]" "$emails[$p]"
+                profile_names+=("$p")
+                ((i++))
+            done
+
+            local selection
+            print -n "Selection (1-${#profile_names}): "
+            read selection
+            
+            if [[ "$selection" =~ ^[0-9]+$ ]] && (( selection >= 1 && selection <= ${#profile_names} )); then
+                profile_name="$profile_names[$selection]"
+            else
+                print -u2 "Error: Invalid selection."
+                return 1
+            fi
+        fi
         
         local template_name=$(git config --global "profile.$profile_name.name" 2>/dev/null)
         local template_email=$(git config --global "profile.$profile_name.email" 2>/dev/null)
@@ -269,6 +326,10 @@ case "$subcommand" in
         git config --global "profile.$profile_name.email" "$email"
         [[ -n "$key" ]] && git config --global "profile.$profile_name.signingkey" "$key"
         print "Profile '$profile_name' added."
+
+        if (( $+opts[--use] )); then
+            _git_profile_apply_internal "$scope_arg" "$name" "$email" "$key"
+        fi
         ;;
 
     set)
@@ -316,7 +377,7 @@ case "$subcommand" in
         print "Renamed '$old_name' to '$new_name'."
         ;;
 
-    remove)
+    delete)
         local profile_name="$1"
         [[ -z "$profile_name" ]] && { print -u2 "Error: Profile name required."; return 1; }
         
@@ -324,7 +385,7 @@ case "$subcommand" in
             print -u2 "Error: Profile '$profile_name' not found."
             return 1
         fi
-        print "Profile '$profile_name' removed."
+        print "Profile '$profile_name' deleted."
         ;;
 
     *)
