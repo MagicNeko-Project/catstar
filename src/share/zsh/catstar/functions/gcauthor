@@ -1,21 +1,36 @@
 # Set local git configuration from commit author
 # Usage: gcauthor [commit-ref]
 #        gcauthor {-l|--list} [commit-ref|--all]
+#        gcauthor {-g|--get} [commit-ref]
 
 if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     print "Usage: gcauthor [commit-ref]"
     print "       gcauthor {-l|--list} [commit-ref|--all]"
+    print "       gcauthor {-g|--get} [commit-ref]"
     print "Set local git configuration from a commit author."
     print
     print "Options:"
     print "  -l, --list [ref]   List unique authors in the repository and an associated commit-ref."
     print "                     You can specify a branch/commit or --all to search beyond HEAD."
+    print "  -g, --get [ref]    Print the author name and email (tab-separated) for the given ref."
     return 0
 fi
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     print -u2 "Error: Not a git repository."
     return 1
+fi
+
+if [[ "$1" == "-g" || "$1" == "--get" ]]; then
+    local commit_ref="${2:-HEAD}"
+    if ! git rev-parse --verify --quiet "$commit_ref^{commit}" >/dev/null; then
+        print -u2 "Error: '$commit_ref' is not a valid commit reference."
+        return 1
+    fi
+    local author_name=$(git show -s --format='%an' "$commit_ref")
+    local author_email=$(git show -s --format='%ae' "$commit_ref")
+    print -r -- "$author_name"$'\t'"$author_email"
+    return 0
 fi
 
 if [[ "$1" == "-l" || "$1" == "--list" ]]; then
@@ -61,5 +76,7 @@ fi
 local author_name=$(git show -s --format='%an' "$commit_ref")
 local author_email=$(git show -s --format='%ae' "$commit_ref")
 
-# Delegate the actual application to git-profile's shared logic
-git-profile --local _apply "$author_name" "$author_email"
+git config user.name "$author_name"
+git config user.email "$author_email"
+
+print "Git user set to: $author_name <$author_email>"

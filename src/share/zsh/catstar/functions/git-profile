@@ -15,7 +15,7 @@ Commands:
   list                        List available profiles
   use <name>                  Apply profile to current scope
   clear                       Remove active identity
-  add <name>                  Create a new profile
+  add <name> [commit-ref]     Create a new profile (from ref or interactively)
   set <name> <key> <value>    Update profile (keys: name, email, signingkey)
   rename <old> <new>          Rename a profile
   remove <name>               Delete a profile
@@ -30,6 +30,7 @@ EOF
 # =============================================================================
 # 2. Internal Helpers
 # =============================================================================
+
 
 # Loads all global profiles into associative arrays via dynamic scoping.
 # The caller MUST declare:
@@ -135,11 +136,6 @@ fi
 # =============================================================================
 
 case "$subcommand" in
-    _apply) 
-        # Hidden subcommand for shared logic (e.g., invoked from gcauthor)
-        _git_profile_apply_internal "$scope_arg" "$@"
-        ;;
-
     current)
         local active_name=$(git config $scope_arg user.name 2>/dev/null)
         local active_email=$(git config $scope_arg user.email 2>/dev/null)
@@ -236,6 +232,7 @@ case "$subcommand" in
 
     add)
         local profile_name="$1"
+        local commit_ref="$2"
         [[ -z "$profile_name" ]] && { print -u2 "Error: Profile name required."; return 1; }
         
         if git config --global --get "profile.$profile_name.name" >/dev/null 2>&1; then
@@ -244,12 +241,34 @@ case "$subcommand" in
         fi
         
         local name email key
-        print -n "Full Name: "
-        read -r name
-        print -n "Email:     "
-        read -r email
-        print -n "Signing Key (optional): "
-        read -r key
+        
+        if [[ -n "$commit_ref" ]]; then
+            # Requires gcauthor to be available in the environment to fetch info
+            if ! (($+functions[gcauthor])); then
+                print -u2 "Error: 'gcauthor' function is required to fetch author info from a commit."
+                return 1
+            fi
+            
+            local author_info
+            author_info=$(gcauthor --get "$commit_ref" 2>/dev/null)
+            if [[ $? -ne 0 || -z "$author_info" ]]; then
+                print -u2 "Error: Could not retrieve author info from '$commit_ref'."
+                return 1
+            fi
+            
+            # Split the tab-separated output
+            name="${author_info%%$'\t'*}"
+            email="${author_info#*$'\t'}"
+            
+            print "Retrieved identity from $commit_ref: $name <$email>"
+        else
+            print -n "Full Name: "
+            read -r name
+            print -n "Email:     "
+            read -r email
+            print -n "Signing Key (optional): "
+            read -r key
+        fi
         
         [[ -z "$name" ]] && { print -u2 "Error: Name is required."; return 1; }
         [[ -z "$email" ]] && { print -u2 "Error: Email is required."; return 1; }
