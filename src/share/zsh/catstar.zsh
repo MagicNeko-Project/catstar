@@ -27,10 +27,12 @@
       fpath=("$functions_dir" $fpath)
     fi
 
-    # Autoload all non-hidden files in the functions directory
+    # Autoload all non-hidden files in the functions directory, EXCLUDING completion files (_*)
     # -U: suppress alias expansion, -z: use zsh style
+    # (^_*): excludes files starting with underscore
     # (N:t): N for nullglob (don't error if empty), t for tail (basename only)
-    autoload -Uz "$functions_dir"/*(N:t)
+    setopt localoptions extendedglob
+    autoload -Uz "$functions_dir"/(^_*)(N:t)
   fi
 
   # 3. Modular Configuration Loading

@@ -1,0 +1,124 @@
+#compdef git-profile
+
+# =============================================================================
+# Zsh Completion Definition for git-profile
+# =============================================================================
+
+# Helper function to dynamically fetch existing git profiles with details
+__git_profile_get_names() {
+    local -a profiles
+    local key value rest p_name
+    local -A name_map email_map
+    
+    # Read global git config to find profile definitions
+    while read -r key value; do
+        rest="${key#profile.}"
+        p_name="${rest%.*}"
+        
+        # Keep track of unique profile names
+        if (( ! ${profiles[(Ie)$p_name]} )); then
+            profiles+=("$p_name")
+        fi
+        
+        # Map names and emails to their respective profiles
+        case "${rest##*.}" in
+            name) name_map[$p_name]="$value" ;;
+            email) email_map[$p_name]="$value" ;;
+        esac
+    done < <(git config --global --get-regexp '^profile\.' 2>/dev/null)
+    
+    # Construct the array for _describe: "id:Name <email>"
+    local -a display_profiles
+    local p
+    for p in "${(@)profiles}"; do
+        local display_name="${name_map[$p]:-Unknown}"
+        local display_email="${email_map[$p]:-unknown@example.com}"
+        display_profiles+=("${p}:${display_name} <${display_email}>")
+    done
+    
+    _describe -t profiles 'profile' display_profiles
+}
+
+# Main completion function
+_git-profile() {
+    local context state state_descr line
+    typeset -A opt_args
+    local ret=1
+
+    # Common options available across all subcommands
+    local -a common_opts=(
+        '(--global)--local[Target repository config (default)]'
+        '(--local)--global[Target global config]'
+        '(-h --help)'{-h,--help}'[Show help message]'
+    )
+
+    # First pass: parse global options and extract the subcommand string
+    _arguments -C $common_opts \
+        '1: :->command' \
+        '*:: :->args' && ret=0
+
+    case $state in
+        command)
+            local -a commands=(
+                "current:Show active identity"
+                "list:List profiles and active status"
+                "use:Apply a profile"
+                "clear:Remove the active identity"
+                "add:Create a new profile"
+                "set:Update a profile key"
+                "rename:Rename a profile"
+                "delete:Delete a profile"
+                "export:Export profiles"
+                "import:Import profiles"
+            )
+            _describe -t commands 'git-profile command' commands && ret=0
+            ;;
+        
+        args)
+            case $words[1] in
+                use|delete)
+                    _arguments $common_opts \
+                        '1:profile:__git_profile_get_names' && ret=0
+                    ;;
+                
+                add)
+                    _arguments $common_opts \
+                        '--use[Apply the profile immediately]' \
+                        '1:new profile name:' \
+                        '2:commit ref (optional):' && ret=0
+                    ;;
+                
+                set)
+                    _arguments $common_opts \
+                        '1:profile:__git_profile_get_names' \
+                        '2:key:(name email signingkey)' \
+                        '3:value:' && ret=0
+                    ;;
+                
+                rename)
+                    _arguments $common_opts \
+                        '1:old profile:__git_profile_get_names' \
+                        '2:new profile name:' && ret=0
+                    ;;
+                
+                export)
+                    _arguments -s -S $common_opts \
+                        '(-o --out)'{-o,--out}'[Output file]:file:_files' \
+                        '*:profile:__git_profile_get_names' && ret=0
+                    ;;
+                
+                import)
+                    _arguments -s -S $common_opts \
+                        '--force[Overwrite existing profiles]' \
+                        '1:import file (or - for stdin):_files' && ret=0
+                    ;;
+                
+                current|list|clear)
+                    _arguments $common_opts && ret=0
+                    ;;
+            esac
+            ;;
+    esac
+
+    return $ret
+}

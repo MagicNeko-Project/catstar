@@ -23,8 +23,8 @@ r6() { gen_ipv6 "$@" }                     # random IPv6 address
 
 # --- Visual & System Inspection ---
 
-# colors: Display a 256-color chart in the terminal for testing color support.
-colors() {
+# catstar-colors: Display a 256-color chart in the terminal for testing color support.
+catstar-colors() {
   local i
   for i in {0..255}; do
     printf "\x1b[38;5;${i}mcolor%-5i\x1b[0m" $i
