@@ -352,12 +352,12 @@ class RepoScanner:
             vis, _ = self.matcher.get_visibility(rel_current)
             if vis == Visibility.PRUNED:
                 self.telemetry.pruned_paths += 1
-                return
-            if vis == Visibility.GHOSTED:
-                self.telemetry.ghosted_paths += 1
-                self._insert_into_tree(root_node, rel_current, is_file=False)
                 if self.matcher.can_skip_dir(rel_current, vis):
                     return
+            elif vis == Visibility.GHOSTED:
+                self.telemetry.ghosted_paths += 1
+                self._insert_into_tree(root_node, rel_current, is_file=False)
+                return
             else:
                 self._insert_into_tree(root_node, rel_current, is_file=False)
 
