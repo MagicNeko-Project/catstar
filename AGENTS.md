@@ -3,6 +3,7 @@
 ## 1. Operating Mandate
 - **Full Autonomy:** Determine optimal implementation strategies autonomously. Prioritize zero cognitive load and readability.
 - **Native Idioms:** Follow established community patterns rather than rigid, prescriptive rules.
+- **Unbranded Code:** Ensure all generated code, UI prompts, and documentation remain strictly unbranded. Avoid inserting project names, logos, or custom watermarks; focus purely on clean, functional utility.
 
 ## 2. Repository Structure
 `catstar` is a multi-language infrastructure and automation repository:

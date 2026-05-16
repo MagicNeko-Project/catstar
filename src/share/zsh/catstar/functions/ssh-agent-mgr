@@ -1,0 +1,160 @@
+# SSH Agent Manager (ssh-agent-mgr)
+# -----------------------------------------------------------------------------
+# Scans common SSH agent socket locations (including existing environment
+# variables, macOS temporary dirs, system agents, 1Password, GPG agent, etc.),
+# validates active sockets, displays a selection menu, and switches SSH_AUTH_SOCK.
+#
+# Usage: ssh-agent-mgr [ -h | --help ]
+# -----------------------------------------------------------------------------
+
+# 1. Handle Help Flag
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+  print -P "%F{cyan}=== SSH Agent Manager (ssh-agent-mgr) ===%f"
+  print -P "Scans common SSH agent socket locations, validates active agents,"
+  print -P "displays an interactive selection menu, and switches SSH_AUTH_SOCK.\n"
+  print -P "%F{white}Usage:%f"
+  print -P "  ssh-agent-mgr           Launch interactive selection menu"
+  print -P "  ssh-agent-mgr -h|--help Display this help message\n"
+  print -P "%F{white}Discovered Locations:%f"
+  print -P "  Scans environment variables, macOS temporary dirs (/var/folders/...), "
+  print -P "  1Password, GPG Agent, launchd, and XDG runtime directories."
+  return 0
+fi
+
+# Ensure global associative array exists to persist discovered sockets across runs
+typeset -g -A _CATSTAR_KNOWN_SSH_SOCKETS
+
+# Ensure strict local scope for all internal variables
+local current_sock="$SSH_AUTH_SOCK"
+local -a candidate_sockets valid_sockets socket_descriptions
+local socket candidate choice index key_list exit_status key_count first_key_comment selected_sock
+
+# 2. Gather Candidate Sockets
+# Include current environment variable if set and valid
+if [[ -n "$current_sock" && -S "$current_sock" ]]; then
+  candidate_sockets+=("$current_sock")
+  _CATSTAR_KNOWN_SSH_SOCKETS[$current_sock]=1
+fi
+
+# Include previously known sockets from this shell session
+for socket in ${(k)_CATSTAR_KNOWN_SSH_SOCKETS}; do
+  if [[ -S "$socket" ]]; then
+    candidate_sockets+=("$socket")
+  else
+    # Prune dead sockets from known cache
+    unset "_CATSTAR_KNOWN_SSH_SOCKETS[$socket]"
+  fi
+done
+
+# Include common macOS / Linux agent socket locations using Zsh nullglob (N)
+local -a common_paths=(
+  /var/folders/*/*/*/ssh-*/agent.*(N)
+  /tmp/ssh-*/agent.*(N)
+  "$HOME/.1password/agent.sock"(N)
+  "$HOME/.gnupg/S.gpg-agent.ssh"(N)
+  /run/user/[0-9]*/keyring/ssh(N)
+  /run/user/[0-9]*/ssh-agent.socket(N)
+  /private/tmp/com.apple.launchd.*/Listeners(N)
+  "$XDG_RUNTIME_DIR/keyring/ssh"(N)
+  "$XDG_RUNTIME_DIR/ssh-agent.socket"(N)
+  "$XDG_RUNTIME_DIR/gcr/ssh"(N)
+)
+
+for candidate in "${common_paths[@]}"; do
+  if [[ -S "$candidate" ]]; then
+    candidate_sockets+=("$candidate")
+    _CATSTAR_KNOWN_SSH_SOCKETS[$candidate]=1
+  fi
+done
+
+# 3. Deduplicate Candidate Sockets using Zsh associative array
+local -a unique_sockets
+local -A seen_sockets
+for socket in "${candidate_sockets[@]}"; do
+  if [[ -z "${seen_sockets[$socket]}" ]]; then
+    seen_sockets[$socket]=1
+    unique_sockets+=("$socket")
+  fi
+done
+
+if (( ${#unique_sockets[@]} == 0 )); then
+  print -P "%F{yellow}No SSH agent sockets found in common locations or environment.%f"
+  print -P "You can start a new agent using: %F{cyan}eval \$(ssh-agent -s)%f"
+  return 1
+fi
+
+# 4. Validate Sockets and Gather Key Information (Pure Zsh, Zero Forks)
+for socket in "${unique_sockets[@]}"; do
+  # Test socket communication with ssh-add -l (exactly one external call per socket)
+  key_list=$(env SSH_AUTH_SOCK="$socket" ssh-add -l 2>/dev/null)
+  exit_status=$?
+
+  if (( exit_status <= 1 )); then
+    valid_sockets+=("$socket")
+    if (( exit_status == 1 )); then
+      socket_descriptions+=("No keys loaded")
+    else
+      # Zsh native string splitting by newline (f)
+      local -a lines=( ${(f)key_list} )
+      key_count=${#lines}
+
+      # Zsh native word splitting for the first line
+      local -a first_key_fields=( ${=lines[1]} )
+      first_key_comment="${first_key_fields[3]}"
+
+      if (( key_count == 1 )); then
+        socket_descriptions+=("1 key loaded ($first_key_comment)")
+      else
+        socket_descriptions+=("$key_count keys loaded (incl. $first_key_comment)")
+      fi
+    fi
+  fi
+done
+
+if (( ${#valid_sockets[@]} == 0 )); then
+  print -P "%F{yellow}Found candidate sockets, but none are active SSH agents.%f"
+  return 1
+fi
+
+# 5. Display User-Friendly Interactive Menu
+print -P "\n%F{cyan}=== SSH Agent Manager ===%f\n"
+print -P "Available SSH Agents:"
+
+for index in {1..${#valid_sockets[@]}}; do
+  local sock="${valid_sockets[$index]}"
+  local desc="${socket_descriptions[$index]}"
+  local active_marker="  "
+  local color="%F{white}"
+
+  if [[ "$sock" == "$current_sock" ]]; then
+    active_marker="* "
+    color="%F{green}"
+  fi
+
+  print -P "${color}${active_marker}[${index}] ${sock}%f"
+  print -P "      %F{blue}└─ Status:%f ${desc}"
+done
+print ""
+
+# 6. Prompt for Selection
+if ! read -r "choice?Select SSH agent number (or 'q' to quit): "; then
+  print ""
+  return 1
+fi
+
+if [[ "$choice" == "q" || "$choice" == "Q" || -z "$choice" ]]; then
+  print -P "%F{yellow}Operation cancelled.%f"
+  return 0
+fi
+
+# Validate user choice
+if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#valid_sockets[@]} )); then
+  selected_sock="${valid_sockets[$choice]}"
+  export SSH_AUTH_SOCK="$selected_sock"
+  print -P "\n%F{green}✔ Successfully switched SSH_AUTH_SOCK to:%f"
+  print -P "%F{cyan}${selected_sock}%f\n"
+  ssh-add -l
+else
+  print -P "%F{red}Invalid selection: ${choice}%f"
+  return 1
+fi
