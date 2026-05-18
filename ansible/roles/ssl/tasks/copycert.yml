@@ -3,7 +3,7 @@
   delegate_to: localhost
   ansible.builtin.stat:
     path: "{{ ssl_cert_src | expanduser }}/{{ ssl_cert_name }}/fullchain.cer"
-  register: local_cert_stat
+  register: ssl_local_cert_stat
   become: false
 
 - name: Copy real certificates to host
@@ -18,8 +18,8 @@
     - src: "{{ ssl_cert_name }}/{{ ssl_cert_name }}.key"
       dest: key.pem
       mode: "0600"
-  when: local_cert_stat.stat.exists
-  register: real_cert_copy
+  when: ssl_local_cert_stat.stat.exists
+  register: ssl_real_cert_copy
 
 - name: Copy fallback certificates if real certificates are missing
   ansible.builtin.copy:
@@ -32,4 +32,4 @@
       mode: "0644"
     - dest: key.pem
       mode: "0600"
-  when: not local_cert_stat.stat.exists
+  when: not ssl_local_cert_stat.stat.exists
