@@ -1,0 +1,34 @@
+{
+  "requirement": "any",
+  "failure_threshold": 3,
+  "state_file_path": "/var/lib/catstar-netheal/state.json",
+  "methods": [
+    {
+      "type": "ping",
+      "target": "1.1.1.1",
+      "count": 3,
+      "timeout_seconds": 2
+    },
+    {
+      "type": "dns",
+      "domain": "one.one.one.one",
+      "timeout_seconds": 2
+    },
+    {
+      "type": "http",
+      "url": "https://www.cloudflare.com",
+      "expected_status": 200,
+      "timeout_seconds": 3
+    }
+  ],
+  "actions": [
+    {
+      "type": "reboot"
+    }
+  ],
+  "ntfy": {
+    "enabled": false,
+    "topic": "change-me-to-a-secure-random-topic",
+    "server_url": "https://ntfy.sh"
+  }
+}

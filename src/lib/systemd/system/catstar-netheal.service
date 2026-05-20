@@ -1,0 +1,16 @@
+[Unit]
+Description=Catstar Netheal - Internet self-healing monitor and recovery service
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/catstar-netheal
+StateDirectory=catstar-netheal
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelModules=yes
+ReadWritePaths=/run

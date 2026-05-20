@@ -1,0 +1,545 @@
+#!/usr/bin/env python3
+"""
+Catstar Netheal
+Detects internet connectivity using multiple configurable methods.
+Triggers declarative recovery actions upon reaching a consecutive failure threshold.
+"""
+
+import argparse
+import json
+import logging
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import urllib.request
+import urllib.error
+from typing import Any, Dict, List
+
+# Configure structured logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger("catstar-netheal")
+
+DEFAULT_CONFIGURATION_PATH = "/usr/local/etc/catstar-netheal.json"
+DEFAULT_STATE_FILE_PATH = "/var/lib/catstar-netheal/state.json"
+DEFAULT_FAILURE_THRESHOLD = 3
+
+
+# ==============================================================================
+# Section 1: Individual Network Tests
+# ==============================================================================
+
+def run_ping_test(target_host: str, ping_count: int, timeout_seconds: int) -> bool:
+    """
+    Sends ICMP echo requests to verify host reachability.
+    """
+    ping_executable = shutil.which("ping") or "/bin/ping"
+    logger.info(f"Running ping test against target: '{target_host}' (count: {ping_count}, timeout: {timeout_seconds}s)...")
+    command: List[str] = [
+        ping_executable,
+        "-c", str(ping_count),
+        "-W", str(timeout_seconds),
+        target_host
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=float(ping_count * timeout_seconds + 2)
+        )
+        if result.returncode == 0:
+            logger.info(f"Ping test to '{target_host}' succeeded.")
+            return True
+        logger.warning(f"Ping test to '{target_host}' failed with exit code {result.returncode}.")
+        return False
+    except subprocess.TimeoutExpired:
+        logger.warning(f"Ping test to '{target_host}' timed out.")
+        return False
+    except Exception as error:
+        logger.error(f"Error executing ping test to '{target_host}': {error}")
+        return False
+
+
+def run_dns_resolution_test(domain_name: str, timeout_seconds: int) -> bool:
+    """
+    Queries the DNS system to resolve a domain name to verify name resolution.
+    """
+    logger.info(f"Running DNS resolution test for domain: '{domain_name}' (timeout: {timeout_seconds}s)...")
+    original_timeout = socket.getdefaulttimeout()
+    try:
+        socket.setdefaulttimeout(float(timeout_seconds))
+        resolved_ip = socket.gethostbyname(domain_name)
+        logger.info(f"DNS resolution test for '{domain_name}' succeeded: {resolved_ip}")
+        return True
+    except Exception as error:
+        logger.warning(f"DNS resolution test for '{domain_name}' failed: {error}")
+        return False
+    finally:
+        socket.setdefaulttimeout(original_timeout)
+
+
+def run_http_request_test(url: str, expected_status_code: int, timeout_seconds: int) -> bool:
+    """
+    Sends an HTTP GET request to verify web access and response status.
+    """
+    logger.info(f"Running HTTP test for URL: '{url}' (expected status: {expected_status_code}, timeout: {timeout_seconds}s)...")
+    try:
+        request = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Catstar-Netheal/1.0"}
+        )
+        with urllib.request.urlopen(request, timeout=float(timeout_seconds)) as response:
+            if response.status == expected_status_code:
+                logger.info(f"HTTP test for '{url}' succeeded with expected status {response.status}.")
+                return True
+            logger.warning(f"HTTP test for '{url}' failed: got status {response.status}, expected {expected_status_code}.")
+            return False
+    except urllib.error.HTTPError as error:
+        if error.code == expected_status_code:
+            logger.info(f"HTTP test for '{url}' succeeded with expected error status {error.code}.")
+            return True
+        logger.warning(f"HTTP test for '{url}' failed: got status {error.code}, expected {expected_status_code}.")
+        return False
+    except Exception as error:
+        logger.error(f"HTTP test for '{url}' failed with exception: {error}")
+        return False
+
+
+# ==============================================================================
+# Section 2: Aggregator
+# ==============================================================================
+
+def verify_internet_connectivity(methods: List[Dict[str, Any]], requirement: str) -> bool:
+    """
+    Executes all configured connectivity test methods and evaluates the overall result
+    based on the requirement strategy ('any' or 'all').
+    """
+    if not methods:
+        logger.warning("No verification methods specified. Defaulting to online.")
+        return True
+
+    test_results: List[bool] = []
+    for method in methods:
+        method_type = method.get("type", "").lower()
+        if method_type == "ping":
+            target = method.get("target", "1.1.1.1")
+            count = int(method.get("count", 3))
+            timeout = int(method.get("timeout_seconds", 2))
+            result = run_ping_test(target, count, timeout)
+            test_results.append(result)
+        elif method_type == "dns":
+            domain = method.get("domain", "google.com")
+            timeout = int(method.get("timeout_seconds", 2))
+            result = run_dns_resolution_test(domain, timeout)
+            test_results.append(result)
+        elif method_type == "http":
+            url = method.get("url", "https://www.cloudflare.com")
+            expected_status = int(method.get("expected_status", 200))
+            timeout = int(method.get("timeout_seconds", 3))
+            result = run_http_request_test(url, expected_status, timeout)
+            test_results.append(result)
+        else:
+            logger.warning(f"Unknown test method type '{method_type}'. Skipping.")
+
+    if not test_results:
+        logger.warning("All specified verification methods were invalid or skipped. Defaulting to online.")
+        return True
+
+    is_all_strategy = requirement.lower() == "all"
+    is_online = all(test_results) if is_all_strategy else any(test_results)
+    strategy_label = "all" if is_all_strategy else "any"
+
+    logger.info(f"Evaluation strategy '{strategy_label}': {'Success' if is_online else 'Failure'} (results: {test_results})")
+    return is_online
+
+
+# ==============================================================================
+# Section 3: State Management
+# ==============================================================================
+
+def load_state(state_file_path: str) -> Dict[str, Any]:
+    """
+    Loads the current state (consecutive failures and recovery status) from the state file.
+    """
+    default_state = {
+        "consecutive_failure_count": 0,
+        "recovering": False
+    }
+    if not os.path.exists(state_file_path):
+        return default_state
+    try:
+        with open(state_file_path, "r", encoding="utf-8") as file_descriptor:
+            state_data: Dict[str, Any] = json.load(file_descriptor)
+            return {
+                "consecutive_failure_count": int(state_data.get("consecutive_failure_count", 0)),
+                "recovering": bool(state_data.get("recovering", False))
+            }
+    except (json.JSONDecodeError, IOError, ValueError) as error:
+        logger.warning(f"Failed to read state file, using default state. Error: {error}")
+        return default_state
+
+
+def save_state(state_file_path: str, failure_count: int, recovering: bool) -> None:
+    """
+    Saves the updated state to the state file.
+    """
+    state_data = {
+        "consecutive_failure_count": failure_count,
+        "recovering": recovering
+    }
+    try:
+        directory_path: str = os.path.dirname(state_file_path)
+        if directory_path and not os.path.exists(directory_path):
+            os.makedirs(directory_path, exist_ok=True)
+        with open(state_file_path, "w", encoding="utf-8") as file_descriptor:
+            json.dump(state_data, file_descriptor, indent=2)
+    except IOError as error:
+        logger.error(f"Failed to write state file to {state_file_path}: {error}")
+
+
+# ==============================================================================
+# Section 4: Recovery Actions
+# ==============================================================================
+
+def execute_single_action(action: Dict[str, Any]) -> None:
+    """
+    Executes a single declarative recovery action.
+    """
+    action_type = action.get("type", "").lower()
+    if action_type == "reboot":
+        logger.warning("Action triggered: system reboot. Initiating systemctl reboot...")
+        subprocess.run(["/usr/bin/systemctl", "reboot"], check=True)
+    elif action_type == "restart_service":
+        service_name = action.get("service_name")
+        if not service_name:
+            logger.error("'service_name' must be specified for action type 'restart_service'.")
+            return
+        logger.warning(f"Action triggered: restarting service '{service_name}'. Running systemctl restart...")
+        subprocess.run(["/usr/bin/systemctl", "restart", service_name], check=True)
+    elif action_type == "command":
+        command_string = action.get("command_string")
+        if not command_string:
+            logger.error("'command_string' must be specified for action type 'command'.")
+            return
+        logger.warning(f"Action triggered: running custom command '{command_string}'...")
+        subprocess.run(command_string, shell=True, check=True)
+    else:
+        logger.error(f"Unknown action type '{action_type}'. Skipping.")
+
+
+def trigger_recovery_actions(actions: List[Dict[str, Any]]) -> None:
+    """
+    Executes all configured recovery actions in sequence.
+    """
+    if not actions:
+        logger.warning("No recovery actions configured. Taking no action.")
+        return
+
+    for action in actions:
+        try:
+            execute_single_action(action)
+        except Exception as error:
+            logger.error(f"Error executing recovery action: {error}")
+
+
+# ==============================================================================
+# Section 5: Notifications
+# ==============================================================================
+
+def send_ntfy_notification(
+    ntfy_config: Dict[str, Any],
+    message: str,
+    title: str,
+    priority: int = 3,
+    tags: List[str] = None
+) -> None:
+    """
+    Sends an event notification to an ntfy topic using urllib.
+    """
+    if not ntfy_config.get("enabled", False):
+        return
+
+    topic = ntfy_config.get("topic", "")
+    server_url = ntfy_config.get("server_url", "https://ntfy.sh")
+    if not topic:
+        return
+
+    base_url = server_url.rstrip("/")
+    url = f"{base_url}/{topic}"
+
+    headers = {
+        "Title": title,
+        "Priority": str(priority),
+    }
+    if tags:
+        headers["Tags"] = ",".join(tags)
+
+    logger.info(f"Sending ntfy notification to topic '{topic}' with title '{title}'...")
+    try:
+        data = message.encode("utf-8")
+        request = urllib.request.Request(
+            url,
+            data=data,
+            headers=headers,
+            method="POST"
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            if response.status == 200:
+                logger.info("ntfy notification sent successfully.")
+            else:
+                logger.warning(f"ntfy returned status code {response.status}")
+    except Exception as error:
+        logger.warning(f"Failed to send ntfy notification: {error}")
+
+
+def send_restored_alert(ntfy_config: Dict[str, Any], failure_count: int, recovering: bool = False) -> None:
+    """
+    Sends a success notification when connection is restored.
+    """
+    if recovering:
+        message = "Internet is back online following a self-healing recovery action. System status healthy."
+    else:
+        message = f"Internet is back online after {failure_count} consecutive failures. System status healthy."
+
+    title = "Internet Connection Restored (Catstar)"
+    send_ntfy_notification(
+        ntfy_config=ntfy_config,
+        message=message,
+        title=title,
+        priority=3,
+        tags=["white_check_mark", "sparkles"]
+    )
+
+
+def send_offline_warning(ntfy_config: Dict[str, Any], current_count: int, threshold: int) -> None:
+    """
+    Sends a warning notification that the internet is offline.
+    """
+    message = f"Internet is detected offline. Failure count: {current_count}/{threshold}."
+    title = "Internet Offline Warning (Catstar)"
+    send_ntfy_notification(
+        ntfy_config=ntfy_config,
+        message=message,
+        title=title,
+        priority=3,
+        tags=["warning", "computer"]
+    )
+
+
+def send_recovery_alert(ntfy_config: Dict[str, Any], failure_count: int, actions: List[Dict[str, Any]]) -> None:
+    """
+    Sends a critical notification before triggering self-healing actions.
+    """
+    action_types = ", ".join([act.get("type", "unknown") for act in actions])
+    message = f"Internet has been offline for {failure_count} consecutive checks. Executing recovery actions: {action_types}."
+    title = "Internet Recovery Triggered (Catstar)"
+    send_ntfy_notification(
+        ntfy_config=ntfy_config,
+        message=message,
+        title=title,
+        priority=5,
+        tags=["fire", "rotating_light"]
+    )
+
+
+# ==============================================================================
+# Section 6: Configuration Setup and Parsing
+# ==============================================================================
+
+def validate_configuration(config: Dict[str, Any]) -> None:
+    """
+    Validates the parsed configuration to ensure it conforms to the expected types and boundaries.
+    Raises ValueError if any validation constraints are violated.
+    """
+    if "methods" in config:
+        if not isinstance(config["methods"], list):
+            raise ValueError("'methods' must be a list of check parameters.")
+        for method in config["methods"]:
+            if not isinstance(method, dict):
+                raise ValueError("Each method in 'methods' must be a configuration dictionary.")
+            method_type = method.get("type", "").lower()
+            if method_type == "ping":
+                try:
+                    int(method.get("count", 3))
+                    int(method.get("timeout_seconds", 2))
+                except (ValueError, TypeError):
+                    raise ValueError("Ping method 'count' and 'timeout_seconds' must be integers.")
+            elif method_type == "dns":
+                try:
+                    int(method.get("timeout_seconds", 2))
+                except (ValueError, TypeError):
+                    raise ValueError("DNS method 'timeout_seconds' must be an integer.")
+            elif method_type == "http":
+                try:
+                    int(method.get("expected_status", 200))
+                    int(method.get("timeout_seconds", 3))
+                except (ValueError, TypeError):
+                    raise ValueError("HTTP method 'expected_status' and 'timeout_seconds' must be integers.")
+
+    if "actions" in config and not isinstance(config["actions"], list):
+        raise ValueError("'actions' must be a list of action parameters.")
+
+    if "failure_threshold" in config:
+        try:
+            threshold = int(config["failure_threshold"])
+            if threshold <= 0:
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise ValueError("'failure_threshold' must be a positive integer.")
+
+    if "ntfy" in config and not isinstance(config["ntfy"], dict):
+        raise ValueError("'ntfy' settings must be a configuration dictionary.")
+
+
+def load_or_create_configuration(config_path: str) -> Dict[str, Any]:
+    """
+    Loads configuration from a JSON file. Creates a safe, self-documenting default configuration if missing.
+    """
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as file_descriptor:
+                config = json.load(file_descriptor)
+            validate_configuration(config)
+            return config
+        except Exception as error:
+            logger.error(f"Failed to parse or validate configuration file: {error}")
+            raise ValueError(f"Invalid configuration: {error}")
+
+    logger.info(f"Configuration file not found at '{config_path}'. Creating a default configuration.")
+    default_config: Dict[str, Any] = {
+        "requirement": "any",
+        "failure_threshold": DEFAULT_FAILURE_THRESHOLD,
+        "state_file_path": DEFAULT_STATE_FILE_PATH,
+        "methods": [
+            {
+                "type": "ping",
+                "target": "1.1.1.1",
+                "count": 3,
+                "timeout_seconds": 2
+            },
+            {
+                "type": "dns",
+                "domain": "google.com",
+                "timeout_seconds": 2
+            }
+        ],
+        "actions": [
+            {
+                "type": "reboot"
+            }
+        ],
+        "ntfy": {
+            "enabled": False,
+            "topic": "change-me-to-a-secure-random-topic",
+            "server_url": "https://ntfy.sh"
+        }
+    }
+    try:
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        with open(config_path, "w", encoding="utf-8") as file_descriptor:
+            json.dump(default_config, file_descriptor, indent=2)
+        logger.info(f"Default configuration created at '{config_path}'.")
+    except IOError as error:
+        logger.error(f"Could not create default configuration at '{config_path}': {error}")
+
+    return default_config
+
+
+# ==============================================================================
+# Bottom: The main() Execution Flow
+# ==============================================================================
+
+def handle_online_state(state_file_path: str, state: Dict[str, Any], ntfy_config: Dict[str, Any]) -> None:
+    """
+    Handles the logic when the internet connection is verified online.
+    """
+    consecutive_failure_count = state["consecutive_failure_count"]
+    recovering = state["recovering"]
+
+    if consecutive_failure_count == 0 and not recovering:
+        logger.info("Internet is online. No failures recorded.")
+        return
+
+    logger.info("Internet is back online. Resetting state to healthy.")
+    save_state(state_file_path, failure_count=0, recovering=False)
+    send_restored_alert(ntfy_config, max(consecutive_failure_count, 1) if recovering else consecutive_failure_count)
+
+
+def handle_offline_state(
+    state_file_path: str,
+    state: Dict[str, Any],
+    failure_threshold: int,
+    actions: List[Dict[str, Any]],
+    ntfy_config: Dict[str, Any]
+) -> None:
+    """
+    Handles the logic when the internet connection is offline.
+    """
+    consecutive_failure_count = state["consecutive_failure_count"]
+    recovering = state["recovering"]
+
+    new_failure_count = consecutive_failure_count + 1
+    logger.warning(f"Internet is offline. Consecutive failure count increased to {new_failure_count} (threshold: {failure_threshold}).")
+
+    if new_failure_count >= failure_threshold:
+        logger.error(f"Failure threshold ({failure_threshold}) reached! Triggering self-healing recovery...")
+        save_state(state_file_path, failure_count=0, recovering=True)
+        send_recovery_alert(ntfy_config, new_failure_count, actions)
+        trigger_recovery_actions(actions)
+        return
+
+    save_state(state_file_path, failure_count=new_failure_count, recovering=recovering)
+    send_offline_warning(ntfy_config, new_failure_count, failure_threshold)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Catstar Netheal - Autonomous internet connectivity monitor and self-healing agent."
+    )
+    parser.add_argument(
+        "-c", "--config",
+        default=DEFAULT_CONFIGURATION_PATH,
+        help=f"Path to the JSON configuration file (default: {DEFAULT_CONFIGURATION_PATH})"
+    )
+    args = parser.parse_args()
+
+    # 1. Load Configuration
+    try:
+        config = load_or_create_configuration(args.config)
+    except ValueError:
+        sys.exit(1)
+
+    # 2. Check Internet
+    try:
+        is_online = verify_internet_connectivity(
+            methods=config.get("methods", []),
+            requirement=config.get("requirement", "any")
+        )
+    except ValueError as error:
+        logger.critical(f"Configuration type error in methods: {error}")
+        sys.exit(1)
+
+    # 3. Load Previous State
+    state_file_path = config.get("state_file_path", DEFAULT_STATE_FILE_PATH)
+    state = load_state(state_file_path)
+
+    # 4. Evaluate State
+    ntfy_config = config.get("ntfy", {})
+    if is_online:
+        handle_online_state(state_file_path, state, ntfy_config)
+        return
+
+    # 5. Handle Offline logic (using guard clauses and flatter structure)
+    failure_threshold = int(config.get("failure_threshold", DEFAULT_FAILURE_THRESHOLD))
+    actions = config.get("actions", [])
+    handle_offline_state(state_file_path, state, failure_threshold, actions, ntfy_config)
+
+
+if __name__ == "__main__":
+    main()
