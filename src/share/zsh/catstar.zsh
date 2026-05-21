@@ -9,11 +9,11 @@
 
 () {
   # 1. Path Resolution
-  # A: absolute path, h: head (dirname)
-  # Define root variables globally so they persist in the shell session,
-  # but without 'export' to avoid polluting subprocess environments.
-  typeset -g CATSTAR_ZSH_ROOT="${1:A:h}"
-  typeset -g CATSTAR_ROOT="${CATSTAR_ZSH_ROOT:h:h:h}"
+  # Resolve the stowed Zsh config directory (retaining symbolic link paths)
+  typeset -g CATSTAR_ZSH_ROOT="${1:a:h}"
+
+  # Resolve the original Git repository directory (following symbolic links)
+  typeset -g CATSTAR_ROOT="${1:A:h:h:h:h}"
 
   local catstar_dir="$CATSTAR_ZSH_ROOT/catstar"
 
