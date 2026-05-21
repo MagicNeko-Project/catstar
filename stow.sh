@@ -42,6 +42,11 @@ USER_IGNORE_PATTERNS=(
     "lib/systemd"
 )
 
+# Subdirectories exclusively owned by us that should be folded on all targets
+EXCLUSIVE_FOLDED_SUBDIRECTORIES=(
+    "share/zsh/catstar"
+)
+
 
 show_usage() {
     cat << EOF
@@ -106,6 +111,12 @@ while [[ "$#" -gt 0 ]]; do
     esac
 done
 
+# Determine if the target is a standard system-level directory
+IS_SYSTEM_TARGET=false
+if [[ "$TARGET_DIR" == "/usr/local" || "$TARGET_DIR" == "/usr" || "$TARGET_DIR" == "/" ]]; then
+    IS_SYSTEM_TARGET=true
+fi
+
 
 # Verify write permissions for the target directory
 check_permissions() {
@@ -126,7 +137,7 @@ ensure_target_directories() {
     local subdirs=("${BASE_REQUIRED_SUBDIRECTORIES[@]}")
 
     # Only pre-create systemd directories if targeting a standard system location
-    if [[ "$TARGET_DIR" == "/usr/local" || "$TARGET_DIR" == "/usr" || "$TARGET_DIR" == "/" ]]; then
+    if [[ "$IS_SYSTEM_TARGET" == "true" ]]; then
         subdirs+=("${SYSTEM_REQUIRED_SUBDIRECTORIES[@]}")
     fi
 
@@ -153,7 +164,7 @@ check_conflicts() {
         local rel_path="${file#$BASE_DIR/src/}"
 
         # Skip conflict checks for ignored folders if targeting a non-system location
-        if [[ "$TARGET_DIR" != "/usr/local" && "$TARGET_DIR" != "/usr" && "$TARGET_DIR" != "/" ]]; then
+        if [[ "$IS_SYSTEM_TARGET" == "false" ]]; then
             local skip=false
             for pattern in "${USER_IGNORE_PATTERNS[@]}"; do
                 if [[ "$rel_path" == "$pattern" || "$rel_path" == "$pattern"/* ]]; then
@@ -182,17 +193,53 @@ check_conflicts() {
 }
 
 
+clean_unfolded_exclusive_directories() {
+    for subdir in "${EXCLUSIVE_FOLDED_SUBDIRECTORIES[@]}"; do
+        local full_path="$TARGET_DIR/$subdir"
+
+        # If it exists and is a real folder (not a symlink), clean it up
+        if [[ -d "$full_path" && ! -L "$full_path" ]]; then
+            echo -e "${YELLOW}Migration: Found unfolded exclusive directory: $full_path${NC}"
+            echo -e "  Unstowing existing links to clean target directory..."
+
+            local stow_flags=("-t" "$TARGET_DIR" "-d" "$BASE_DIR" "-D" "src")
+            if [[ "$IS_SYSTEM_TARGET" == "false" ]]; then
+                for pattern in "${USER_IGNORE_PATTERNS[@]}"; do
+                    stow_flags+=("--ignore=$pattern")
+                done
+            fi
+
+            # Run unstow silently
+            stow "${stow_flags[@]}" 2>/dev/null || true
+
+            # Delete the directory only if it is now empty
+            if [[ -z "$(find "$full_path" -mindepth 1 -maxdepth 1 -not -empty 2>/dev/null)" || ! "$(ls -A "$full_path" 2>/dev/null)" ]]; then
+                if [[ "$DRY_RUN" == "true" ]]; then
+                    echo -e "${CYAN}[Dry-Run] Would remove empty unfolded exclusive directory: $full_path${NC}"
+                else
+                    echo -e "  Removing empty directory to allow Stow folding: $full_path"
+                    rm -rf "$full_path"
+                fi
+            else
+                echo -e "${RED}Warning: Directory '$full_path' is not empty. Skipping removal to prevent data loss.${NC}" >&2
+            fi
+        fi
+    done
+}
+
+
 execute_deploy() {
     check_permissions
     ensure_target_directories
     check_conflicts
+    clean_unfolded_exclusive_directories
 
     echo -e "${BLUE}Creating symlinks...${NC}"
 
     local stow_flags=("-t" "$TARGET_DIR" "-d" "$BASE_DIR" "-R" "src")
 
     # Ignore system folders entirely if targeting a non-system location
-    if [[ "$TARGET_DIR" != "/usr/local" && "$TARGET_DIR" != "/usr" && "$TARGET_DIR" != "/" ]]; then
+    if [[ "$IS_SYSTEM_TARGET" == "false" ]]; then
         for pattern in "${USER_IGNORE_PATTERNS[@]}"; do
             stow_flags+=("--ignore=$pattern")
         done
@@ -220,7 +267,7 @@ execute_undeploy() {
     local stow_flags=("-t" "$TARGET_DIR" "-d" "$BASE_DIR" "-D" "src")
 
     # Ignore system folders entirely if targeting a non-system location
-    if [[ "$TARGET_DIR" != "/usr/local" && "$TARGET_DIR" != "/usr" && "$TARGET_DIR" != "/" ]]; then
+    if [[ "$IS_SYSTEM_TARGET" == "false" ]]; then
         for pattern in "${USER_IGNORE_PATTERNS[@]}"; do
             stow_flags+=("--ignore=$pattern")
         done
@@ -249,7 +296,7 @@ execute_status() {
         local rel_path="${file#$BASE_DIR/src/}"
 
         # Skip status audits for ignored folders if targeting a non-system location
-        if [[ "$TARGET_DIR" != "/usr/local" && "$TARGET_DIR" != "/usr" && "$TARGET_DIR" != "/" ]]; then
+        if [[ "$IS_SYSTEM_TARGET" == "false" ]]; then
             local skip=false
             for pattern in "${USER_IGNORE_PATTERNS[@]}"; do
                 if [[ "$rel_path" == "$pattern" || "$rel_path" == "$pattern"/* ]]; then
