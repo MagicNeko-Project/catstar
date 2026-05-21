@@ -37,10 +37,13 @@ SYSTEM_REQUIRED_SUBDIRECTORIES=(
     "lib/systemd/user"
 )
 
-# Folder ignore patterns when stowing to a non-system target directory
-USER_IGNORE_PATTERNS=(
-    "lib/systemd"
-)
+# Target environment classification flags
+IS_SYSTEM_TARGET=false
+IS_USER_TARGET=false
+
+# Active subdirectories and ignore patterns (determined dynamically at startup)
+ACTIVE_REQUIRED_SUBDIRECTORIES=()
+ACTIVE_IGNORE_PATTERNS=()
 
 # Subdirectories exclusively owned by us that should be folded on all targets
 EXCLUSIVE_FOLDED_SUBDIRECTORIES=(
@@ -111,10 +114,29 @@ while [[ "$#" -gt 0 ]]; do
     esac
 done
 
-# Determine if the target is a standard system-level directory
+# Determine target classification
 IS_SYSTEM_TARGET=false
 if [[ "$TARGET_DIR" == "/usr/local" || "$TARGET_DIR" == "/usr" || "$TARGET_DIR" == "/" ]]; then
     IS_SYSTEM_TARGET=true
+fi
+
+IS_USER_TARGET=false
+if [[ "$TARGET_DIR" == */.local || "$TARGET_DIR" == */.local/ ]]; then
+    IS_USER_TARGET=true
+fi
+
+# Build active directory pre-creation and ignore arrays dynamically
+ACTIVE_REQUIRED_SUBDIRECTORIES=("${BASE_REQUIRED_SUBDIRECTORIES[@]}")
+ACTIVE_IGNORE_PATTERNS=()
+
+if [[ "$IS_SYSTEM_TARGET" == "true" ]]; then
+    ACTIVE_REQUIRED_SUBDIRECTORIES+=("${SYSTEM_REQUIRED_SUBDIRECTORIES[@]}")
+elif [[ "$IS_USER_TARGET" == "true" ]]; then
+    ACTIVE_REQUIRED_SUBDIRECTORIES+=("lib/systemd/user")
+    ACTIVE_IGNORE_PATTERNS+=("lib/systemd/system")
+else
+    # Non-standard target: ignore the entire systemd folder tree
+    ACTIVE_IGNORE_PATTERNS+=("lib/systemd")
 fi
 
 
@@ -134,14 +156,7 @@ check_permissions() {
 
 ensure_target_directories() {
     echo -e "${BLUE}Ensuring target subdirectories exist in '$TARGET_DIR'...${NC}"
-    local subdirs=("${BASE_REQUIRED_SUBDIRECTORIES[@]}")
-
-    # Only pre-create systemd directories if targeting a standard system location
-    if [[ "$IS_SYSTEM_TARGET" == "true" ]]; then
-        subdirs+=("${SYSTEM_REQUIRED_SUBDIRECTORIES[@]}")
-    fi
-
-    for subdir in "${subdirs[@]}"; do
+    for subdir in "${ACTIVE_REQUIRED_SUBDIRECTORIES[@]}"; do
         local full_path="$TARGET_DIR/$subdir"
         if [[ ! -d "$full_path" ]]; then
             if [[ "$DRY_RUN" == "true" ]]; then
@@ -163,18 +178,16 @@ check_conflicts() {
     while IFS= read -r -d '' file; do
         local rel_path="${file#$BASE_DIR/src/}"
 
-        # Skip conflict checks for ignored folders if targeting a non-system location
-        if [[ "$IS_SYSTEM_TARGET" == "false" ]]; then
-            local skip=false
-            for pattern in "${USER_IGNORE_PATTERNS[@]}"; do
-                if [[ "$rel_path" == "$pattern" || "$rel_path" == "$pattern"/* ]]; then
-                    skip=true
-                    break
-                fi
-            done
-            if [[ "$skip" == "true" ]]; then
-                continue
+        # Skip conflict checks for active ignore patterns
+        local skip=false
+        for pattern in "${ACTIVE_IGNORE_PATTERNS[@]}"; do
+            if [[ "$rel_path" == "$pattern" || "$rel_path" == "$pattern"/* ]]; then
+                skip=true
+                break
             fi
+        done
+        if [[ "$skip" == "true" ]]; then
+            continue
         fi
 
         local dest_path="$TARGET_DIR/$rel_path"
@@ -203,11 +216,9 @@ clean_unfolded_exclusive_directories() {
             echo -e "  Unstowing existing links to clean target directory..."
 
             local stow_flags=("-t" "$TARGET_DIR" "-d" "$BASE_DIR" "-D" "src")
-            if [[ "$IS_SYSTEM_TARGET" == "false" ]]; then
-                for pattern in "${USER_IGNORE_PATTERNS[@]}"; do
-                    stow_flags+=("--ignore=$pattern")
-                done
-            fi
+            for pattern in "${ACTIVE_IGNORE_PATTERNS[@]}"; do
+                stow_flags+=("--ignore=$pattern")
+            done
 
             # Run unstow silently
             stow "${stow_flags[@]}" 2>/dev/null || true
@@ -238,12 +249,9 @@ execute_deploy() {
 
     local stow_flags=("-t" "$TARGET_DIR" "-d" "$BASE_DIR" "-R" "src")
 
-    # Ignore system folders entirely if targeting a non-system location
-    if [[ "$IS_SYSTEM_TARGET" == "false" ]]; then
-        for pattern in "${USER_IGNORE_PATTERNS[@]}"; do
-            stow_flags+=("--ignore=$pattern")
-        done
-    fi
+    for pattern in "${ACTIVE_IGNORE_PATTERNS[@]}"; do
+        stow_flags+=("--ignore=$pattern")
+    done
 
     if [[ "$DRY_RUN" == "true" ]]; then
         stow_flags=("-n" "-v" "${stow_flags[@]}")
@@ -266,12 +274,9 @@ execute_undeploy() {
 
     local stow_flags=("-t" "$TARGET_DIR" "-d" "$BASE_DIR" "-D" "src")
 
-    # Ignore system folders entirely if targeting a non-system location
-    if [[ "$IS_SYSTEM_TARGET" == "false" ]]; then
-        for pattern in "${USER_IGNORE_PATTERNS[@]}"; do
-            stow_flags+=("--ignore=$pattern")
-        done
-    fi
+    for pattern in "${ACTIVE_IGNORE_PATTERNS[@]}"; do
+        stow_flags+=("--ignore=$pattern")
+    done
 
     if [[ "$DRY_RUN" == "true" ]]; then
         stow_flags=("-n" "-v" "${stow_flags[@]}")
@@ -295,18 +300,16 @@ execute_status() {
     while IFS= read -r -d '' file; do
         local rel_path="${file#$BASE_DIR/src/}"
 
-        # Skip status audits for ignored folders if targeting a non-system location
-        if [[ "$IS_SYSTEM_TARGET" == "false" ]]; then
-            local skip=false
-            for pattern in "${USER_IGNORE_PATTERNS[@]}"; do
-                if [[ "$rel_path" == "$pattern" || "$rel_path" == "$pattern"/* ]]; then
-                    skip=true
-                    break
-                fi
-            done
-            if [[ "$skip" == "true" ]]; then
-                continue
+        # Skip status audits for active ignore patterns
+        local skip=false
+        for pattern in "${ACTIVE_IGNORE_PATTERNS[@]}"; do
+            if [[ "$rel_path" == "$pattern" || "$rel_path" == "$pattern"/* ]]; then
+                skip=true
+                break
             fi
+        done
+        if [[ "$skip" == "true" ]]; then
+            continue
         fi
 
         local dest_path="$TARGET_DIR/$rel_path"
