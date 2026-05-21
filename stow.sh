@@ -23,14 +23,23 @@ TARGET_DIR="$DEFAULT_TARGET"
 COMMAND="deploy"
 DRY_RUN=false
 
-# Pre-defined subdirectories to create to prevent directory folding issues
-REQUIRED_SUBDIRECTORIES=(
+# The base subdirectories to pre-create for all target environments to prevent directory folding
+BASE_REQUIRED_SUBDIRECTORIES=(
     "bin"
     "etc"
     "etc/nftables.d"
+    "share/zsh"
+)
+
+# The system-level subdirectories to pre-create only on standard system targets
+SYSTEM_REQUIRED_SUBDIRECTORIES=(
     "lib/systemd/system"
     "lib/systemd/user"
-    "share/zsh"
+)
+
+# Folder ignore patterns when stowing to a non-system target directory
+USER_IGNORE_PATTERNS=(
+    "lib/systemd"
 )
 
 
@@ -114,7 +123,14 @@ check_permissions() {
 
 ensure_target_directories() {
     echo -e "${BLUE}Ensuring target subdirectories exist in '$TARGET_DIR'...${NC}"
-    for subdir in "${REQUIRED_SUBDIRECTORIES[@]}"; do
+    local subdirs=("${BASE_REQUIRED_SUBDIRECTORIES[@]}")
+
+    # Only pre-create systemd directories if targeting a standard system location
+    if [[ "$TARGET_DIR" == "/usr/local" || "$TARGET_DIR" == "/usr" || "$TARGET_DIR" == "/" ]]; then
+        subdirs+=("${SYSTEM_REQUIRED_SUBDIRECTORIES[@]}")
+    fi
+
+    for subdir in "${subdirs[@]}"; do
         local full_path="$TARGET_DIR/$subdir"
         if [[ ! -d "$full_path" ]]; then
             if [[ "$DRY_RUN" == "true" ]]; then
@@ -135,6 +151,21 @@ check_conflicts() {
     # We scan 'src' to find target destinations that already exist as regular files
     while IFS= read -r -d '' file; do
         local rel_path="${file#$BASE_DIR/src/}"
+
+        # Skip conflict checks for ignored folders if targeting a non-system location
+        if [[ "$TARGET_DIR" != "/usr/local" && "$TARGET_DIR" != "/usr" && "$TARGET_DIR" != "/" ]]; then
+            local skip=false
+            for pattern in "${USER_IGNORE_PATTERNS[@]}"; do
+                if [[ "$rel_path" == "$pattern" || "$rel_path" == "$pattern"/* ]]; then
+                    skip=true
+                    break
+                fi
+            done
+            if [[ "$skip" == "true" ]]; then
+                continue
+            fi
+        fi
+
         local dest_path="$TARGET_DIR/$rel_path"
 
         if [[ -e "$dest_path" && ! -L "$dest_path" ]]; then
@@ -159,6 +190,14 @@ execute_deploy() {
     echo -e "${BLUE}Creating symlinks...${NC}"
 
     local stow_flags=("-t" "$TARGET_DIR" "-d" "$BASE_DIR" "-R" "src")
+
+    # Ignore system folders entirely if targeting a non-system location
+    if [[ "$TARGET_DIR" != "/usr/local" && "$TARGET_DIR" != "/usr" && "$TARGET_DIR" != "/" ]]; then
+        for pattern in "${USER_IGNORE_PATTERNS[@]}"; do
+            stow_flags+=("--ignore=$pattern")
+        done
+    fi
+
     if [[ "$DRY_RUN" == "true" ]]; then
         stow_flags=("-n" "-v" "${stow_flags[@]}")
         echo -e "${CYAN}[Dry-Run] Running stow with flags: ${stow_flags[*]}${NC}"
@@ -179,6 +218,14 @@ execute_undeploy() {
     echo -e "${BLUE}Removing symlinks...${NC}"
 
     local stow_flags=("-t" "$TARGET_DIR" "-d" "$BASE_DIR" "-D" "src")
+
+    # Ignore system folders entirely if targeting a non-system location
+    if [[ "$TARGET_DIR" != "/usr/local" && "$TARGET_DIR" != "/usr" && "$TARGET_DIR" != "/" ]]; then
+        for pattern in "${USER_IGNORE_PATTERNS[@]}"; do
+            stow_flags+=("--ignore=$pattern")
+        done
+    fi
+
     if [[ "$DRY_RUN" == "true" ]]; then
         stow_flags=("-n" "-v" "${stow_flags[@]}")
         echo -e "${CYAN}[Dry-Run] Running stow with flags: ${stow_flags[*]}${NC}"
@@ -200,6 +247,21 @@ execute_status() {
 
     while IFS= read -r -d '' file; do
         local rel_path="${file#$BASE_DIR/src/}"
+
+        # Skip status audits for ignored folders if targeting a non-system location
+        if [[ "$TARGET_DIR" != "/usr/local" && "$TARGET_DIR" != "/usr" && "$TARGET_DIR" != "/" ]]; then
+            local skip=false
+            for pattern in "${USER_IGNORE_PATTERNS[@]}"; do
+                if [[ "$rel_path" == "$pattern" || "$rel_path" == "$pattern"/* ]]; then
+                    skip=true
+                    break
+                fi
+            done
+            if [[ "$skip" == "true" ]]; then
+                continue
+            fi
+        fi
+
         local dest_path="$TARGET_DIR/$rel_path"
 
         if [[ -L "$dest_path" ]]; then
