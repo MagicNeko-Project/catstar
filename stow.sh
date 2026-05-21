@@ -70,6 +70,7 @@ ${YELLOW}Commands:${NC}
   deploy     Create or update all configuration symlinks from 'src/' to target system (Default)
   undeploy   Remove all configuration symlinks from target system
   status     Inspect and list currently active symlinks and highlight any broken/dead links
+  prune      Scan and remove old, dead, or external symlinks that conflict with the repo
 
 ${YELLOW}Options:${NC}
   -t, --target <dir>  Override the target system directory (Default: /usr/local)
@@ -88,7 +89,7 @@ EOF
 # Parse command-line arguments
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
-        deploy|undeploy|status)
+        deploy|undeploy|status|prune)
             COMMAND="$1"
             shift
             ;;
@@ -209,6 +210,17 @@ check_conflicts() {
 
         local dest_path="$TARGET_DIR/$rel_path"
 
+        # Safe conflict checking for stale/external symlinks, prompting to run 'prune'
+        if [[ -L "$dest_path" ]]; then
+            local resolved
+            resolved=$(readlink -f "$dest_path" || true)
+            if [[ "$resolved" != "$BASE_DIR/src/$rel_path" && "$resolved" != "$BASE_DIR/src/$rel_path"/* ]]; then
+                echo -e "${RED}Conflict detected: Stale/external symlink exists: $dest_path -> $resolved${NC}" >&2
+                echo -e "${RED}Please resolve this manually, or run './stow.sh prune' to automatically remove it.${NC}" >&2
+                conflicts_found=1
+            fi
+        fi
+
         if [[ -e "$dest_path" && ! -L "$dest_path" ]]; then
             echo -e "${RED}Conflict detected: Regular file or directory exists at destination: $dest_path${NC}" >&2
             conflicts_found=1
@@ -325,6 +337,47 @@ execute_undeploy() {
 }
 
 
+execute_prune() {
+    check_permissions
+
+    echo -e "${BLUE}Pruning old/broken symlinks in '$TARGET_DIR'...${NC}"
+    local pruned_count=0
+
+    while IFS= read -r -d '' file; do
+        local rel_path="${file#$BASE_DIR/src/}"
+
+        # Fold checks to the custom folder level if inside an exclusive folded directory (matches shallowest first)
+        for exclusive in "${EXCLUSIVE_FOLDED_SUBDIRECTORIES[@]}"; do
+            if [[ "$rel_path" == "$exclusive"/* ]]; then
+                rel_path="$exclusive"
+                break
+            fi
+        done
+
+        local dest_path="$TARGET_DIR/$rel_path"
+
+        # If the destination is a symlink, verify where it points
+        if [[ -L "$dest_path" ]]; then
+            local resolved
+            resolved=$(readlink -f "$dest_path" || true)
+
+            # If resolved target does not point to our current repo src folder
+            if [[ "$resolved" != "$BASE_DIR/src/$rel_path" && "$resolved" != "$BASE_DIR/src/$rel_path"/* ]]; then
+                if [[ "$DRY_RUN" == "true" ]]; then
+                    echo -e "${CYAN}[Dry-Run] Would remove old/broken symlink: $dest_path -> $resolved${NC}"
+                else
+                    echo -e "${YELLOW}Pruning symlink: $dest_path -> $resolved${NC}"
+                    rm -f "$dest_path"
+                fi
+                pruned_count=$((pruned_count + 1))
+            fi
+        fi
+    done < <(find "$BASE_DIR/src" -type f -print0)
+
+    echo -e "\n${GREEN}Pruning complete. Total links removed: $pruned_count${NC}"
+}
+
+
 execute_status() {
     echo -e "${BLUE}Managed Symlinks Status in '$TARGET_DIR':${NC}"
     local total_links=0
@@ -396,5 +449,8 @@ case "$COMMAND" in
         ;;
     status)
         execute_status
+        ;;
+    prune)
+        execute_prune
         ;;
 esac
