@@ -258,8 +258,8 @@ clean_unfolded_exclusive_directories() {
 execute_deploy() {
     check_permissions
     ensure_target_directories
-    check_conflicts
     clean_unfolded_exclusive_directories
+    check_conflicts
 
     echo -e "${BLUE}Creating symlinks...${NC}"
 
