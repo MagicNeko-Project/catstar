@@ -7,17 +7,16 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"time"
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/MagicNeko-Project/catstar-backup/internal/clock"
 	"github.com/MagicNeko-Project/catstar-backup/internal/config"
 	"github.com/MagicNeko-Project/catstar-backup/internal/notify"
 )
 
-// TarSSHEngine constructs and orchestrates a robust native Go pipeline:
-// tar | openssl | dd | ssh
-// It guarantees 0 zombie processes and secures the OpenSSL password via environment variables.
+// TarSSHEngine runs a streaming backup pipeline: tar | openssl | dd | ssh.
+// It passes the OpenSSL decryption password via the environment for security.
 type TarSSHEngine struct {
 	jobName  string
 	machine  string
@@ -26,9 +25,10 @@ type TarSSHEngine struct {
 	logger   *slog.Logger
 	notifier *notify.CompositeNotifier
 	factory  CommandFactory
+	clock    clock.Provider
 }
 
-func NewTarSSHEngine(jobName, machineName string, verbose bool, cfg *config.TarSSHConfig, logger *slog.Logger, notifier *notify.CompositeNotifier, factory CommandFactory) *TarSSHEngine {
+func NewTarSSHEngine(jobName, machineName string, verbose bool, cfg *config.TarSSHConfig, logger *slog.Logger, notifier *notify.CompositeNotifier, factory CommandFactory, clk clock.Provider) *TarSSHEngine {
 	return &TarSSHEngine{
 		jobName:  jobName,
 		machine:  machineName,
@@ -37,6 +37,7 @@ func NewTarSSHEngine(jobName, machineName string, verbose bool, cfg *config.TarS
 		logger:   logger.With("job", jobName),
 		notifier: notifier,
 		factory:  factory,
+		clock:    clk,
 	}
 }
 
@@ -51,7 +52,7 @@ func (e *TarSSHEngine) Execute(ctx context.Context) error {
 	eg, egCtx := errgroup.WithContext(ctx)
 
 	// Replace the simple bash date format for the target filename
-	fileName := strings.ReplaceAll(e.cfg.FileName, "%(%F_%H%M%S)T", time.Now().Format("2006-01-02_150405"))
+	fileName := strings.ReplaceAll(e.cfg.FileName, "%(%F_%H%M%S)T", e.clock.Now().Format("2006-01-02_150405"))
 
 	tarCmd := e.factory.Create(egCtx, "tar", "-I", "zstd", "-cp", "--one-file-system", e.cfg.Target)
 	sslCmd := e.factory.Create(egCtx, "openssl", e.cfg.OpenSSLType, "-salt", "-pass", "env:CATSTAR_SSL_PASS")

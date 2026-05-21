@@ -1,37 +1,47 @@
 package clock
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
-// Provider allows injecting deterministic time into the application
-// for robust unit testing of time-based logic (e.g., summary windows).
 type Provider interface {
 	Now() time.Time
 }
 
-// RealClock returns the actual system time.
 type RealClock struct{}
 
-// NewRealClock instantiates a clock bound to the host OS.
 func NewRealClock() *RealClock {
 	return &RealClock{}
 }
 
-// Now returns the current wall-clock time.
 func (RealClock) Now() time.Time {
 	return time.Now()
 }
 
-// MockClock returns a predefined, frozen time.
 type MockClock struct {
-	FixedTime time.Time
+	mu        sync.RWMutex
+	fixedTime time.Time
 }
 
-// NewMockClock instantiates a clock frozen at the given instant.
 func NewMockClock(t time.Time) *MockClock {
-	return &MockClock{FixedTime: t}
+	return &MockClock{fixedTime: t}
 }
 
-// Now returns the frozen time.
 func (m *MockClock) Now() time.Time {
-	return m.FixedTime
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.fixedTime
+}
+
+func (m *MockClock) Set(t time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.fixedTime = t
+}
+
+func (m *MockClock) Advance(d time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.fixedTime = m.fixedTime.Add(d)
 }

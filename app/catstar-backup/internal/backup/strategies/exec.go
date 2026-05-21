@@ -7,8 +7,6 @@ import (
 	"os/exec"
 )
 
-// Process abstracts an OS process lifecycle, enabling 100% test coverage
-// without executing system binaries or writing to disk.
 type Process interface {
 	Start() error
 	Wait() error
@@ -20,13 +18,10 @@ type Process interface {
 	SetEnv([]string)
 }
 
-// CommandFactory provides a standardized way to instantiate processes
-// safely and independently.
 type CommandFactory interface {
 	Create(ctx context.Context, name string, args ...string) Process
 }
 
-// DefaultCommandFactory wraps the native os/exec package.
 type DefaultCommandFactory struct {
 	logger *slog.Logger
 }
@@ -42,7 +37,6 @@ func (d *DefaultCommandFactory) Create(ctx context.Context, name string, args ..
 	}
 }
 
-// DefaultProcess is a 1-to-1 wrapper over the standard *exec.Cmd struct.
 type DefaultProcess struct {
 	cmd    *exec.Cmd
 	logger *slog.Logger
@@ -87,11 +81,9 @@ func (p *DefaultProcess) SetEnv(env []string) {
 	p.cmd.Env = env
 }
 
-// Helper to run a simple, blocking command using the factory (for simple strategies).
 func runSimpleCommand(ctx context.Context, factory CommandFactory, logger *slog.Logger, cmdStr string, args ...string) error {
 	cmd := factory.Create(ctx, cmdStr, args...)
 
-	// Create an inline writer that pipes output straight to slog for simple tracking
 	writer := newSlogWriter(logger, "info", cmdStr)
 	cmd.SetStdout(writer)
 	cmd.SetStderr(writer)

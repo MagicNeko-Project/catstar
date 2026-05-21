@@ -61,7 +61,7 @@ func NewApp(cfg *config.Config, outStream io.Writer, clk clock.Provider) (*App, 
 			if job.TarSSH == nil {
 				return nil, fmt.Errorf("job %q is missing tar_ssh configuration block", job.Name)
 			}
-			engines = append(engines, strategies.NewTarSSHEngine(job.Name, machine, verbose, job.TarSSH, logger, notifier, factory))
+			engines = append(engines, strategies.NewTarSSHEngine(job.Name, machine, verbose, job.TarSSH, logger, notifier, factory, clk))
 		case "restic":
 			if job.Restic == nil {
 				return nil, fmt.Errorf("job %q is missing restic configuration block", job.Name)
