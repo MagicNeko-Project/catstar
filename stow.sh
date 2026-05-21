@@ -273,8 +273,9 @@ execute_deploy() {
 
     if [[ "$DRY_RUN" == "true" ]]; then
         stow_flags=("-n" "-v" "${stow_flags[@]}")
-        echo -e "${CYAN}[Dry-Run] Running stow with flags: ${stow_flags[*]}${NC}"
     fi
+
+    echo -e "Running: stow ${stow_flags[*]}"
 
     if stow "${stow_flags[@]}"; then
         echo -e "${GREEN}Symlinks created successfully.${NC}"
@@ -298,8 +299,9 @@ execute_undeploy() {
 
     if [[ "$DRY_RUN" == "true" ]]; then
         stow_flags=("-n" "-v" "${stow_flags[@]}")
-        echo -e "${CYAN}[Dry-Run] Running stow with flags: ${stow_flags[*]}${NC}"
     fi
+
+    echo -e "Running: stow ${stow_flags[*]}"
 
     if stow "${stow_flags[@]}"; then
         echo -e "${GREEN}Symlinks removed successfully.${NC}"
