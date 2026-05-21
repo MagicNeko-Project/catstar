@@ -45,8 +45,10 @@ IS_USER_TARGET=false
 ACTIVE_REQUIRED_SUBDIRECTORIES=()
 ACTIVE_IGNORE_PATTERNS=()
 
-# Subdirectories exclusively owned by us that should be folded on all targets
+# Subdirectories exclusively owned by us that should be folded on all targets.
+# Must be ordered from deepest to shallowest to support clean hierarchical migration.
 EXCLUSIVE_FOLDED_SUBDIRECTORIES=(
+    "share/zsh/catstar/functions"
     "share/zsh/catstar"
 )
 
