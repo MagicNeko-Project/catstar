@@ -342,9 +342,22 @@ execute_prune() {
 
     echo -e "${BLUE}Pruning old/broken symlinks in '$TARGET_DIR'...${NC}"
     local pruned_count=0
+    local -A checked_paths=()
 
     while IFS= read -r -d '' file; do
         local rel_path="${file#$BASE_DIR/src/}"
+
+        # Skip pruning checks for active ignore patterns
+        local skip=false
+        for pattern in "${ACTIVE_IGNORE_PATTERNS[@]}"; do
+            if [[ "$rel_path" == "$pattern" || "$rel_path" == "$pattern"/* ]]; then
+                skip=true
+                break
+            fi
+        done
+        if [[ "$skip" == "true" ]]; then
+            continue
+        fi
 
         # Fold checks to the custom folder level if inside an exclusive folded directory (matches shallowest first)
         for exclusive in "${EXCLUSIVE_FOLDED_SUBDIRECTORIES[@]}"; do
@@ -353,6 +366,12 @@ execute_prune() {
                 break
             fi
         done
+
+        # De-duplicate checks since multiple nested files map to the same folded parent
+        if [[ -n "${checked_paths[$rel_path]:-}" ]]; then
+            continue
+        fi
+        checked_paths[$rel_path]=1
 
         local dest_path="$TARGET_DIR/$rel_path"
 
