@@ -45,11 +45,10 @@ IS_USER_TARGET=false
 ACTIVE_REQUIRED_SUBDIRECTORIES=()
 ACTIVE_IGNORE_PATTERNS=()
 
-# Subdirectories exclusively owned by us that should be folded on all targets.
-# Must be ordered from deepest to shallowest to support clean hierarchical migration.
+# Subdirectories exclusively owned by us that should be folded on all targets
 EXCLUSIVE_FOLDED_SUBDIRECTORIES=(
-    "share/zsh/catstar/functions"
     "share/zsh/catstar"
+    "share/zsh/catstar/functions"
 )
 
 
@@ -194,9 +193,9 @@ check_conflicts() {
             continue
         fi
 
-        # Fold checks to the custom folder level if inside an exclusive folded directory
+        # Fold checks to the custom folder level if inside an exclusive folded directory (matches shallowest first)
         for exclusive in "${EXCLUSIVE_FOLDED_SUBDIRECTORIES[@]}"; do
-            if [[ "$rel_path" == "$exclusive"/* ]]; then
+            if [[ "$rel_path" == "$exclusive" || "$rel_path" == "$exclusive"/* ]]; then
                 rel_path="$exclusive"
                 break
             fi
@@ -225,8 +224,22 @@ check_conflicts() {
 
 
 clean_unfolded_exclusive_directories() {
-    for subdir in "${EXCLUSIVE_FOLDED_SUBDIRECTORIES[@]}"; do
+    for (( i=${#EXCLUSIVE_FOLDED_SUBDIRECTORIES[@]}-1; i>=0; i-- )); do
+        local subdir="${EXCLUSIVE_FOLDED_SUBDIRECTORIES[i]}"
         local full_path="$TARGET_DIR/$subdir"
+
+        # Skip if any parent of this exclusive directory is already folded (a symlink)
+        local parent_is_folded=false
+        for parent_dir in "${EXCLUSIVE_FOLDED_SUBDIRECTORIES[@]}"; do
+            if [[ "$subdir" == "$parent_dir"/* && -L "$TARGET_DIR/$parent_dir" ]]; then
+                parent_is_folded=true
+                break
+            fi
+        done
+
+        if [[ "$parent_is_folded" == "true" ]]; then
+            continue
+        fi
 
         # If it exists and is a real folder (not a symlink), clean it up
         if [[ -d "$full_path" && ! -L "$full_path" ]]; then
@@ -333,9 +346,9 @@ execute_status() {
             continue
         fi
 
-        # Fold audits to the custom folder level if inside an exclusive folded directory
+        # Fold audits to the custom folder level if inside an exclusive folded directory (matches shallowest first)
         for exclusive in "${EXCLUSIVE_FOLDED_SUBDIRECTORIES[@]}"; do
-            if [[ "$rel_path" == "$exclusive"/* ]]; then
+            if [[ "$rel_path" == "$exclusive" || "$rel_path" == "$exclusive"/* ]]; then
                 rel_path="$exclusive"
                 break
             fi
