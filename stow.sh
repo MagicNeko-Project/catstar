@@ -52,7 +52,7 @@ EXCLUSIVE_FOLDED_SUBDIRECTORIES=(
 
 
 show_usage() {
-    cat << EOF
+    echo -e "$(cat << EOF
 ${CYAN}Symlink Deployment Manager${NC}
 
 This utility manages symlinks that link configuration files under 'src/' to a target directory (e.g., /usr/local).
@@ -80,6 +80,7 @@ ${YELLOW}Examples:${NC}
   stow.sh status --target ~/.local
   stow.sh undeploy --dry-run
 EOF
+)"
 }
 
 
