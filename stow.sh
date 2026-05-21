@@ -173,6 +173,7 @@ ensure_target_directories() {
 check_conflicts() {
     echo -e "${BLUE}Checking for conflicts in '$TARGET_DIR'...${NC}"
     local conflicts_found=0
+    local -A checked_paths=()
 
     # We scan 'src' to find target destinations that already exist as regular files
     while IFS= read -r -d '' file; do
@@ -190,10 +191,24 @@ check_conflicts() {
             continue
         fi
 
+        # Fold checks to the custom folder level if inside an exclusive folded directory
+        for exclusive in "${EXCLUSIVE_FOLDED_SUBDIRECTORIES[@]}"; do
+            if [[ "$rel_path" == "$exclusive"/* ]]; then
+                rel_path="$exclusive"
+                break
+            fi
+        done
+
+        # De-duplicate checks since multiple nested files map to the same folded parent
+        if [[ -n "${checked_paths[$rel_path]:-}" ]]; then
+            continue
+        fi
+        checked_paths[$rel_path]=1
+
         local dest_path="$TARGET_DIR/$rel_path"
 
         if [[ -e "$dest_path" && ! -L "$dest_path" ]]; then
-            echo -e "${RED}Conflict detected: Regular file exists at destination: $dest_path${NC}" >&2
+            echo -e "${RED}Conflict detected: Regular file or directory exists at destination: $dest_path${NC}" >&2
             conflicts_found=1
         fi
     done < <(find "$BASE_DIR/src" -type f -print0)
@@ -224,7 +239,7 @@ clean_unfolded_exclusive_directories() {
             stow "${stow_flags[@]}" 2>/dev/null || true
 
             # Delete the directory only if it is now empty
-            if [[ -z "$(find "$full_path" -mindepth 1 -maxdepth 1 -not -empty 2>/dev/null)" || ! "$(ls -A "$full_path" 2>/dev/null)" ]]; then
+            if [[ -z "$(find "$full_path" -mindepth 1 -print -quit 2>/dev/null)" ]]; then
                 if [[ "$DRY_RUN" == "true" ]]; then
                     echo -e "${CYAN}[Dry-Run] Would remove empty unfolded exclusive directory: $full_path${NC}"
                 else
@@ -296,6 +311,7 @@ execute_status() {
     echo -e "${BLUE}Managed Symlinks Status in '$TARGET_DIR':${NC}"
     local total_links=0
     local dead_links=0
+    local -A checked_paths=()
 
     while IFS= read -r -d '' file; do
         local rel_path="${file#$BASE_DIR/src/}"
@@ -311,6 +327,20 @@ execute_status() {
         if [[ "$skip" == "true" ]]; then
             continue
         fi
+
+        # Fold audits to the custom folder level if inside an exclusive folded directory
+        for exclusive in "${EXCLUSIVE_FOLDED_SUBDIRECTORIES[@]}"; do
+            if [[ "$rel_path" == "$exclusive"/* ]]; then
+                rel_path="$exclusive"
+                break
+            fi
+        done
+
+        # De-duplicate audits since multiple nested files map to the same folded parent
+        if [[ -n "${checked_paths[$rel_path]:-}" ]]; then
+            continue
+        fi
+        checked_paths[$rel_path]=1
 
         local dest_path="$TARGET_DIR/$rel_path"
 
