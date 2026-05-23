@@ -258,16 +258,24 @@ case "$selected_subcommand" in
                 ((index++))
             done
 
+            print -r -- ""
             local user_selection
-            print -n -- "Selection (1-${#numerical_profile_map}): "
-            read user_selection
+            while true; do
+                print -n -- "Selection (1-${#numerical_profile_map}, or q to cancel): "
+                read user_selection
 
-            if [[ "$user_selection" =~ ^[0-9]+$ ]] && (( user_selection >= 1 && user_selection <= ${#numerical_profile_map} )); then
-                target_profile_name="$numerical_profile_map[$user_selection]"
-            else
-                print -u2 "Error: Selection must be a valid number between 1 and ${#numerical_profile_map}."
-                return 1
-            fi
+                if [[ -z "$user_selection" || "$user_selection" == "q" || "$user_selection" == "quit" || "$user_selection" == "exit" ]]; then
+                    print -r -- "Selection cancelled."
+                    return 0
+                fi
+
+                if [[ "$user_selection" =~ ^[0-9]+$ ]] && (( user_selection >= 1 && user_selection <= ${#numerical_profile_map} )); then
+                    target_profile_name="$numerical_profile_map[$user_selection]"
+                    break
+                else
+                    print -u2 "Error: Selection must be a valid number between 1 and ${#numerical_profile_map}."
+                fi
+            done
         fi
 
         local stored_name stored_email stored_key
