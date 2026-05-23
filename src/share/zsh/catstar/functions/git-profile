@@ -110,6 +110,61 @@ _git_profile_get_active_identity() {
     active_key_scope="${output%%$'\t'*}"
 }
 
+_git_profile_print_active_block() {
+    local scope_label="$1"
+    local scope_flag="$2"
+
+    local active_name active_name_scope active_email active_email_scope active_key active_key_scope
+    _git_profile_get_active_identity "$scope_flag"
+
+    print -r -- "$scope_label:"
+    if [[ -z "$active_name" && -z "$active_email" ]]; then
+        print -r -- "  (No Git identity is currently configured)"
+        return 0
+    fi
+
+    local matched_profile_name
+    matched_profile_name=$(_git_profile_find_matching_profile_name "$active_name" "$active_email" "$active_key")
+
+    print -r -- "  Profile:  ${matched_profile_name:-[none]}"
+    print -r -- "  Identity: $active_name <$active_email>"
+    if [[ -n "$active_key" ]]; then
+        print -r -- "  Key:      $active_key"
+    fi
+}
+
+_git_profile_print_table() {
+    local active_scope="$1"
+
+    local -A profile_names profile_emails profile_keys
+    local -a profile_list
+    _git_profile_load_profiles
+
+    print -r -- "Available Profiles:"
+    printf "  %-1s %-20s %s\n" "" "PROFILE" "IDENTITY"
+    printf "  %-1s %-20s %s\n" "" "-------" "--------"
+
+    if [[ ${#profile_list} -eq 0 ]]; then
+        return 0
+    fi
+
+    local active_name active_name_scope active_email active_email_scope active_key active_key_scope
+    _git_profile_get_active_identity "$active_scope"
+
+    local current_profile_name
+    for current_profile_name in "${(@n)profile_list}"; do
+        local active_marker=" "
+        local check_name="$profile_names[$current_profile_name]"
+        local check_email="$profile_emails[$current_profile_name]"
+        local check_key="$profile_keys[$current_profile_name]"
+
+        if [[ "$check_name" == "$active_name" && "$check_email" == "$active_email" && ("$check_key" == "$active_key" || (-z "$check_key" && -z "$active_key")) ]]; then
+            active_marker="*"
+        fi
+        printf "  %-1s %-20s %s <%s>%s\n" "$active_marker" "$current_profile_name" "$check_name" "$check_email" "${check_key:+ (Key: $check_key)}"
+    done
+}
+
 # Parse all options uniformly
 local -A parsed_options
 zparseopts -D -E -A parsed_options -local -global h -help -use -force o: -out:
@@ -121,7 +176,7 @@ fi
 
 local selected_subcommand
 if (( $# == 0 )); then
-    selected_subcommand="current"
+    selected_subcommand="default"
 else
     selected_subcommand="$1"
     shift
@@ -148,7 +203,7 @@ else
         # For read-only commands, safely default to global.
         # For write/mutation commands, fail to prevent implicit global state changes!
         case "$selected_subcommand" in
-            current|list|add|set|rename|delete|export|import)
+            default|current|list|add|set|rename|delete|export|import)
                 if [[ "$selected_subcommand" == "add" ]] && (( $+parsed_options[--use] )); then
                     print -u2 "Error: Not inside a Git repository. To change your system-wide global identity, you must explicitly specify the --global flag."
                     return 1
@@ -166,7 +221,7 @@ else
 fi
 
 case "$selected_subcommand" in
-    current|use|clear|list|add|set|rename|delete|export|import)
+    default|current|use|clear|list|add|set|rename|delete|export|import)
         # Valid subcommands
         ;;
     *)
@@ -177,61 +232,32 @@ case "$selected_subcommand" in
 esac
 
 case "$selected_subcommand" in
-    current)
-        local active_name active_name_scope active_email active_email_scope active_key active_key_scope
-        _git_profile_get_active_identity "$target_scope"
-
-        if [[ -z "$active_name" && -z "$active_email" ]]; then
-            print -r -- "No Git identity is currently configured in $target_scope scope."
-            return 0
-        fi
-
-        local matched_profile_name
-        matched_profile_name=$(_git_profile_find_matching_profile_name "$active_name" "$active_email" "$active_key")
-
-        if [[ -n "$matched_profile_name" ]]; then
-            print -r -- "Active profile: $matched_profile_name"
+    default)
+        if _git_profile_is_inside_git_repository; then
+            _git_profile_print_active_block "Local Repository" "--local"
+            print -r -- ""
+            _git_profile_print_active_block "Global Configuration" "--global"
+            print -r -- ""
+            _git_profile_print_table "--local"
         else
-            print -r -- "Active identity [No matching profile found]:"
+            _git_profile_print_active_block "Global Configuration" "--global"
+            print -r -- ""
+            _git_profile_print_table "--global"
         fi
+        return 0
+        ;;
 
-        print -r -- "  Name:  $active_name (${active_name_scope:-unknown} scope)"
-        print -r -- "  Email: $active_email (${active_email_scope:-unknown} scope)"
-        if [[ -n "$active_key" ]]; then
-            print -r -- "  Key:   $active_key (${active_key_scope:-unknown} scope)"
+    current)
+        if [[ "$target_scope" == "--local" ]]; then
+            _git_profile_print_active_block "Local Repository" "--local"
+        else
+            _git_profile_print_active_block "Global Configuration" "--global"
         fi
         return 0
         ;;
 
     list)
-        local -A profile_names profile_emails profile_keys
-        local -a profile_list
-        _git_profile_load_profiles
-
-        if [[ ${#profile_list} -eq 0 ]]; then
-            print -r -- "No profiles exist in the global configuration."
-            return 0
-        fi
-
-        local active_name active_name_scope active_email active_email_scope active_key active_key_scope
-        _git_profile_get_active_identity "$target_scope"
-
-        print -r -- "Available profiles:"
-        printf "  %-1s %-20s %s\n" "" "PROFILE" "IDENTITY"
-        printf "  %-1s %-20s %s\n" "" "-------" "--------"
-
-        local current_profile_name
-        for current_profile_name in "${(@n)profile_list}"; do
-            local active_marker=" "
-            local check_name="$profile_names[$current_profile_name]"
-            local check_email="$profile_emails[$current_profile_name]"
-            local check_key="$profile_keys[$current_profile_name]"
-
-            if [[ "$check_name" == "$active_name" && "$check_email" == "$active_email" && ("$check_key" == "$active_key" || (-z "$check_key" && -z "$active_key")) ]]; then
-                active_marker="*"
-            fi
-            printf "  %-1s %-20s %s <%s>%s\n" "$active_marker" "$current_profile_name" "$check_name" "$check_email" "${check_key:+ (Key: $check_key)}"
-        done
+        _git_profile_print_table "$target_scope"
         return 0
         ;;
 
