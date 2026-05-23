@@ -1,16 +1,17 @@
 # Manage Git author profiles
-# Usage: git-profile [--local | --global] <subcommand> ...
+# Usage: git-profile [options] <command> [args...]
 
-# =============================================================================
-# 1. Documentation & Help
-# =============================================================================
-function _git_profile_show_help() {
+_git_profile_is_inside_git_repository() {
+    command git rev-parse --is-inside-work-tree >/dev/null 2>&1
+}
+
+_git_profile_show_help() {
     print -r -- 'Usage: git-profile [options] <command> [args...]
 
 Manage Git author identities.
 
 Identity Management:
-  current                     Show active identity
+  current                     Show active identity (default)
   list                        List profiles and active status
   use [<name>]                Apply a profile (interactively or by name)
   clear                       Remove the active identity
@@ -26,18 +27,13 @@ Backup & Synchronization:
   import [file | -] [--force] Import profiles from file or stdin (default: stdin)
 
 Options:
-  --local                     Target repository config (default)
+  --local                     Target repository config (default if in repo)
   --global                    Target global config
   -h, --help                  Show this help message'
 }
 
-# =============================================================================
-# 2. Internal Helpers
-# =============================================================================
-
-# Internal helper to load profiles into associative arrays.
-# Caller must declare: local -A profile_names profile_emails profile_keys; local -a profile_list
-function _git_profile_load_all_profiles() {
+# Profiles (templates) are ALWAYS stored in the global git config.
+_git_profile_load_profiles() {
     local config_key config_value profile_path profile_name profile_property
 
     while read -r config_key config_value; do
@@ -57,15 +53,15 @@ function _git_profile_load_all_profiles() {
     done < <(command git config --global --get-regexp '^profile\.' 2>/dev/null)
 }
 
-# Finds a profile name that matches the provided identity.
-function _git_profile_find_matching_profile_name() {
+_git_profile_find_matching_profile_name() {
     local target_name="$1"
     local target_email="$2"
     local target_key="$3"
 
     local -A profile_names profile_emails profile_keys
     local -a profile_list
-    _git_profile_load_all_profiles
+
+    _git_profile_load_profiles
 
     local current_profile_name
     for current_profile_name in "${profile_list[@]}"; do
@@ -81,484 +77,497 @@ function _git_profile_find_matching_profile_name() {
     return 1
 }
 
-# Applies an identity to the requested configuration scope.
-function _git_profile_apply_identity_to_scope() {
-    local target_scope="$1"
-    local author_name="$2"
-    local author_email="$3"
-    local signing_key="$4"
+_git_profile_get_config_with_scope() {
+    local key="$1"
+    local scope_filter="$2"
+    local output
 
-    if [[ "$target_scope" == "--local" ]] && ! command git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        print -u2 "Error: Not inside a valid git repository."
-        return 1
-    fi
-
-    command git config "$target_scope" user.name "$author_name"
-    command git config "$target_scope" user.email "$author_email"
-
-    if [[ -n "$signing_key" ]]; then
-        command git config "$target_scope" user.signingkey "$signing_key"
+    if [[ -n "$scope_filter" ]]; then
+        output=$(command git config "$scope_filter" --show-scope "$key" 2>/dev/null)
     else
-        command git config "$target_scope" --unset user.signingkey 2>/dev/null
+        output=$(command git config --show-scope "$key" 2>/dev/null)
     fi
 
-    print -r -- "Git identity ($target_scope) set to: $author_name <$author_email>${signing_key:+ (Key: $signing_key)}"
+    if [[ -n "$output" ]]; then
+        print -r -- "$output"
+    fi
 }
 
-# =============================================================================
-# 3. CLI Parsing & Option Resolution
-# =============================================================================
+_git_profile_get_active_identity() {
+    local scope_filter="$1"
+    local output
 
-function _git_profile_main() {
-    local -A parsed_options
-    zparseopts -D -E -A parsed_options -local -global h -help -use
+    output=$(_git_profile_get_config_with_scope "user.name" "$scope_filter")
+    active_name="${output#*$'\t'}"
+    active_name_scope="${output%%$'\t'*}"
 
-    local configuration_scope="--local"
-    if (( $+parsed_options[--global] )); then
-        configuration_scope="--global"
+    output=$(_git_profile_get_config_with_scope "user.email" "$scope_filter")
+    active_email="${output#*$'\t'}"
+    active_email_scope="${output%%$'\t'*}"
+
+    output=$(_git_profile_get_config_with_scope "user.signingkey" "$scope_filter")
+    active_key="${output#*$'\t'}"
+    active_key_scope="${output%%$'\t'*}"
+}
+
+# Parse all options uniformly
+local -A parsed_options
+zparseopts -D -E -A parsed_options -local -global h -help -use -force o: -out:
+
+if (( $+parsed_options[-h] )) || (( $+parsed_options[--help] )); then
+    _git_profile_show_help
+    return 0
+fi
+
+local selected_subcommand
+if (( $# == 0 )); then
+    selected_subcommand="current"
+else
+    selected_subcommand="$1"
+    shift
+fi
+
+# Resolve target scope for the active identity operation
+local target_scope=""
+local explicit_scope_provided=0
+if (( $+parsed_options[--local] )); then
+    explicit_scope_provided=1
+    if ! _git_profile_is_inside_git_repository; then
+        print -u2 "Error: Operation requires a valid Git repository when targeting --local."
+        return 1
     fi
-
-    if (( $+parsed_options[-h] )) || (( $+parsed_options[--help] )); then
-        _git_profile_show_help
-        return 0
-    fi
-
-    local selected_subcommand
-    if (( $# == 0 )); then
-        selected_subcommand="current"
+    target_scope="--local"
+elif (( $+parsed_options[--global] )); then
+    explicit_scope_provided=1
+    target_scope="--global"
+else
+    # Auto-detect scope default
+    if _git_profile_is_inside_git_repository; then
+        target_scope="--local"
     else
-        selected_subcommand="$1"
-        shift
+        target_scope="--global"
     fi
+fi
 
-    # Pre-flight check: Reject local commands if not in a Git repository
-    case "$selected_subcommand" in
-        current|list|clear|add|use)
-            if [[ "$configuration_scope" == "--local" ]] && ! command git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-                # 'add' is only constrained to local scope if '--use' flag is provided.
-                if [[ "$selected_subcommand" != "add" ]] || (( $+parsed_options[--use] )); then
-                    print -u2 "Error: Operation requires a git repository but none was found."
-                    return 1
-                fi
-            fi
-            ;;
-    esac
+case "$selected_subcommand" in
+    current|use|clear|list|add|set|rename|delete|export|import)
+        # Valid subcommands
+        ;;
+    *)
+        # Unknown subcommand
+        _git_profile_show_help
+        return 1
+        ;;
+esac
 
-    # =============================================================================
-    # 4. Command Execution
-    # =============================================================================
+case "$selected_subcommand" in
+    current)
+        local active_name active_name_scope active_email active_email_scope active_key active_key_scope
+        _git_profile_get_active_identity "$target_scope"
 
-    case "$selected_subcommand" in
-        current)
-            local active_name
-            active_name=$(command git config "$configuration_scope" user.name 2>/dev/null)
-            local active_email
-            active_email=$(command git config "$configuration_scope" user.email 2>/dev/null)
-            local active_key
-            active_key=$(command git config "$configuration_scope" user.signingkey 2>/dev/null)
-
-            if [[ -z "$active_name" && -z "$active_email" ]]; then
-                print -r -- "No identity is currently configured in the $configuration_scope scope."
-                return 0
-            fi
-
-            local matched_profile_name
-            matched_profile_name=$(_git_profile_find_matching_profile_name "$active_name" "$active_email" "$active_key")
-
-            if [[ -n "$matched_profile_name" ]]; then
-                print -r -- "Active profile ($configuration_scope): $matched_profile_name"
-            else
-                print -r -- "Active identity ($configuration_scope) [No matching profile found]:"
-            fi
-
-            print -r -- "  Name:  $active_name"
-            print -r -- "  Email: $active_email"
-            [[ -n "$active_key" ]] && print -r -- "  Key:   $active_key"
-
+        if [[ -z "$active_name" && -z "$active_email" ]]; then
+            print -r -- "No Git identity is currently configured in $target_scope scope."
             return 0
-            ;;
+        fi
 
-        list)
-            local active_name
-            active_name=$(command git config "$configuration_scope" user.name 2>/dev/null)
-            local active_email
-            active_email=$(command git config "$configuration_scope" user.email 2>/dev/null)
-            local active_key
-            active_key=$(command git config "$configuration_scope" user.signingkey 2>/dev/null)
+        local matched_profile_name
+        matched_profile_name=$(_git_profile_find_matching_profile_name "$active_name" "$active_email" "$active_key")
+
+        if [[ -n "$matched_profile_name" ]]; then
+            print -r -- "Active profile: $matched_profile_name"
+        else
+            print -r -- "Active identity [No matching profile found]:"
+        fi
+
+        print -r -- "  Name:  $active_name (${active_name_scope:-unknown} scope)"
+        print -r -- "  Email: $active_email (${active_email_scope:-unknown} scope)"
+        if [[ -n "$active_key" ]]; then
+            print -r -- "  Key:   $active_key (${active_key_scope:-unknown} scope)"
+        fi
+        return 0
+        ;;
+
+    list)
+        local -A profile_names profile_emails profile_keys
+        local -a profile_list
+        _git_profile_load_profiles
+
+        if [[ ${#profile_list} -eq 0 ]]; then
+            print -r -- "No profiles exist in the global configuration."
+            return 0
+        fi
+
+        local active_name active_name_scope active_email active_email_scope active_key active_key_scope
+        _git_profile_get_active_identity "$target_scope"
+
+        print -r -- "Available profiles:"
+        printf "  %-1s %-20s %s\n" "" "PROFILE" "IDENTITY"
+        printf "  %-1s %-20s %s\n" "" "-------" "--------"
+
+        local current_profile_name
+        for current_profile_name in "${(@n)profile_list}"; do
+            local active_marker=" "
+            local check_name="$profile_names[$current_profile_name]"
+            local check_email="$profile_emails[$current_profile_name]"
+            local check_key="$profile_keys[$current_profile_name]"
+
+            if [[ "$check_name" == "$active_name" && "$check_email" == "$active_email" && ("$check_key" == "$active_key" || (-z "$check_key" && -z "$active_key")) ]]; then
+                active_marker="*"
+            fi
+            printf "  %-1s %-20s %s <%s>%s\n" "$active_marker" "$current_profile_name" "$check_name" "$check_email" "${check_key:+ (Key: $check_key)}"
+        done
+        return 0
+        ;;
+
+    use)
+        local target_profile_name="$1"
+
+        if [[ -z "$target_profile_name" ]]; then
+            if [[ ! -t 0 ]]; then
+                print -u2 "Error: A profile name must be provided for non-interactive execution."
+                return 1
+            fi
 
             local -A profile_names profile_emails profile_keys
             local -a profile_list
-            _git_profile_load_all_profiles
+            _git_profile_load_profiles
 
             if [[ ${#profile_list} -eq 0 ]]; then
-                print -r -- "No profiles exist in the global configuration."
-                return 0
+                print -u2 "Error: No profiles exist to select from."
+                return 1
             fi
 
-            print -r -- "Available profiles:"
-            printf "  %-1s %-15s %s\n" "" "PROFILE" "IDENTITY"
-            printf "  %-1s %-15s %s\n" "" "-------" "--------"
+            local active_name active_name_scope active_email active_email_scope active_key active_key_scope
+            _git_profile_get_active_identity "$target_scope"
 
-            local current_profile_name
+            print -r -- "Please select a profile to activate ($target_scope):"
+            local current_profile_name active_marker
+            local index=1
+            local -a numerical_profile_map
             for current_profile_name in "${(@n)profile_list}"; do
-                local active_marker=" "
-                if [[ "$profile_names[$current_profile_name]" == "$active_name" && "$profile_emails[$current_profile_name]" == "$active_email" && ("$profile_keys[$current_profile_name]" == "$active_key" || (-z "$profile_keys[$current_profile_name]" && -z "$active_key")) ]]; then
+                active_marker=" "
+                local check_name="$profile_names[$current_profile_name]"
+                local check_email="$profile_emails[$current_profile_name]"
+                local check_key="$profile_keys[$current_profile_name]"
+
+                if [[ "$check_name" == "$active_name" && "$check_email" == "$active_email" && ("$check_key" == "$active_key" || (-z "$check_key" && -z "$active_key")) ]]; then
                     active_marker="*"
                 fi
-                printf "  %-1s %-15s %s <%s>%s\n" "$active_marker" "$current_profile_name" "$profile_names[$current_profile_name]" "$profile_emails[$current_profile_name]" "${profile_keys[$current_profile_name]:+ (${profile_keys[$current_profile_name]})}"
+                printf "%2d) %s %-20s : %s <%s>%s\n" "$index" "$active_marker" "$current_profile_name" "$check_name" "$check_email" "${check_key:+ (Key: $check_key)}"
+                numerical_profile_map+=("$current_profile_name")
+                ((index++))
             done
-            ;;
 
-        use)
-            local target_profile_name="$1"
+            local user_selection
+            print -n -- "Selection (1-${#numerical_profile_map}): "
+            read user_selection
 
-            if [[ -z "$target_profile_name" ]]; then
-                if [[ ! -t 0 ]]; then
-                    print -u2 "Error: A profile name must be provided for non-interactive execution."
-                    return 1
-                fi
-
-                local -A profile_names profile_emails profile_keys
-                local -a profile_list
-                _git_profile_load_all_profiles
-
-                if [[ ${#profile_list} -eq 0 ]]; then
-                    print -u2 "Error: No profiles exist to select from."
-                    return 1
-                fi
-
-                local active_name
-                active_name=$(command git config "$configuration_scope" user.name 2>/dev/null)
-                local active_email
-                active_email=$(command git config "$configuration_scope" user.email 2>/dev/null)
-                local active_key
-                active_key=$(command git config "$configuration_scope" user.signingkey 2>/dev/null)
-
-                print -r -- "Please select a profile to activate:"
-                local current_profile_name
-                local active_marker
-                local index=1
-                local -a numerical_profile_map
-                for current_profile_name in "${(@n)profile_list}"; do
-                    active_marker=" "
-                    if [[ "$profile_names[$current_profile_name]" == "$active_name" && "$profile_emails[$current_profile_name]" == "$active_email" && ("$profile_keys[$current_profile_name]" == "$active_key" || (-z "$profile_keys[$current_profile_name]" && -z "$active_key")) ]]; then
-                        active_marker="*"
-                    fi
-                    printf "%2d) %s %s: %s <%s>\n" "$index" "$active_marker" "$current_profile_name" "$profile_names[$current_profile_name]" "$profile_emails[$current_profile_name]"
-                    numerical_profile_map+=("$current_profile_name")
-                    ((index++))
-                done
-
-                local user_selection
-                print -n -- "Selection (1-${#numerical_profile_map}): "
-                read user_selection
-
-                if [[ "$user_selection" =~ ^[0-9]+$ ]] && (( user_selection >= 1 && user_selection <= ${#numerical_profile_map} )); then
-                    target_profile_name="$numerical_profile_map[$user_selection]"
-                else
-                    print -u2 "Error: Selection must be a valid number between 1 and ${#numerical_profile_map}."
-                    return 1
-                fi
-            fi
-
-            local stored_name
-            stored_name=$(command git config --global "profile.$target_profile_name.name" 2>/dev/null)
-            local stored_email
-            stored_email=$(command git config --global "profile.$target_profile_name.email" 2>/dev/null)
-            local stored_key
-            stored_key=$(command git config --global "profile.$target_profile_name.signingkey" 2>/dev/null)
-
-            if [[ -z "$stored_name" || -z "$stored_email" ]]; then
-                print -u2 "Error: Profile '$target_profile_name' is missing required name or email."
-                return 1
-            fi
-
-            _git_profile_apply_identity_to_scope "$configuration_scope" "$stored_name" "$stored_email" "$stored_key"
-            ;;
-
-        clear)
-            local active_name
-            active_name=$(command git config "$configuration_scope" user.name 2>/dev/null)
-            local active_email
-            active_email=$(command git config "$configuration_scope" user.email 2>/dev/null)
-            local active_key
-            active_key=$(command git config "$configuration_scope" user.signingkey 2>/dev/null)
-
-            if [[ -z "$active_name" && -z "$active_email" ]]; then
-                print -r -- "No identity is currently set in $configuration_scope."
-                return 0
-            fi
-
-            local matched_profile_name
-            matched_profile_name=$(_git_profile_find_matching_profile_name "$active_name" "$active_email" "$active_key")
-
-            if [[ -n "$matched_profile_name" ]]; then
-                command git config "$configuration_scope" --unset user.name
-                command git config "$configuration_scope" --unset user.email
-                command git config "$configuration_scope" --unset user.signingkey 2>/dev/null
-                print -r -- "Successfully cleared identity for profile '$matched_profile_name' from $configuration_scope scope."
+            if [[ "$user_selection" =~ ^[0-9]+$ ]] && (( user_selection >= 1 && user_selection <= ${#numerical_profile_map} )); then
+                target_profile_name="$numerical_profile_map[$user_selection]"
             else
-                print -u2 "Error: The active identity does not match any known profile. It will not be cleared automatically."
+                print -u2 "Error: Selection must be a valid number between 1 and ${#numerical_profile_map}."
                 return 1
             fi
-            ;;
+        fi
 
-        add)
-            local new_profile_name="$1"
-            local commit_reference="$2"
-            
-            if [[ -z "$new_profile_name" ]]; then
-                print -u2 "Error: A name must be provided for the new profile."
+        local stored_name stored_email stored_key
+        stored_name=$(command git config --global --get "profile.$target_profile_name.name" 2>/dev/null)
+        stored_email=$(command git config --global --get "profile.$target_profile_name.email" 2>/dev/null)
+        stored_key=$(command git config --global --get "profile.$target_profile_name.signingkey" 2>/dev/null)
+
+        if [[ -z "$stored_name" || -z "$stored_email" ]]; then
+            print -u2 "Error: Profile '$target_profile_name' is missing required name or email."
+            return 1
+        fi
+
+        command git config "$target_scope" user.name "$stored_name"
+        command git config "$target_scope" user.email "$stored_email"
+        if [[ -n "$stored_key" ]]; then
+            command git config "$target_scope" user.signingkey "$stored_key"
+        else
+            command git config "$target_scope" --unset user.signingkey 2>/dev/null
+        fi
+
+        print -r -- "Git identity ($target_scope) set to: $stored_name <$stored_email>${stored_key:+ (Key: $stored_key)}"
+        return 0
+        ;;
+
+    clear)
+        local active_name active_name_scope active_email active_email_scope active_key active_key_scope
+        _git_profile_get_active_identity "$target_scope"
+
+        if [[ -z "$active_name" && -z "$active_email" ]]; then
+            print -r -- "No identity is currently set in $target_scope."
+            return 0
+        fi
+
+        local matched_profile_name
+        matched_profile_name=$(_git_profile_find_matching_profile_name "$active_name" "$active_email" "$active_key")
+
+        if [[ -n "$matched_profile_name" ]]; then
+            command git config "$target_scope" --unset user.name
+            command git config "$target_scope" --unset user.email
+            command git config "$target_scope" --unset user.signingkey 2>/dev/null
+            print -r -- "Successfully cleared identity for profile '$matched_profile_name' from $target_scope scope."
+            return 0
+        else
+            print -u2 "Error: The active identity does not match any known profile. It will not be cleared automatically."
+            return 1
+        fi
+        ;;
+
+    add)
+        local new_profile_name="$1"
+        local commit_reference="$2"
+
+        if [[ -z "$new_profile_name" ]]; then
+            print -u2 "Error: A name must be provided for the new profile."
+            return 1
+        fi
+
+        if command git config --global --get "profile.$new_profile_name.name" >/dev/null 2>&1; then
+            print -u2 "Error: A profile named '$new_profile_name' already exists."
+            return 1
+        fi
+
+        local input_name input_email input_key
+
+        if [[ -n "$commit_reference" ]]; then
+            if (( ! $+functions[git-commit-author] )); then
+                print -u2 "Error: The 'git-commit-author' helper function is required to extract identity from a commit."
                 return 1
             fi
 
-            if command git config --global --get "profile.$new_profile_name.name" >/dev/null 2>&1; then
-                print -u2 "Error: A profile named '$new_profile_name' already exists."
+            local extracted_author_info
+            extracted_author_info=$(git-commit-author --get "$commit_reference" 2>/dev/null)
+            if [[ $? -ne 0 || -z "$extracted_author_info" ]]; then
+                print -u2 "Error: Failed to retrieve author information from reference '$commit_reference'."
                 return 1
             fi
 
-            local input_name input_email input_key
+            input_name="${extracted_author_info%%$'\t'*}"
+            input_email="${extracted_author_info#*$'\t'}"
+            print -r -- "Successfully retrieved identity: $input_name <$input_email>"
+        else
+            print -n -- "Full Name: "
+            read -r input_name
+            print -n -- "Email:     "
+            read -r input_email
+            print -n -- "Signing Key (optional): "
+            read -r input_key
+        fi
 
-            if [[ -n "$commit_reference" ]]; then
-                if ! (( $+functions[git-commit-author] )); then
-                    print -u2 "Error: The 'git-commit-author' helper function is required to extract identity from a commit."
-                    return 1
-                fi
+        if [[ -z "$input_name" ]]; then
+            print -u2 "Error: Full Name is required to create a profile."
+            return 1
+        fi
 
-                local extracted_author_info
-                extracted_author_info=$(git-commit-author --get "$commit_reference" 2>/dev/null)
-                if [[ $? -ne 0 || -z "$extracted_author_info" ]]; then
-                    print -u2 "Error: Failed to retrieve author information from reference '$commit_reference'."
-                    return 1
-                fi
+        if [[ -z "$input_email" ]]; then
+            print -u2 "Error: Email is required to create a profile."
+            return 1
+        fi
 
-                input_name="${extracted_author_info%%$'\t'*}"
-                input_email="${extracted_author_info#*$'\t'}"
-                print -r -- "Successfully retrieved identity: $input_name <$input_email>"
-            else
-                print -n -- "Full Name: "
-                read -r input_name
-                print -n -- "Email:     "
-                read -r input_email
-                print -n -- "Signing Key (optional): "
-                read -r input_key
-            fi
+        command git config --global "profile.$new_profile_name.name" "$input_name"
+        command git config --global "profile.$new_profile_name.email" "$input_email"
+        if [[ -n "$input_key" ]]; then
+            command git config --global "profile.$new_profile_name.signingkey" "$input_key"
+        fi
 
-            if [[ -z "$input_name" ]]; then
-                print -u2 "Error: Full Name is required to create a profile."
-                return 1
-            fi
-            
-            if [[ -z "$input_email" ]]; then
-                print -u2 "Error: Email is required to create a profile."
-                return 1
-            fi
+        print -r -- "Profile '$new_profile_name' was successfully created."
 
-            command git config --global "profile.$new_profile_name.name" "$input_name"
-            command git config --global "profile.$new_profile_name.email" "$input_email"
+        if (( $+parsed_options[--use] )); then
+            command git config "$target_scope" user.name "$input_name"
+            command git config "$target_scope" user.email "$input_email"
             if [[ -n "$input_key" ]]; then
-                command git config --global "profile.$new_profile_name.signingkey" "$input_key"
+                command git config "$target_scope" user.signingkey "$input_key"
+            else
+                command git config "$target_scope" --unset user.signingkey 2>/dev/null
             fi
-            
-            print -r -- "Profile '$new_profile_name' was successfully created."
+            print -r -- "Git identity ($target_scope) set to: $input_name <$input_email>${input_key:+ (Key: $input_key)}"
+        fi
+        return 0
+        ;;
 
-            if (( $+parsed_options[--use] )); then
-                _git_profile_apply_identity_to_scope "$configuration_scope" "$input_name" "$input_email" "$input_key"
-            fi
-            ;;
+    set)
+        local target_profile_name="$1"
+        local update_key="$2"
+        local update_value="$3"
 
-        set)
-            local target_profile_name="$1"
-            local update_key="$2"
-            local update_value="$3"
-            
-            if [[ -z "$target_profile_name" || -z "$update_key" || -z "$update_value" ]]; then
-                 print -u2 "Usage Error: git-profile set <profile_name> <key> <value>"
-                 return 1
-            fi
+        if [[ -z "$target_profile_name" || -z "$update_key" || -z "$update_value" ]]; then
+             print -u2 "Usage Error: git-profile set <profile_name> <key> <value>"
+             return 1
+        fi
 
-            if ! command git config --global --get "profile.$target_profile_name.name" >/dev/null 2>&1; then
-                print -u2 "Error: Profile '$target_profile_name' does not exist."
-                return 1
-            fi
+        if ! command git config --global --get "profile.$target_profile_name.name" >/dev/null 2>&1; then
+            print -u2 "Error: Profile '$target_profile_name' does not exist."
+            return 1
+        fi
 
-            case "$update_key" in
-                name|email|signingkey)
-                    command git config --global "profile.$target_profile_name.$update_key" "$update_value"
-                    print -r -- "Successfully updated profile '$target_profile_name': property '$update_key' set to '$update_value'."
-                    ;;
-                *)
-                    print -u2 "Error: Invalid property key '$update_key'. Allowed keys are: name, email, signingkey."
-                    return 1
-                    ;;
-            esac
-            ;;
-
-        rename)
-            local current_profile_name="$1"
-            local new_profile_name="$2"
-            
-            if [[ -z "$current_profile_name" || -z "$new_profile_name" ]]; then
-                print -u2 "Usage Error: git-profile rename <current_profile_name> <new_profile_name>"
-                return 1
-            fi
-
-            local stored_name
-            stored_name=$(command git config --global "profile.$current_profile_name.name" 2>/dev/null)
-            local stored_email
-            stored_email=$(command git config --global "profile.$current_profile_name.email" 2>/dev/null)
-            local stored_key
-            stored_key=$(command git config --global "profile.$current_profile_name.signingkey" 2>/dev/null)
-
-            if [[ -z "$stored_name" ]]; then
-                print -u2 "Error: Profile '$current_profile_name' does not exist."
-                return 1
-            fi
-
-            command git config --global "profile.$new_profile_name.name" "$stored_name"
-            command git config --global "profile.$new_profile_name.email" "$stored_email"
-            if [[ -n "$stored_key" ]]; then
-                 command git config --global "profile.$new_profile_name.signingkey" "$stored_key"
-            fi
-
-            command git config --global --remove-section "profile.$current_profile_name"
-            print -r -- "Successfully renamed profile from '$current_profile_name' to '$new_profile_name'."
-            ;;
-
-        delete)
-            local target_profile_name="$1"
-            
-            if [[ -z "$target_profile_name" ]]; then
-                print -u2 "Error: Profile name is required to perform deletion."
-                return 1
-            fi
-
-            if ! command git config --global --remove-section "profile.$target_profile_name" 2>/dev/null; then
-                print -u2 "Error: Profile '$target_profile_name' does not exist."
-                return 1
-            fi
-            print -r -- "Profile '$target_profile_name' was successfully deleted."
-            ;;
-
-        export)
-            local -A export_options
-            zparseopts -D -E -A export_options o: -out:
-
-            local output_file_path="${export_options[-o]}${export_options[--out]}"
-            local -a requested_profiles=("$@")
-            local -a all_configuration_lines filtered_configuration_lines
-            local current_profile_name current_line profile_found
-
-            all_configuration_lines=("${(@f)$(command git config --global --get-regexp '^profile\.' 2>/dev/null)}")
-
-            if [[ ${#all_configuration_lines} -eq 0 ]]; then
-                if [[ ${#requested_profiles} -gt 0 ]]; then
-                    print -u2 "Error: No profiles exist in the global configuration to export."
-                    return 1
-                fi
+        case "$update_key" in
+            name|email|signingkey)
+                command git config --global "profile.$target_profile_name.$update_key" "$update_value"
+                print -r -- "Successfully updated profile '$target_profile_name': '$update_key' set to '$update_value'."
                 return 0
-            fi
+                ;;
+            *)
+                print -u2 "Error: Invalid property key '$update_key'. Allowed keys are: name, email, signingkey."
+                return 1
+                ;;
+        esac
+        ;;
 
+    rename)
+        local current_profile_name="$1"
+        local new_profile_name="$2"
+
+        if [[ -z "$current_profile_name" || -z "$new_profile_name" ]]; then
+            print -u2 "Usage Error: git-profile rename <current_profile_name> <new_profile_name>"
+            return 1
+        fi
+
+        local stored_name stored_email stored_key
+        stored_name=$(command git config --global "profile.$current_profile_name.name" 2>/dev/null)
+        stored_email=$(command git config --global "profile.$current_profile_name.email" 2>/dev/null)
+        stored_key=$(command git config --global "profile.$current_profile_name.signingkey" 2>/dev/null)
+
+        if [[ -z "$stored_name" ]]; then
+            print -u2 "Error: Profile '$current_profile_name' does not exist."
+            return 1
+        fi
+
+        if command git config --global --get "profile.$new_profile_name.name" >/dev/null 2>&1; then
+            print -u2 "Error: A profile named '$new_profile_name' already exists."
+            return 1
+        fi
+
+        command git config --global "profile.$new_profile_name.name" "$stored_name"
+        command git config --global "profile.$new_profile_name.email" "$stored_email"
+        if [[ -n "$stored_key" ]]; then
+             command git config --global "profile.$new_profile_name.signingkey" "$stored_key"
+        fi
+
+        command git config --global --remove-section "profile.$current_profile_name" 2>/dev/null
+        print -r -- "Successfully renamed profile from '$current_profile_name' to '$new_profile_name'."
+        return 0
+        ;;
+
+    delete)
+        local target_profile_name="$1"
+
+        if [[ -z "$target_profile_name" ]]; then
+            print -u2 "Error: Profile name is required to perform deletion."
+            return 1
+        fi
+
+        if ! command git config --global --remove-section "profile.$target_profile_name" 2>/dev/null; then
+            print -u2 "Error: Profile '$target_profile_name' does not exist."
+            return 1
+        fi
+        print -r -- "Profile '$target_profile_name' was successfully deleted."
+        return 0
+        ;;
+
+    export)
+        local output_file_path="${parsed_options[-o]}${parsed_options[--out]}"
+        local -a requested_profiles=("$@")
+        local -a all_configuration_lines filtered_configuration_lines
+        local current_profile_name current_line profile_found
+
+        all_configuration_lines=("${(@f)$(command git config --global --get-regexp '^profile\.' 2>/dev/null)}")
+
+        if [[ ${#all_configuration_lines} -eq 0 ]]; then
             if [[ ${#requested_profiles} -gt 0 ]]; then
-                for current_profile_name in "${requested_profiles[@]}"; do
-                    profile_found=0
-                    for current_line in "${all_configuration_lines[@]}"; do
-                        if [[ "$current_line" == profile.$current_profile_name.* ]]; then
-                            filtered_configuration_lines+=("$current_line")
-                            profile_found=1
-                        fi
-                    done
-                    
-                    if (( ! profile_found )); then
-                        print -u2 "Error: Profile '$current_profile_name' was not found in the global configuration."
-                        return 1
+                print -u2 "Error: No profiles exist in the global configuration to export."
+                return 1
+            fi
+            return 0
+        fi
+
+        if [[ ${#requested_profiles} -gt 0 ]]; then
+            for current_profile_name in "${requested_profiles[@]}"; do
+                profile_found=0
+                for current_line in "${all_configuration_lines[@]}"; do
+                    if [[ "$current_line" == profile.$current_profile_name.* ]]; then
+                        filtered_configuration_lines+=("$current_line")
+                        profile_found=1
                     fi
                 done
-            else
-                filtered_configuration_lines=("${all_configuration_lines[@]}")
-            fi
 
-            if [[ -n "$output_file_path" ]]; then
-                print -l -r -- "${filtered_configuration_lines[@]}" > "$output_file_path"
-            else
-                print -l -r -- "${filtered_configuration_lines[@]}"
-            fi
-            ;;
-
-        import)
-            local -A import_options 
-            local -A new_profile_names
-            zparseopts -D -E -A import_options -force
-
-            local input_source_path="${1:--}"
-            local -a file_lines parsed_import_data
-            local current_line extracted_profile_name configuration_key configuration_value
-
-            if [[ "$input_source_path" == "-" ]]; then
-                # Standard input
-                file_lines=("${(@f)$(</dev/stdin)}")
-            else
-                if [[ ! -f "$input_source_path" ]]; then
-                    print -u2 "Error: The specified import file '$input_source_path' does not exist."
-                    return 1
-                fi
-                file_lines=("${(@f)$(< "$input_source_path")}")
-            fi
-
-            if [[ ${#file_lines} -eq 0 ]]; then
-                print -r -- "Import file is empty. Nothing to import."
-                return 0
-            fi
-
-            for current_line in "${file_lines[@]}"; do
-                # Skip empty or whitespace-only lines
-                [[ -z "${current_line//[[:space:]]/}" ]] && continue
-                
-                # Zsh native regex match
-                if [[ "$current_line" =~ ^profile\.([^.]+)\.([^ ]+)[[:space:]](.+)$ ]]; then
-                    extracted_profile_name="$match[1]"
-                    new_profile_names[$extracted_profile_name]=1
-                    parsed_import_data+=("$current_line")
-                else
-                    print -u2 "Error: Encountered invalid import format at line: $current_line"
+                if (( ! profile_found )); then
+                    print -u2 "Error: Profile '$current_profile_name' was not found in the global configuration."
                     return 1
                 fi
             done
+        else
+            filtered_configuration_lines=("${all_configuration_lines[@]}")
+        fi
 
-            # Pre-flight check for existing profiles if --force is not specified
-            if (( ! ${+import_options[--force]} )); then
-                for extracted_profile_name in "${(k)new_profile_names[@]}"; do
-                    if command git config --global --get-regexp "^profile\.$extracted_profile_name\." >/dev/null 2>&1; then
-                        print -u2 "Error: Profile '$extracted_profile_name' already exists. Use --force flag to overwrite existing profiles."
-                        return 1
-                    fi
-                done
+        if [[ -n "$output_file_path" ]]; then
+            print -l -r -- "${filtered_configuration_lines[@]}" > "$output_file_path"
+            print -r -- "Successfully exported profiles to '$output_file_path'."
+        else
+            print -l -r -- "${filtered_configuration_lines[@]}"
+        fi
+        return 0
+        ;;
+
+    import)
+        local input_source_path="${1:--}"
+        local -a file_lines parsed_import_data
+        local current_line extracted_profile_name configuration_key configuration_value
+        local -A new_profile_names
+
+        if [[ "$input_source_path" == "-" ]]; then
+            file_lines=("${(@f)$(</dev/stdin)}")
+        else
+            if [[ ! -f "$input_source_path" ]]; then
+                print -u2 "Error: The specified import file '$input_source_path' does not exist."
+                return 1
             fi
+            file_lines=("${(@f)$(< "$input_source_path")}")
+        fi
 
-            # Clean existing profiles if --force is specified
-            if (( ${+import_options[--force]} )); then
-                for extracted_profile_name in "${(k)new_profile_names[@]}"; do
-                    command git config --global --remove-section "profile.$extracted_profile_name" 2>/dev/null
-                done
+        if [[ ${#file_lines} -eq 0 ]]; then
+            print -r -- "Import file is empty. Nothing to import."
+            return 0
+        fi
+
+        for current_line in "${file_lines[@]}"; do
+            [[ -z "${current_line//[[:space:]]/}" ]] && continue
+
+            if [[ "$current_line" =~ ^profile\.([^.]+)\.([^ ]+)[[:space:]](.+)$ ]]; then
+                extracted_profile_name="$match[1]"
+                new_profile_names[$extracted_profile_name]=1
+                parsed_import_data+=("$current_line")
+            else
+                print -u2 "Error: Encountered invalid import format at line: $current_line"
+                return 1
             fi
+        done
 
-            # Apply imported data
-            for current_line in "${parsed_import_data[@]}"; do
-                configuration_key="${current_line%% *}"
-                configuration_value="${current_line#* }"
-                command git config --global "$configuration_key" "$configuration_value"
+        # Pre-flight check for existing profiles if --force is not specified
+        if (( ! ${+parsed_options[--force]} )); then
+            for extracted_profile_name in "${(k)new_profile_names[@]}"; do
+                if command git config --global --get-regexp "^profile\.$extracted_profile_name\." >/dev/null 2>&1; then
+                    print -u2 "Error: Profile '$extracted_profile_name' already exists. Use --force flag to overwrite."
+                    return 1
+                fi
             done
-            print -r -- "Successfully imported ${#new_profile_names} profile(s)."
-            ;;
+        fi
 
-        *)
-            _git_profile_show_help
-            if [[ -n "$selected_subcommand" && "$selected_subcommand" != "-h" && "$selected_subcommand" != "--help" ]]; then
-                 return 1
-            fi
-            ;;
-    esac
-}
+        # Clean existing profiles if --force is specified
+        if (( ${+parsed_options[--force]} )); then
+            for extracted_profile_name in "${(k)new_profile_names[@]}"; do
+                command git config --global --remove-section "profile.$extracted_profile_name" 2>/dev/null
+            done
+        fi
 
-# Entry point invocation
-_git_profile_main "$@"
+        # Apply imported data
+        for current_line in "${parsed_import_data[@]}"; do
+            configuration_key="${current_line%% *}"
+            configuration_value="${current_line#* }"
+            command git config --global "$configuration_key" "$configuration_value"
+        done
+        print -r -- "Successfully imported ${#new_profile_names} profile(s) into global scope."
+        return 0
+esac
