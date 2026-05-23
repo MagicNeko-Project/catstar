@@ -11,9 +11,10 @@ _git_profile_get_commit_author() {
         print -u2 "Error: '$commit_ref' is not a valid commit reference."
         return 1
     fi
-    local author_name author_email
+    local author_name author_email signing_key
     author_name=$(command git show -s --format='%an' "$commit_ref" 2>/dev/null)
     author_email=$(command git show -s --format='%ae' "$commit_ref" 2>/dev/null)
+    signing_key=$(command git show -s --format='%GK' "$commit_ref" 2>/dev/null)
 
     if [[ -z "$author_name" || -z "$author_email" ]]; then
         print -u2 "Error: Failed to extract author details from '$commit_ref'."
@@ -21,6 +22,7 @@ _git_profile_get_commit_author() {
     fi
     commit_author_name="$author_name"
     commit_author_email="$author_email"
+    commit_author_key="$signing_key"
 }
 
 _git_profile_list_commit_authors() {
@@ -428,14 +430,18 @@ case "$selected_subcommand" in
             return 1
         fi
 
-        local commit_author_name commit_author_email
+        local commit_author_name commit_author_email commit_author_key
         _git_profile_get_commit_author "$commit_reference" || return 1
 
         command git config "$target_scope" user.name "$commit_author_name"
         command git config "$target_scope" user.email "$commit_author_email"
-        command git config "$target_scope" --unset user.signingkey 2>/dev/null
+        if [[ -n "$commit_author_key" ]]; then
+            command git config "$target_scope" user.signingkey "$commit_author_key"
+        else
+            command git config "$target_scope" --unset user.signingkey 2>/dev/null
+        fi
 
-        print -r -- "Git identity ($target_scope) set to: $commit_author_name <$commit_author_email>"
+        print -r -- "Git identity ($target_scope) set to: $commit_author_name <$commit_author_email>${commit_author_key:+ (Key: $commit_author_key)}"
         return 0
         ;;
 
@@ -467,11 +473,12 @@ case "$selected_subcommand" in
         local input_name input_email input_key
 
         if [[ -n "$commit_reference" ]]; then
-            local commit_author_name commit_author_email
+            local commit_author_name commit_author_email commit_author_key
             _git_profile_get_commit_author "$commit_reference" || return 1
             input_name="$commit_author_name"
             input_email="$commit_author_email"
-            print -r -- "Successfully retrieved identity: $input_name <$input_email>"
+            input_key="$commit_author_key"
+            print -r -- "Successfully retrieved identity: $input_name <$input_email>${input_key:+ (Key: $input_key)}"
         else
             print -n -- "Full Name: "
             read -r input_name
