@@ -71,6 +71,8 @@ function _git-profile() {
                 "delete:Delete a profile"
                 "export:Export profiles"
                 "import:Import profiles"
+                "authors:List unique contributors in the Git history"
+                "use-commit:Apply a commit author identity directly"
             )
             _describe -t commands 'git-profile command' command_list && return_code=0
             ;;
@@ -112,6 +114,16 @@ function _git-profile() {
                     _arguments -s -S "${common_options[@]}" \
                         '--force[Overwrite existing profiles]' \
                         '1:import file (or - for stdin):_files' && return_code=0
+                    ;;
+                
+                use-commit)
+                    _arguments "${common_options[@]}" \
+                        '1:commit ref (e.g. HEAD):' && return_code=0
+                    ;;
+                
+                authors)
+                    _arguments "${common_options[@]}" \
+                        '1:commit ref or --all:' && return_code=0
                     ;;
                 
                 current|list|clear)

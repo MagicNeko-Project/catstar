@@ -5,6 +5,54 @@ _git_profile_is_inside_git_repository() {
     command git rev-parse --is-inside-work-tree >/dev/null 2>&1
 }
 
+_git_profile_get_commit_author() {
+    local commit_ref="${1:-HEAD}"
+    if ! command git rev-parse --verify --quiet "$commit_ref^{commit}" >/dev/null; then
+        print -u2 "Error: '$commit_ref' is not a valid commit reference."
+        return 1
+    fi
+    local author_name author_email
+    author_name=$(command git show -s --format='%an' "$commit_ref" 2>/dev/null)
+    author_email=$(command git show -s --format='%ae' "$commit_ref" 2>/dev/null)
+
+    if [[ -z "$author_name" || -z "$author_email" ]]; then
+        print -u2 "Error: Failed to extract author details from '$commit_ref'."
+        return 1
+    fi
+    commit_author_name="$author_name"
+    commit_author_email="$author_email"
+}
+
+_git_profile_list_commit_authors() {
+    local list_ref="$1"
+    local -a git_args=(--format="%h%x09%an <%ae>")
+
+    if [[ -n "$list_ref" ]]; then
+        if [[ "$list_ref" != "--all" ]] && ! command git rev-parse --verify --quiet "$list_ref^{commit}" >/dev/null; then
+            print -u2 "Error: '$list_ref' is not a valid commit reference."
+            return 1
+        fi
+        git_args+=("$list_ref")
+    else
+        git_args+=(--all)
+    fi
+
+    local -A seen
+    local line commit author
+
+    printf "%-10s %s\n" "COMMIT" "AUTHOR"
+    printf "%-10s %s\n" "------" "------"
+
+    for line in "${(@f)$(command git log "${git_args[@]}" 2>/dev/null)}"; do
+        commit="${line%%$'\t'*}"
+        author="${line#*$'\t'}"
+        if (( ! $+seen[$author] )); then
+            seen[$author]=$commit
+            printf "%-10s %s\n" "$commit" "$author"
+        fi
+    done
+}
+
 _git_profile_show_help() {
     print -r -- 'Usage: git-profile [options] <command> [args...]
 
@@ -15,6 +63,8 @@ Identity Management:
   list                        List profiles and active status
   use [<name>]                Apply a profile (interactively or by name)
   clear                       Remove the active identity
+  use-commit <ref>            Apply a commit author identity directly
+  authors [<ref> | --all]     List unique contributors in the Git history
 
 Profile Templates:
   add <name> [ref] [--use]    Create a new profile (and optionally apply it)
@@ -203,14 +253,14 @@ else
         # For read-only commands, safely default to global.
         # For write/mutation commands, fail to prevent implicit global state changes!
         case "$selected_subcommand" in
-            default|current|list|add|set|rename|delete|export|import)
+            default|current|list|add|set|rename|delete|export|import|authors)
                 if [[ "$selected_subcommand" == "add" ]] && (( $+parsed_options[--use] )); then
                     print -u2 "Error: Not inside a Git repository. To change your system-wide global identity, you must explicitly specify the --global flag."
                     return 1
                 fi
                 target_scope="--global"
                 ;;
-            use|clear)
+            use|clear|use-commit)
                 local action_verb="change"
                 [[ "$selected_subcommand" == "clear" ]] && action_verb="clear"
                 print -u2 "Error: Not inside a Git repository. To ${action_verb} your system-wide global identity, you must explicitly specify the --global flag."
@@ -221,7 +271,7 @@ else
 fi
 
 case "$selected_subcommand" in
-    default|current|use|clear|list|add|set|rename|delete|export|import)
+    default|current|use|clear|list|add|set|rename|delete|export|import|authors|use-commit)
         # Valid subcommands
         ;;
     *)
@@ -366,6 +416,40 @@ case "$selected_subcommand" in
         fi
         ;;
 
+    use-commit)
+        local commit_reference="$1"
+        if [[ -z "$commit_reference" ]]; then
+            print -u2 "Error: A commit reference must be provided (e.g., HEAD)."
+            return 1
+        fi
+
+        if ! _git_profile_is_inside_git_repository; then
+            print -u2 "Error: Operation requires a valid Git repository."
+            return 1
+        fi
+
+        local commit_author_name commit_author_email
+        _git_profile_get_commit_author "$commit_reference" || return 1
+
+        command git config "$target_scope" user.name "$commit_author_name"
+        command git config "$target_scope" user.email "$commit_author_email"
+        command git config "$target_scope" --unset user.signingkey 2>/dev/null
+
+        print -r -- "Git identity ($target_scope) set to: $commit_author_name <$commit_author_email>"
+        return 0
+        ;;
+
+    authors)
+        if ! _git_profile_is_inside_git_repository; then
+            print -u2 "Error: Operation requires a valid Git repository."
+            return 1
+        fi
+
+        local list_ref="${1:-}"
+        _git_profile_list_commit_authors "$list_ref"
+        return 0
+        ;;
+
     add)
         local new_profile_name="$1"
         local commit_reference="$2"
@@ -383,20 +467,10 @@ case "$selected_subcommand" in
         local input_name input_email input_key
 
         if [[ -n "$commit_reference" ]]; then
-            if (( ! $+functions[git-commit-author] )); then
-                print -u2 "Error: The 'git-commit-author' helper function is required to extract identity from a commit."
-                return 1
-            fi
-
-            local extracted_author_info
-            extracted_author_info=$(git-commit-author --get "$commit_reference" 2>/dev/null)
-            if [[ $? -ne 0 || -z "$extracted_author_info" ]]; then
-                print -u2 "Error: Failed to retrieve author information from reference '$commit_reference'."
-                return 1
-            fi
-
-            input_name="${extracted_author_info%%$'\t'*}"
-            input_email="${extracted_author_info#*$'\t'}"
+            local commit_author_name commit_author_email
+            _git_profile_get_commit_author "$commit_reference" || return 1
+            input_name="$commit_author_name"
+            input_email="$commit_author_email"
             print -r -- "Successfully retrieved identity: $input_name <$input_email>"
         else
             print -n -- "Full Name: "
