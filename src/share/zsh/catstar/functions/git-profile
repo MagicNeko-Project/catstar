@@ -145,7 +145,23 @@ else
     if _git_profile_is_inside_git_repository; then
         target_scope="--local"
     else
-        target_scope="--global"
+        # For read-only commands, safely default to global.
+        # For write/mutation commands, fail to prevent implicit global state changes!
+        case "$selected_subcommand" in
+            current|list|add|set|rename|delete|export|import)
+                if [[ "$selected_subcommand" == "add" ]] && (( $+parsed_options[--use] )); then
+                    print -u2 "Error: Not inside a Git repository. To change your system-wide global identity, you must explicitly specify the --global flag."
+                    return 1
+                fi
+                target_scope="--global"
+                ;;
+            use|clear)
+                local action_verb="change"
+                [[ "$selected_subcommand" == "clear" ]] && action_verb="clear"
+                print -u2 "Error: Not inside a Git repository. To ${action_verb} your system-wide global identity, you must explicitly specify the --global flag."
+                return 1
+                ;;
+        esac
     fi
 fi
 
