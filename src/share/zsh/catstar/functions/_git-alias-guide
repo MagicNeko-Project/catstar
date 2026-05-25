@@ -33,7 +33,7 @@ function _git-alias-guide() {
             )
             _describe -t commands 'git-alias-guide command' command_list && return_code=0
             ;;
-        
+
         args)
             case "$words[1]" in
                 search|-s|--search)

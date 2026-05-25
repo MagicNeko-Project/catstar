@@ -9,17 +9,17 @@
 local -a database=(
   "g@@@git@@@General@@@The entry point for all git commands"
   "grt@@@cd \"\$(git rev-parse --show-toplevel || echo .)\"@@@General@@@Change directory to the git repository root"
-  
+
   "ga@@@git add@@@Add@@@Add file contents to the index"
   "gaa@@@git add --all@@@Add@@@Add all changes to the index"
   "gapa@@@git add --patch@@@Add@@@Interactively choose hunks of patch between the index and the work tree"
   "gau@@@git add --update@@@Add@@@Update the index just where it already has an entry matching <pathspec>"
   "gav@@@git add --verbose@@@Add@@@Be verbose"
   "gwip@@@git add -A; git commit --message \"--wip--\"@@@Add@@@Commit as Work In Progress (skips CI and verification)"
-  
+
   "gap@@@git apply@@@Apply@@@Apply a patch to files and/or to the index"
   "gapt@@@git apply --3way@@@Apply@@@Attempt 3-way merge if a patch does not apply cleanly"
-  
+
   "gb@@@git branch@@@Branch@@@List, create, or delete branches"
   "gba@@@git branch --all@@@Branch@@@List both remote-tracking branches and local branches"
   "gbd@@@git branch --delete@@@Branch@@@Delete a branch (checks if fully merged)"
@@ -33,24 +33,24 @@ local -a database=(
   "gbgD@@@LANG=C git branch --no-color -vv | grep \": gone]\" | xargs git branch -D@@@Branch@@@Force delete local branches whose upstream is gone"
   "gbda@@@git branch --no-color --merged ...@@@Branch@@@Delete all local branches merged into main or develop"
   "gbds@@@git for-each-ref refs/heads/ ...@@@Branch@@@Delete local branches that have been squashed on remote"
-  
+
   "gco@@@git checkout@@@Checkout@@@Switch branches or restore working tree files"
   "gcor@@@git checkout --recurse-submodules@@@Checkout@@@Checkout and update submodules"
   "gcb@@@git checkout -b@@@Checkout@@@Create and switch to a new branch"
   "gcB@@@git checkout -B@@@Checkout@@@Create or reset and switch to a new branch"
   "gcd@@@git checkout \$(git_develop_branch)@@@Checkout@@@Checkout the development branch"
   "gcm@@@git checkout \$(git_main_branch)@@@Checkout@@@Checkout the main/master branch"
-  
+
   "gcp@@@git cherry-pick@@@Cherry-pick@@@Apply the changes introduced by some existing commits"
   "gcpa@@@git cherry-pick --abort@@@Cherry-pick@@@Cancel the cherry-pick operation"
   "gcpc@@@git cherry-pick --continue@@@Cherry-pick@@@Continue the cherry-pick operation"
-  
+
   "gclean@@@git clean --interactive -d@@@Clean@@@Remove untracked files from the working tree interactively"
-  
+
   "gcl@@@git clone --recurse-submodules@@@Clone@@@Clone a repository including submodules"
   "gclf@@@git clone --recursive --shallow-submodules ...@@@Clone@@@Clone a repository with shallow submodules"
   "gccd@@@git clone --recurse-submodules ... && cd@@@Clone@@@Clone a repository and immediately cd into it"
-  
+
   "gc@@@git commit --verbose@@@Commit@@@Record changes to the repository (shows diff in editor)"
   "gca@@@git commit --verbose --all@@@Commit@@@Commit all changed files (skips git add)"
   "gca!@@@git commit --verbose --all --amend@@@Commit@@@Amend the last commit including all changes"
@@ -69,7 +69,7 @@ local -a database=(
   "gcans!@@@git commit --verbose --all --signoff --no-edit --amend@@@Commit@@@Amend the last commit, add signed-off-by line, without opening editor"
   "gcann!@@@git commit --verbose --all --date=now --no-edit --amend@@@Commit@@@Amend the last commit, set date to now, without opening editor"
   "gcn@@@git commit --verbose --no-edit@@@Commit@@@Record changes to repository without opening editor"
-  
+
   "gd@@@git diff@@@Diff@@@Show changes between commits, commit and working tree, etc"
   "gdca@@@git diff --cached@@@Diff@@@Show changes between index and last commit"
   "gds@@@git diff --staged@@@Diff@@@Show changes between staged changes and last commit"
@@ -79,11 +79,11 @@ local -a database=(
   "gdnolock@@@git diff ... excluding lock files@@@Diff@@@Show diff excluding package-lock.json and other lock files"
   "gdt@@@git diff-tree --no-commit-id --name-only -r@@@Diff@@@Show file names changed in a specific commit"
   "gdv@@@git diff -w \"\$@\" | view -@@@Diff@@@Show diff in vim view mode"
-  
+
   "gf@@@git fetch@@@Fetch@@@Download objects and refs from another repository"
   "gfa@@@git fetch --all --tags --prune --jobs=10@@@Fetch@@@Fetch all remotes, tags, and prune deleted branches"
   "gfo@@@git fetch origin@@@Fetch@@@Fetch from origin"
-  
+
   "glol@@@git log --graph --pretty=\"...\"@@@Log@@@Visual log with relative dates and graph"
   "glola@@@git log --graph --pretty=\"...\" --all@@@Log@@@Visual log for all branches"
   "glog@@@git log --oneline --decorate --graph@@@Log@@@Oneline log with graph"
@@ -98,7 +98,7 @@ local -a database=(
   "glod@@@git log --graph --pretty=\"...\"@@@Log@@@Visual log with commit author details"
   "glols@@@git log --graph --pretty=\"...\" --stat@@@Log@@@Visual log with stat details"
   "glp@@@_git_log_prettily@@@Log@@@Show pretty log using custom format"
-  
+
   "gm@@@git merge@@@Merge@@@Join two or more development histories together"
   "gma@@@git merge --abort@@@Merge@@@Abort the merge"
   "gmc@@@git merge --continue@@@Merge@@@Continue the merge after resolving conflicts"
@@ -108,7 +108,7 @@ local -a database=(
   "gmum@@@git merge upstream/\$(git_main_branch)@@@Merge@@@Merge main branch from upstream"
   "gmtl@@@git mergetool --no-prompt@@@Merge@@@Run git mergetool without prompting"
   "gmtlvim@@@git mergetool --no-prompt --tool=vimdiff@@@Merge@@@Run git mergetool with vimdiff"
-  
+
   "gl@@@git pull@@@Pull@@@Fetch from and integrate with another repository or a local branch"
   "gpr@@@git pull --rebase@@@Pull@@@Pull and rebase local commits on top of remote"
   "gpra@@@git pull --rebase --autostash@@@Pull@@@Pull, rebase, and automatically stash/unstash uncommitted changes"
@@ -123,7 +123,7 @@ local -a database=(
   "gprumi@@@git pull --rebase=interactive upstream \$(git_main_branch)@@@Pull@@@Pull and interactively rebase from upstream main branch"
   "ggpull@@@git pull origin \"\$(git_current_branch)\"@@@Pull@@@Pull from origin for the current branch"
   "gluc@@@git pull upstream \$(git_current_branch)@@@Pull@@@Pull from upstream for the current branch"
-  
+
   "gp@@@git push@@@Push@@@Update remote refs along with associated objects"
   "gpd@@@git push --dry-run@@@Push@@@Dry run push (checks what would be pushed without modifying remote)"
   "gpf!@@@git push --force@@@Push@@@Force push (overwrites remote changes, USE WITH CAUTION)"
@@ -137,7 +137,7 @@ local -a database=(
   "gpoat@@@git push origin --all && git push origin --tags@@@Push@@@Push all branches and tags to origin"
   "gpod@@@git push origin --delete@@@Push@@@Delete specified ref from origin remote"
   "gpu@@@git push upstream@@@Push@@@Push to upstream remote"
-  
+
   "grb@@@git rebase@@@Rebase@@@Reapply commits on top of another base tip"
   "grba@@@git rebase --abort@@@Rebase@@@Abort the rebase operation and restore original branch state"
   "grbc@@@git rebase --continue@@@Rebase@@@Continue the rebase operation after resolving conflicts"
@@ -149,7 +149,7 @@ local -a database=(
   "grbom@@@git rebase origin/\$(git_main_branch)@@@Rebase@@@Rebase onto origin main branch"
   "grbum@@@git rebase upstream/\$(git_main_branch)@@@Rebase@@@Rebase onto upstream main branch"
   "grf@@@git reflog@@@Rebase@@@Show reflog (history of all local HEAD updates, great for recovering lost work)"
-  
+
   "gr@@@git remote@@@Remote@@@Manage set of tracked repositories"
   "grv@@@git remote --verbose@@@Remote@@@List remotes with their fetch/push URLs"
   "gra@@@git remote add@@@Remote@@@Add a new remote tracking repository"
@@ -157,7 +157,7 @@ local -a database=(
   "grup@@@git remote update@@@Remote@@@Update all tracked remote repositories"
   "grmv@@@git remote rename@@@Remote@@@Rename a tracked remote repository"
   "grset@@@git remote set-url@@@Remote@@@Change the URL of a remote repository"
-  
+
   "grh@@@git reset@@@Reset@@@Reset current HEAD to the specified state"
   "grhh@@@git reset --hard@@@Reset@@@Hard reset (destroys ALL local changes, staged and unstaged!)"
   "grhs@@@git reset --soft@@@Reset@@@Soft reset (keeps all changes staged in index)"
@@ -166,15 +166,15 @@ local -a database=(
   "groh@@@git reset origin/\$(git_current_branch) --hard@@@Reset@@@Hard reset to match the remote branch exactly"
   "gru@@@git reset --@@@Reset@@@Unstage all staged changes (reset index without touching work tree)"
   "grhk@@@git reset --keep@@@Reset@@@Reset HEAD but keep local changes if they don't conflict"
-  
+
   "grs@@@git restore@@@Restore@@@Restore working tree files"
   "grst@@@git restore --staged@@@Restore@@@Unstage files (same as git reset)"
   "grss@@@git restore --source@@@Restore@@@Restore files using a specific source commit/tree"
-  
+
   "grev@@@git revert@@@Revert@@@Revert some existing commits by creating new inverse commits"
   "greva@@@git revert --abort@@@Revert@@@Abort the revert operation and restore previous state"
   "grevc@@@git revert --continue@@@Revert@@@Continue the revert operation after conflict resolution"
-  
+
   "gsta@@@git stash push@@@Stash@@@Stash dirty changes (stashes staged and unstaged changes)"
   "gstaa@@@git stash apply@@@Stash@@@Apply the latest stashed changes without removing them from stash list"
   "gstl@@@git stash list@@@Stash@@@List all stashed changesets"
@@ -184,36 +184,36 @@ local -a database=(
   "gstall@@@git stash --all@@@Stash@@@Stash all changes including untracked and ignored files"
   "gstc@@@git stash clear@@@Stash@@@Remove/destroy all stashed changesets"
   "gsts@@@git stash show --patch@@@Stash@@@Show changes in stash as a patch"
-  
+
   "gst@@@git status@@@Status@@@Show the working tree status"
   "gss@@@git status --short@@@Status@@@Show status in compact short format"
   "gsb@@@git status --short --branch@@@Status@@@Show status in short format with branch info"
-  
+
   "gsi@@@git submodule init@@@Submodule@@@Initialize submodules"
   "gsu@@@git submodule update@@@Submodule@@@Update initialized submodules to latest commit"
-  
+
   "gsw@@@git switch@@@Switch@@@Switch branches safely"
   "gswc@@@git switch --create@@@Switch@@@Create and switch to a new branch"
   "gswm@@@git switch \$(git_main_branch)@@@Switch@@@Switch to the main branch"
   "gswd@@@git switch \$(git_develop_branch)@@@Switch@@@Switch to the develop branch"
-  
+
   "gta@@@git tag --annotate@@@Tag@@@Create a GPG-signed or annotated tag"
   "gtv@@@git tag | sort -V@@@Tag@@@List tags sorted by version"
   "gts@@@git tag --sign@@@Tag@@@Create a GPG-signed tag"
   "gtl@@@git tag --sort=-v:refname ...@@@Tag@@@List tags sorted by version matching a prefix"
-  
+
   "gwt@@@git worktree@@@Worktree@@@Manage multiple working trees (checkouts) in parallel"
   "gwta@@@git worktree add@@@Worktree@@@Add a new worktree path and checkout a branch"
   "gwtls@@@git worktree list@@@Worktree@@@List all active worktrees and their branches"
   "gwtrm@@@git worktree remove@@@Worktree@@@Remove a worktree path and clean up its state"
   "gwtmv@@@git worktree move@@@Worktree@@@Move a worktree to a new path"
-  
+
   "gam@@@git am@@@AM@@@Apply a series of patches from a mailbox"
   "gama@@@git am --abort@@@AM@@@Abort the patch application process"
   "gamc@@@git am --continue@@@AM@@@Continue patch application after resolving conflicts"
   "gamscp@@@git am --show-current-patch@@@AM@@@Show the patch being applied when am is halted"
   "gams@@@git am --skip@@@AM@@@Skip the current patch in the application process"
-  
+
   "gbs@@@git bisect@@@Bisect@@@Find by binary search the change that introduced a bug"
   "gbsb@@@git bisect bad@@@Bisect@@@Mark the current commit as bad/broken"
   "gbsg@@@git bisect good@@@Bisect@@@Mark the current commit as good/working"
@@ -221,27 +221,27 @@ local -a database=(
   "gbso@@@git bisect old@@@Bisect@@@Mark the current commit as having the old/unchanged state"
   "gbsr@@@git bisect reset@@@Bisect@@@Finish bisect session and return to original branch"
   "gbss@@@git bisect start@@@Bisect@@@Start a binary search bisect session"
-  
+
   "gbl@@@git blame -w@@@Blame@@@Show what revision and author last modified each line of a file (ignores whitespace)"
-  
+
   "gcf@@@git config --list@@@Config@@@List all git configurations"
-  
+
   "gg@@@git gui citool@@@GUI@@@Open Git GUI commit tool"
   "gga@@@git gui citool --amend@@@GUI@@@Open Git GUI commit tool in amend mode"
   "gk@@@\\gitk --all --branches &!@@@GUI@@@Run gitk GUI tool for branches in background"
   "gke@@@\\gitk --all \$(git log --walk-reflogs...) &!@@@GUI@@@Run gitk GUI tool with reflog commits in background"
-  
+
   "grm@@@git rm@@@Remove@@@Remove files from the working tree and from the index"
   "grmc@@@git rm --cached@@@Remove@@@Remove files from the index only (keep in working tree)"
-  
+
   "gsd@@@git svn dcommit@@@SVN@@@Commit SVN changes"
   "git-svn-dcommit-push@@@git svn dcommit && git push...@@@SVN@@@SVN dcommit and push to git"
   "gsr@@@git svn rebase@@@SVN@@@Rebase SVN changes"
-  
+
   "gunwip@@@git rev-list --max-count=1 ...@@@WIP@@@Unwip the WIP commit"
-  
+
   "ghh@@@git help@@@Help@@@Show git help/manual page"
-  
+
   "gignored@@@git ls-files -v | grep \"^[[:lower:]]\"@@@Other@@@List ignored files tracked by git"
   "gfg@@@git ls-files | grep@@@Other@@@Find files tracked by git matching a pattern"
   "gcount@@@git shortlog --summary --numbered@@@Other@@@Count commits per author in descending order"
@@ -383,7 +383,7 @@ _git_alias_guide_search() {
   local search_query_lowercase="${(L)search_query}"
   local -a matching_items=()
   local database_item item_lowercase
-  
+
   for database_item in "${database[@]}"; do
     item_lowercase="${(L)database_item}"
     if [[ "$item_lowercase" == *"$search_query_lowercase"* ]]; then
@@ -422,10 +422,10 @@ _git_alias_guide_quiz() {
 
   for (( question_index = 1; question_index <= total_questions; question_index++ )); do
     print -P "%F{blue}%BQuestion ${question_index} of ${total_questions}:%f"
-    
+
     correct_item_index=$(( RANDOM % database_size + 1 ))
     correct_item="${database[correct_item_index]}"
-    
+
     correct_parts=("${(@s:@@@:)correct_item}")
     correct_alias="${correct_parts[1]}"
     correct_command="${correct_parts[2]}"
@@ -433,10 +433,10 @@ _git_alias_guide_quiz() {
 
     question_type=$(( RANDOM % 2 ))
     option_texts=()
-    
+
     if (( question_type == 0 )); then
       correct_option_text="$correct_alias"
-      
+
       while (( ${#option_texts} < 3 )); do
         distractor_index=$(( RANDOM % database_size + 1 ))
         if (( distractor_index == correct_item_index )); then
@@ -445,14 +445,14 @@ _git_alias_guide_quiz() {
         distractor_item="${database[distractor_index]}"
         distractor_parts=("${(@s:@@@:)distractor_item}")
         distractor_alias="${distractor_parts[1]}"
-        
+
         if [[ "$distractor_alias" != "$correct_alias" && "${option_texts[(Ie)$distractor_alias]}" -eq 0 ]]; then
           option_texts+=("$distractor_alias")
         fi
       done
     else
       correct_option_text="$correct_command"
-      
+
       while (( ${#option_texts} < 3 )); do
         distractor_index=$(( RANDOM % database_size + 1 ))
         if (( distractor_index == correct_item_index )); then
@@ -461,7 +461,7 @@ _git_alias_guide_quiz() {
         distractor_item="${database[distractor_index]}"
         distractor_parts=("${(@s:@@@:)distractor_item}")
         distractor_command="${distractor_parts[2]}"
-        
+
         if [[ "$distractor_command" != "$correct_command" && "${option_texts[(Ie)$distractor_command]}" -eq 0 ]]; then
           option_texts+=("$distractor_command")
         fi
@@ -470,7 +470,7 @@ _git_alias_guide_quiz() {
 
     option_texts+=("$correct_option_text")
     shuffled_options=()
-    
+
     while (( ${#option_texts} > 0 )); do
       random_option_index=$(( RANDOM % ${#option_texts} + 1 ))
       shuffled_options+=("$option_texts[random_option_index]")
@@ -488,7 +488,7 @@ _git_alias_guide_quiz() {
       print -P "%b%f expand to?"
     fi
     print -P ""
-    
+
     for (( option_index = 1; option_index <= 4; option_index++ )); do
       current_option="${shuffled_options[option_index]}"
       print -Pn "  %F{cyan}%B[${option_labels[option_index]}]%b%f "
@@ -505,16 +505,16 @@ _git_alias_guide_quiz() {
       read -r -s -k 1 user_choice
       user_choice="${(U)user_choice}"
       print "$user_choice"
-      
+
       if [[ "$user_choice" == "Q" ]]; then
         print -P "%F{yellow}Quiz exited. Keep practicing!%f"
         return 0
       fi
-      
+
       if [[ "$user_choice" == "A" || "$user_choice" == "B" || "$user_choice" == "C" || "$user_choice" == "D" ]]; then
         break
       fi
-      
+
       print -P "%F{red}Invalid option. Please select A, B, C, or D.%f"
     done
 
@@ -533,12 +533,12 @@ _git_alias_guide_quiz() {
         print -P "%b%f."
       fi
     fi
-    
+
     print -Pn "%F{white}%BExplanation:%b "
     print -rn -- "$correct_description"
     print -P "%f"
     print -P ""
-    
+
     if (( question_index < total_questions )); then
       print -n "Press any key to continue..."
       read -r -s -k 1
@@ -577,13 +577,13 @@ _git_alias_guide_menu() {
     print -P "  %F{green}%B[3]%b%f Start the Practice Quiz"
     print -P "  %F{green}%B[4]%b%f Exit Guide"
     print -P ""
-    
+
     user_menu_choice=""
     print -P -n "%F{blue}Select an option (1-4): %f"
     read -r -s -k 1 user_menu_choice
     user_menu_choice="${(U)user_menu_choice}"
     print "$user_menu_choice"
-    
+
     case "$user_menu_choice" in
       1)
         while true; do
@@ -598,22 +598,22 @@ _git_alias_guide_menu() {
           print ""
           print -P "  %F{green}%B[B]%b%f Back to Main Menu"
           print ""
-          
+
           # Standard read used for category selection because category options include double digits
           category_choice=""
           print -P -n "%F{blue}Select a category (1-${#categories} or B): %f"
           read -r category_choice
-          
+
           if [[ "${(U)category_choice}" == "B" ]]; then
             break
           fi
-          
+
           if [[ "$category_choice" =~ ^[0-9]+$ ]] && (( category_choice >= 1 && category_choice <= ${#categories} )); then
             chosen_category="${categories[category_choice]}"
             print -P ""
             print -P "%F{cyan}%B=== ${chosen_category} Aliases ===%f"
             print -P ""
-            
+
             category_items=()
             for database_item in "${database[@]}"; do
               item_parts=("${(@s:@@@:)database_item}")
@@ -621,9 +621,9 @@ _git_alias_guide_menu() {
                 category_items+=("$database_item")
               fi
             done
-            
+
             _git_alias_guide_print_table "${category_items[@]}"
-            
+
             print ""
             print -n "Press any key to return to category list..."
             read -r -s -k 1
@@ -660,14 +660,14 @@ _git_alias_guide_menu() {
   done
 }
 
-# Helper 5: Dynamic State-Aware Repository Suggestions
+# Helper 5: Repository State-Aware Suggestions
 _git_alias_guide_suggest() {
   # 1. Pre-flight verification of Git repository state
   if ! command git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     print -P "%F{yellow}%BNot inside a Git repository.%b%f"
     print -P "Showing General and Clone aliases to help you get started:"
     print -P ""
-    
+
     local -a general_clone_items=()
     local database_item
     for database_item in "${database[@]}"; do
@@ -685,7 +685,7 @@ _git_alias_guide_suggest() {
   local git_dir status_output branch_status rec_alias database_item indicator
   local -a recommended_aliases=() unique_recommendations=() database_matches=() active_indicators=()
   local -i target_count=5
-  
+
   git_dir=$(command git rev-parse --git-dir 2>/dev/null)
 
   # State Check A: Active Operations/Conflict State (Highest Priority)
@@ -708,7 +708,7 @@ _git_alias_guide_suggest() {
 
   # State Check B: Dirty status inspection
   status_output=$(command git status --porcelain 2>/dev/null)
-  
+
   if [[ -n "$status_output" ]]; then
     active_indicators+=("Local Dirty Changes")
     # Check for untracked files
@@ -752,7 +752,7 @@ _git_alias_guide_suggest() {
     fi
   done
 
-  # 4. Dynamically determine target suggestion limit N:
+  # 4. Determine target suggestion limit N:
   for indicator in "${active_indicators[@]}"; do
     if [[ "$indicator" == Active* ]]; then
       target_count=6
@@ -777,15 +777,15 @@ _git_alias_guide_suggest() {
   done
 
   # 6. Output Suggestions Screen
-  print -P "%F{blue}%B=== Dynamic Recommendations for Repository State ===%f"
-  print -Pn "%F{white}Active state indicators parsed: %F{yellow}"
+  print -P "%F{blue}%B=== Recommendations for Current Repository State ===%f"
+  print -Pn "%F{white}Active repository state: %F{yellow}"
   if (( ${#active_indicators} == 0 )); then
     print "Pristine/Clean (Up to date)"
   else
     print "${(j:, :)active_indicators}"
   fi
   print -P "%f"
-  
+
   _git_alias_guide_print_table "${database_matches[@]}"
 }
 
