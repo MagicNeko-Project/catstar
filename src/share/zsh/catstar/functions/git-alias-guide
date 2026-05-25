@@ -520,7 +520,7 @@ _git_alias_guide_quiz() {
 
     if [[ "$user_choice" == "$correct_label" ]]; then
       print -P "%F{green}%B✓ Correct!%b%f"
-      correct_answers_count++
+      (( correct_answers_count++ ))
     else
       print -P "%F{red}%B✗ Incorrect.%b%f"
       if (( question_type == 0 )); then
