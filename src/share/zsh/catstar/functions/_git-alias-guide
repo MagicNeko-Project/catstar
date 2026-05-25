@@ -14,6 +14,7 @@ function _git-alias-guide() {
         '(-s --search)'{-s,--search}'[Search for aliases matching query]'
         '(-q --quiz)'{-q,--quiz}'[Start the interactive training quiz]'
         '(-i --interactive)'{-i,--interactive}'[Start the dashboard menu interface]'
+        '(-g --suggest)'{-g,--suggest}'[Suggest relevant aliases for current repository state]'
         '(-h --help)'{-h,--help}'[Show help message]'
     )
 
@@ -27,6 +28,7 @@ function _git-alias-guide() {
                 "search:Search for aliases matching query"
                 "quiz:Start the interactive training quiz"
                 "interactive:Start the dashboard menu interface"
+                "suggest:Suggest relevant aliases for current repository state"
                 "help:Show help message"
             )
             _describe -t commands 'git-alias-guide command' command_list && return_code=0
@@ -37,7 +39,7 @@ function _git-alias-guide() {
                 search|-s|--search)
                     _message "search query" && return_code=0
                     ;;
-                quiz|-q|--quiz|interactive|-i|--interactive|help|-h|--help)
+                quiz|-q|--quiz|interactive|-i|--interactive|suggest|-g|--suggest|help|-h|--help)
                     # No additional arguments for these commands
                     return_code=0
                     ;;

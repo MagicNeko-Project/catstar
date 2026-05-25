@@ -660,7 +660,136 @@ _git_alias_guide_menu() {
   done
 }
 
-# Helper 5: Show usage/help page
+# Helper 5: Dynamic State-Aware Repository Suggestions
+_git_alias_guide_suggest() {
+  # 1. Pre-flight verification of Git repository state
+  if ! command git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    print -P "%F{yellow}%BNot inside a Git repository.%b%f"
+    print -P "Showing General and Clone aliases to help you get started:"
+    print -P ""
+    
+    local -a general_clone_items=()
+    local database_item
+    for database_item in "${database[@]}"; do
+      local -a item_parts=("${(@s:@@@:)database_item}")
+      local alias_category="${item_parts[3]}"
+      if [[ "$alias_category" == "General" || "$alias_category" == "Clone" ]]; then
+        general_clone_items+=("$database_item")
+      fi
+    done
+    _git_alias_guide_print_table "${general_clone_items[@]}"
+    return 0
+  fi
+
+  # 2. We are in a valid Git repository. Determine local paths and status details.
+  local git_dir status_output branch_status rec_alias database_item indicator
+  local -a recommended_aliases=() unique_recommendations=() database_matches=() active_indicators=()
+  local -i target_count=5
+  
+  git_dir=$(command git rev-parse --git-dir 2>/dev/null)
+
+  # State Check A: Active Operations/Conflict State (Highest Priority)
+  if [[ -f "$git_dir/MERGE_HEAD" ]]; then
+    recommended_aliases+=("gma" "gmc" "gmtl" "gmtlvim" "gst")
+    active_indicators+=("Active Merge Conflict")
+  fi
+  if [[ -d "$git_dir/rebase-merge" || -d "$git_dir/rebase-apply" ]]; then
+    recommended_aliases+=("grba" "grbc" "grbs" "gst")
+    active_indicators+=("Active Rebase Operation")
+  fi
+  if [[ -f "$git_dir/CHERRY_PICK_HEAD" ]]; then
+    recommended_aliases+=("gcpa" "gcpc" "gst")
+    active_indicators+=("Active Cherry-pick")
+  fi
+  if [[ -f "$git_dir/REVERT_HEAD" ]]; then
+    recommended_aliases+=("greva" "grevc" "gst")
+    active_indicators+=("Active Revert")
+  fi
+
+  # State Check B: Dirty status inspection
+  status_output=$(command git status --porcelain 2>/dev/null)
+  
+  if [[ -n "$status_output" ]]; then
+    active_indicators+=("Local Dirty Changes")
+    # Check for untracked files
+    if [[ "$status_output" == *$'?? '* ]]; then
+      recommended_aliases+=("ga" "gaa" "gignored" "gclean" "gss")
+    fi
+    # Check for unstaged modifications
+    if [[ "$status_output" =~ $'(^|\n)[ MADRCU ][MDKU] ' ]]; then
+      recommended_aliases+=("gd" "gss" "gapa" "grs" "gsta")
+    fi
+    # Check for staged modifications
+    if [[ "$status_output" =~ $'(^|\n)[MADRC][ ] ' ]]; then
+      recommended_aliases+=("gc" "gca" "gcmsg" "gdca" "gds" "gcan!")
+    fi
+  fi
+
+  # State Check C: Upstream Synchronisation Status (ahead/behind)
+  branch_status=$(command git status --branch --porcelain 2>/dev/null | head -n 1)
+  if [[ "$branch_status" == *"[ahead "* ]]; then
+    recommended_aliases+=("gp" "gpf" "gpsup" "ggpush")
+    active_indicators+=("Ahead of Upstream Branch")
+  fi
+  if [[ "$branch_status" == *"[behind "* ]]; then
+    recommended_aliases+=("gl" "gpr" "gpra" "ggpull" "glum")
+    active_indicators+=("Behind Upstream Branch")
+  fi
+
+  # State Check D: Stash presence
+  if command git stash list 2>/dev/null | grep -q '^stash@'; then
+    recommended_aliases+=("gstl" "gstp" "gstaa" "gstd")
+    active_indicators+=("Stashes Exist")
+  fi
+
+  # Fallbacks / History (Always relevant)
+  recommended_aliases+=("gst" "gss" "glol" "glo" "gb" "gba")
+
+  # 3. Filter duplicates from recommended list while retaining priority order
+  for rec_alias in "${recommended_aliases[@]}"; do
+    if (( ${unique_recommendations[(Ie)$rec_alias]} == 0 )); then
+      unique_recommendations+=("$rec_alias")
+    fi
+  done
+
+  # 4. Dynamically determine target suggestion limit N:
+  for indicator in "${active_indicators[@]}"; do
+    if [[ "$indicator" == Active* ]]; then
+      target_count=6
+      break
+    fi
+  done
+
+  # Limit recommendations to target count using native Zsh 1-indexed array slicing
+  if (( ${#unique_recommendations} > target_count )); then
+    unique_recommendations=( $unique_recommendations[1,target_count] )
+  fi
+
+  # 5. Fetch matching items from database
+  for rec_alias in "${unique_recommendations[@]}"; do
+    for database_item in "${database[@]}"; do
+      local -a item_parts=("${(@s:@@@:)database_item}")
+      if [[ "$item_parts[1]" == "$rec_alias" ]]; then
+        database_matches+=("$database_item")
+        break
+      fi
+    done
+  done
+
+  # 6. Output Suggestions Screen
+  print -P "%F{blue}%B=== Dynamic Recommendations for Repository State ===%f"
+  print -Pn "%F{white}Active state indicators parsed: %F{yellow}"
+  if (( ${#active_indicators} == 0 )); then
+    print "Pristine/Clean (Up to date)"
+  else
+    print "${(j:, :)active_indicators}"
+  fi
+  print -P "%f"
+  
+  _git_alias_guide_print_table "${database_matches[@]}"
+}
+
+# Helper 6: Show usage/help page
 _git_alias_guide_print_help() {
   print -P "%F{cyan}%BUsage: git-alias-guide [command | option]%f"
   print -P ""
@@ -668,12 +797,14 @@ _git_alias_guide_print_help() {
   print -P "  %F{green}search <term>%f      Search for aliases matching a query"
   print -P "  %F{green}quiz%f               Start the interactive training quiz"
   print -P "  %F{green}interactive%f        Start the dashboard menu interface"
+  print -P "  %F{green}suggest%f            Suggest relevant aliases for current repository state"
   print -P "  %F{green}help%f               Show this help message"
   print -P ""
   print -P "Options:"
   print -P "  %F{green}-s, --search <term>%f Same as search command"
   print -P "  %F{green}-q, --quiz%f          Same as quiz command"
   print -P "  %F{green}-i, --interactive%f   Same as interactive command"
+  print -P "  %F{green}-g, --suggest%f       Same as suggest command"
   print -P "  %F{green}-h, --help%f          Same as help command"
   print -P ""
   print -P "Without any arguments, shows the complete paginated cheatsheet like a man page."
@@ -696,6 +827,9 @@ case "$1" in
     ;;
   interactive|-i|--interactive)
     _git_alias_guide_menu
+    ;;
+  suggest|-g|--suggest)
+    _git_alias_guide_suggest
     ;;
   help|--help|-h)
     _git_alias_guide_print_help
