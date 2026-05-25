@@ -1,0 +1,51 @@
+#compdef git-alias-guide
+
+# =============================================================================
+# Zsh Completion Definition for git-alias-guide
+# =============================================================================
+
+function _git-alias-guide() {
+    local context state state_descr current_line
+    local -A parsed_options
+    local return_code=1
+
+    # Common options and subcommands list
+    local -a common_options=(
+        '(-s --search)'{-s,--search}'[Search for aliases matching query]'
+        '(-q --quiz)'{-q,--quiz}'[Start the interactive training quiz]'
+        '(-i --interactive)'{-i,--interactive}'[Start the dashboard menu interface]'
+        '(-h --help)'{-h,--help}'[Show help message]'
+    )
+
+    _arguments -C "${common_options[@]}" \
+        '1: :->command' \
+        '*:: :->args' && return_code=0
+
+    case "$state" in
+        command)
+            local -a command_list=(
+                "search:Search for aliases matching query"
+                "quiz:Start the interactive training quiz"
+                "interactive:Start the dashboard menu interface"
+                "help:Show help message"
+            )
+            _describe -t commands 'git-alias-guide command' command_list && return_code=0
+            ;;
+        
+        args)
+            case "$words[1]" in
+                search|-s|--search)
+                    _message "search query" && return_code=0
+                    ;;
+                quiz|-q|--quiz|interactive|-i|--interactive|help|-h|--help)
+                    # No additional arguments for these commands
+                    return_code=0
+                    ;;
+            esac
+            ;;
+    esac
+
+    return "$return_code"
+}
+
+_git-alias-guide "$@"

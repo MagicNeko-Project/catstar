@@ -1,0 +1,758 @@
+# Zsh Autoload Function: git-alias-guide (Clean Start Design)
+# -----------------------------------------------------------------------------
+# An interactive guide, reference manual, and learning tool for Oh My Zsh Git aliases.
+# Built for high educational value, ease of use, and zero dependencies.
+# -----------------------------------------------------------------------------
+
+# 1. Database definition containing all non-deprecated aliases.
+# Format: "Alias@@@Command@@@Category@@@Description"
+local -a database=(
+  "g@@@git@@@General@@@The entry point for all git commands"
+  "grt@@@cd \"\$(git rev-parse --show-toplevel || echo .)\"@@@General@@@Change directory to the git repository root"
+
+  "ga@@@git add@@@Add@@@Add file contents to the index"
+  "gaa@@@git add --all@@@Add@@@Add all changes to the index"
+  "gapa@@@git add --patch@@@Add@@@Interactively choose hunks of patch between the index and the work tree"
+  "gau@@@git add --update@@@Add@@@Update the index just where it already has an entry matching <pathspec>"
+  "gav@@@git add --verbose@@@Add@@@Be verbose"
+  "gwip@@@git add -A; git commit --message \"--wip--\"@@@Add@@@Commit as Work In Progress (skips CI and verification)"
+
+  "gap@@@git apply@@@Apply@@@Apply a patch to files and/or to the index"
+  "gapt@@@git apply --3way@@@Apply@@@Attempt 3-way merge if a patch does not apply cleanly"
+
+  "gb@@@git branch@@@Branch@@@List, create, or delete branches"
+  "gba@@@git branch --all@@@Branch@@@List both remote-tracking branches and local branches"
+  "gbd@@@git branch --delete@@@Branch@@@Delete a branch (checks if fully merged)"
+  "gbD@@@git branch --delete --force@@@Branch@@@Force delete a branch irrespective of its merged status"
+  "gbm@@@git branch --move@@@Branch@@@Move/rename a branch"
+  "gbnm@@@git branch --no-merged@@@Branch@@@List branches which have not been merged"
+  "gbr@@@git branch --remote@@@Branch@@@List or delete remote-tracking branches"
+  "ggsup@@@git branch --set-upstream-to=origin/\$(git_current_branch)@@@Branch@@@Set upstream branch for the current branch"
+  "gbg@@@LANG=C git branch -vv | grep \": gone]\"@@@Branch@@@List branches whose upstream is gone"
+  "gbgd@@@LANG=C git branch --no-color -vv | grep \": gone]\" | xargs git branch -d@@@Branch@@@Delete local branches whose upstream is gone"
+  "gbgD@@@LANG=C git branch --no-color -vv | grep \": gone]\" | xargs git branch -D@@@Branch@@@Force delete local branches whose upstream is gone"
+  "gbda@@@git branch --no-color --merged ...@@@Branch@@@Delete all local branches merged into main or develop"
+  "gbds@@@git for-each-ref refs/heads/ ...@@@Branch@@@Delete local branches that have been squashed on remote"
+
+  "gco@@@git checkout@@@Checkout@@@Switch branches or restore working tree files"
+  "gcor@@@git checkout --recurse-submodules@@@Checkout@@@Checkout and update submodules"
+  "gcb@@@git checkout -b@@@Checkout@@@Create and switch to a new branch"
+  "gcB@@@git checkout -B@@@Checkout@@@Create or reset and switch to a new branch"
+  "gcd@@@git checkout \$(git_develop_branch)@@@Checkout@@@Checkout the development branch"
+  "gcm@@@git checkout \$(git_main_branch)@@@Checkout@@@Checkout the main/master branch"
+
+  "gcp@@@git cherry-pick@@@Cherry-pick@@@Apply the changes introduced by some existing commits"
+  "gcpa@@@git cherry-pick --abort@@@Cherry-pick@@@Cancel the cherry-pick operation"
+  "gcpc@@@git cherry-pick --continue@@@Cherry-pick@@@Continue the cherry-pick operation"
+
+  "gclean@@@git clean --interactive -d@@@Clean@@@Remove untracked files from the working tree interactively"
+
+  "gcl@@@git clone --recurse-submodules@@@Clone@@@Clone a repository including submodules"
+  "gclf@@@git clone --recursive --shallow-submodules ...@@@Clone@@@Clone a repository with shallow submodules"
+  "gccd@@@git clone --recurse-submodules ... && cd@@@Clone@@@Clone a repository and immediately cd into it"
+
+  "gc@@@git commit --verbose@@@Commit@@@Record changes to the repository (shows diff in editor)"
+  "gca@@@git commit --verbose --all@@@Commit@@@Commit all changed files (skips git add)"
+  "gca!@@@git commit --verbose --all --amend@@@Commit@@@Amend the last commit including all changes"
+  "gcan!@@@git commit --verbose --all --no-edit --amend@@@Commit@@@Amend the last commit with all changes, without changing message"
+  "gcmsg@@@git commit --message@@@Commit@@@Commit with a message"
+  "gcam@@@git commit --all --message@@@Commit@@@Commit all changed files with a message"
+  "gc!@@@git commit --verbose --amend@@@Commit@@@Amend the last commit"
+  "gcn!@@@git commit --verbose --no-edit --amend@@@Commit@@@Amend the last commit without changing message"
+  "gcfu@@@git commit --fixup@@@Commit@@@Create a fixup commit for use with rebase --autosquash"
+  "gcas@@@git commit --all --signoff@@@Commit@@@Commit all changed files and sign off"
+  "gcasm@@@git commit --all --signoff --message@@@Commit@@@Commit all changed files, sign off, with message"
+  "gcs@@@git commit --gpg-sign@@@Commit@@@Commit and sign with GPG key"
+  "gcss@@@git commit --gpg-sign --signoff@@@Commit@@@Commit, sign with GPG key, and sign off"
+  "gcssm@@@git commit --gpg-sign --signoff --message@@@Commit@@@Commit, sign with GPG key, sign off, with message"
+  "gcsm@@@git commit --signoff --message@@@Commit@@@Commit and add signed-off-by line with a message"
+  "gcans!@@@git commit --verbose --all --signoff --no-edit --amend@@@Commit@@@Amend the last commit, add signed-off-by line, without opening editor"
+  "gcann!@@@git commit --verbose --all --date=now --no-edit --amend@@@Commit@@@Amend the last commit, set date to now, without opening editor"
+  "gcn@@@git commit --verbose --no-edit@@@Commit@@@Record changes to repository without opening editor"
+
+  "gd@@@git diff@@@Diff@@@Show changes between commits, commit and working tree, etc"
+  "gdca@@@git diff --cached@@@Diff@@@Show changes between index and last commit"
+  "gds@@@git diff --staged@@@Diff@@@Show changes between staged changes and last commit"
+  "gdw@@@git diff --word-diff@@@Diff@@@Show word diff"
+  "gdup@@@git diff @{upstream}@@@Diff@@@Show diff with upstream branch"
+  "gdcw@@@git diff --cached --word-diff@@@Diff@@@Show cached/staged word diff"
+  "gdnolock@@@git diff ... excluding lock files@@@Diff@@@Show diff excluding package-lock.json and other lock files"
+  "gdt@@@git diff-tree --no-commit-id --name-only -r@@@Diff@@@Show file names changed in a specific commit"
+  "gdv@@@git diff -w \"\$@\" | view -@@@Diff@@@Show diff in vim view mode"
+
+  "gf@@@git fetch@@@Fetch@@@Download objects and refs from another repository"
+  "gfa@@@git fetch --all --tags --prune --jobs=10@@@Fetch@@@Fetch all remotes, tags, and prune deleted branches"
+  "gfo@@@git fetch origin@@@Fetch@@@Fetch from origin"
+
+  "glol@@@git log --graph --pretty=\"...\"@@@Log@@@Visual log with relative dates and graph"
+  "glola@@@git log --graph --pretty=\"...\" --all@@@Log@@@Visual log for all branches"
+  "glog@@@git log --oneline --decorate --graph@@@Log@@@Oneline log with graph"
+  "gloga@@@git log --oneline --decorate --graph --all@@@Log@@@Oneline log for all branches"
+  "glo@@@git log --oneline --decorate@@@Log@@@Simple oneline log"
+  "glg@@@git log --stat@@@Log@@@Log with stats"
+  "glgp@@@git log --stat --patch@@@Log@@@Log with stats and patch"
+  "glgg@@@git log --graph@@@Log@@@Simple graph log"
+  "glgga@@@git log --graph --decorate --all@@@Log@@@Graph log with decoration for all branches"
+  "glgm@@@git log --graph --max-count=10@@@Log@@@Graph log limited to last 10 commits"
+  "glods@@@git log --graph --pretty=\"...\" --date=short@@@Log@@@Visual log with short dates"
+  "glod@@@git log --graph --pretty=\"...\"@@@Log@@@Visual log with commit author details"
+  "glols@@@git log --graph --pretty=\"...\" --stat@@@Log@@@Visual log with stat details"
+  "glp@@@_git_log_prettily@@@Log@@@Show pretty log using custom format"
+
+  "gm@@@git merge@@@Merge@@@Join two or more development histories together"
+  "gma@@@git merge --abort@@@Merge@@@Abort the merge"
+  "gmc@@@git merge --continue@@@Merge@@@Continue the merge after resolving conflicts"
+  "gms@@@git merge --squash@@@Merge@@@Squash changes into a single commit"
+  "gmff@@@git merge --ff-only@@@Merge@@@Merge only if it can be a fast-forward"
+  "gmom@@@git merge origin/\$(git_main_branch)@@@Merge@@@Merge main branch from origin"
+  "gmum@@@git merge upstream/\$(git_main_branch)@@@Merge@@@Merge main branch from upstream"
+  "gmtl@@@git mergetool --no-prompt@@@Merge@@@Run git mergetool without prompting"
+  "gmtlvim@@@git mergetool --no-prompt --tool=vimdiff@@@Merge@@@Run git mergetool with vimdiff"
+
+  "gl@@@git pull@@@Pull@@@Fetch from and integrate with another repository or a local branch"
+  "gpr@@@git pull --rebase@@@Pull@@@Pull and rebase local commits on top of remote"
+  "gpra@@@git pull --rebase --autostash@@@Pull@@@Pull, rebase, and automatically stash/unstash uncommitted changes"
+  "ggl@@@git pull origin \$(git_current_branch)@@@Pull@@@Pull from origin for the current branch"
+  "glum@@@git pull upstream \$(git_main_branch)@@@Pull@@@Pull main branch from upstream"
+  "gprv@@@git pull --rebase -v@@@Pull@@@Pull and rebase verbosely"
+  "gprav@@@git pull --rebase --autostash -v@@@Pull@@@Pull, rebase, and autostash verbosely"
+  "ggu@@@git pull --rebase origin <branch>@@@Pull@@@Pull and rebase from origin for specified/current branch"
+  "gprom@@@git pull --rebase origin \$(git_main_branch)@@@Pull@@@Pull and rebase from origin main branch"
+  "gpromi@@@git pull --rebase=interactive origin \$(git_main_branch)@@@Pull@@@Pull and interactively rebase from origin main branch"
+  "gprum@@@git pull --rebase upstream \$(git_main_branch)@@@Pull@@@Pull and rebase from upstream main branch"
+  "gprumi@@@git pull --rebase=interactive upstream \$(git_main_branch)@@@Pull@@@Pull and interactively rebase from upstream main branch"
+  "ggpull@@@git pull origin \"\$(git_current_branch)\"@@@Pull@@@Pull from origin for the current branch"
+  "gluc@@@git pull upstream \$(git_current_branch)@@@Pull@@@Pull from upstream for the current branch"
+
+  "gp@@@git push@@@Push@@@Update remote refs along with associated objects"
+  "gpd@@@git push --dry-run@@@Push@@@Dry run push (checks what would be pushed without modifying remote)"
+  "gpf!@@@git push --force@@@Push@@@Force push (overwrites remote changes, USE WITH CAUTION)"
+  "gpf@@@git push --force-with-lease@@@Push@@@Safe force push (prevents overwriting remote work done by others)"
+  "gpsup@@@git push --set-upstream origin \$(git_current_branch)@@@Push@@@Push and set origin as the upstream tracking branch"
+  "ggpush@@@git push origin \$(git_current_branch)@@@Push@@@Push to origin for current branch"
+  "ggf@@@git push --force origin <branch>@@@Push@@@Force push to origin for specified/current branch"
+  "ggfl@@@git push --force-with-lease origin <branch>@@@Push@@@Safe force push to origin for specified/current branch"
+  "gpsupf@@@git push --set-upstream origin \$(git_current_branch) --force-with-lease@@@Push@@@Push upstream and safe force"
+  "gpv@@@git push --verbose@@@Push@@@Push verbosely"
+  "gpoat@@@git push origin --all && git push origin --tags@@@Push@@@Push all branches and tags to origin"
+  "gpod@@@git push origin --delete@@@Push@@@Delete specified ref from origin remote"
+  "gpu@@@git push upstream@@@Push@@@Push to upstream remote"
+
+  "grb@@@git rebase@@@Rebase@@@Reapply commits on top of another base tip"
+  "grba@@@git rebase --abort@@@Rebase@@@Abort the rebase operation and restore original branch state"
+  "grbc@@@git rebase --continue@@@Rebase@@@Continue the rebase operation after resolving conflicts"
+  "grbi@@@git rebase --interactive@@@Rebase@@@Start an interactive rebase (squash, edit, reorder commits)"
+  "grbs@@@git rebase --skip@@@Rebase@@@Skip the current patch/commit in the rebase process"
+  "grbm@@@git rebase \$(git_main_branch)@@@Rebase@@@Rebase onto main branch"
+  "grbo@@@git rebase --onto@@@Rebase@@@Rebase onto a specific commit/base"
+  "grbd@@@git rebase \$(git_develop_branch)@@@Rebase@@@Rebase onto development branch"
+  "grbom@@@git rebase origin/\$(git_main_branch)@@@Rebase@@@Rebase onto origin main branch"
+  "grbum@@@git rebase upstream/\$(git_main_branch)@@@Rebase@@@Rebase onto upstream main branch"
+  "grf@@@git reflog@@@Rebase@@@Show reflog (history of all local HEAD updates, great for recovering lost work)"
+
+  "gr@@@git remote@@@Remote@@@Manage set of tracked repositories"
+  "grv@@@git remote --verbose@@@Remote@@@List remotes with their fetch/push URLs"
+  "gra@@@git remote add@@@Remote@@@Add a new remote tracking repository"
+  "grrm@@@git remote remove@@@Remote@@@Remove a remote tracking repository"
+  "grup@@@git remote update@@@Remote@@@Update all tracked remote repositories"
+  "grmv@@@git remote rename@@@Remote@@@Rename a tracked remote repository"
+  "grset@@@git remote set-url@@@Remote@@@Change the URL of a remote repository"
+
+  "grh@@@git reset@@@Reset@@@Reset current HEAD to the specified state"
+  "grhh@@@git reset --hard@@@Reset@@@Hard reset (destroys ALL local changes, staged and unstaged!)"
+  "grhs@@@git reset --soft@@@Reset@@@Soft reset (keeps all changes staged in index)"
+  "gpristine@@@git reset --hard && git clean --force -dfx@@@Reset@@@Reset and clean EVERYTHING including untracked/ignored files"
+  "gwipe@@@git reset --hard && git clean --force -df@@@Reset@@@Hard reset and clean untracked files (keeps ignored files)"
+  "groh@@@git reset origin/\$(git_current_branch) --hard@@@Reset@@@Hard reset to match the remote branch exactly"
+  "gru@@@git reset --@@@Reset@@@Unstage all staged changes (reset index without touching work tree)"
+  "grhk@@@git reset --keep@@@Reset@@@Reset HEAD but keep local changes if they don't conflict"
+
+  "grs@@@git restore@@@Restore@@@Restore working tree files"
+  "grst@@@git restore --staged@@@Restore@@@Unstage files (same as git reset)"
+  "grss@@@git restore --source@@@Restore@@@Restore files using a specific source commit/tree"
+
+  "grev@@@git revert@@@Revert@@@Revert some existing commits by creating new inverse commits"
+  "greva@@@git revert --abort@@@Revert@@@Abort the revert operation and restore previous state"
+  "grevc@@@git revert --continue@@@Revert@@@Continue the revert operation after conflict resolution"
+
+  "gsta@@@git stash push@@@Stash@@@Stash dirty changes (stashes staged and unstaged changes)"
+  "gstaa@@@git stash apply@@@Stash@@@Apply the latest stashed changes without removing them from stash list"
+  "gstl@@@git stash list@@@Stash@@@List all stashed changesets"
+  "gstp@@@git stash pop@@@Stash@@@Apply the latest stashed changes and remove them from stash list"
+  "gstd@@@git stash drop@@@Stash@@@Discard/remove a specific stashed changeset"
+  "gstu@@@git stash push --include-untracked@@@Stash@@@Stash changes including untracked files"
+  "gstall@@@git stash --all@@@Stash@@@Stash all changes including untracked and ignored files"
+  "gstc@@@git stash clear@@@Stash@@@Remove/destroy all stashed changesets"
+  "gsts@@@git stash show --patch@@@Stash@@@Show changes in stash as a patch"
+
+  "gst@@@git status@@@Status@@@Show the working tree status"
+  "gss@@@git status --short@@@Status@@@Show status in compact short format"
+  "gsb@@@git status --short --branch@@@Status@@@Show status in short format with branch info"
+
+  "gsi@@@git submodule init@@@Submodule@@@Initialize submodules"
+  "gsu@@@git submodule update@@@Submodule@@@Update initialized submodules to latest commit"
+
+  "gsw@@@git switch@@@Switch@@@Switch branches safely"
+  "gswc@@@git switch --create@@@Switch@@@Create and switch to a new branch"
+  "gswm@@@git switch \$(git_main_branch)@@@Switch@@@Switch to the main branch"
+  "gswd@@@git switch \$(git_develop_branch)@@@Switch@@@Switch to the develop branch"
+
+  "gta@@@git tag --annotate@@@Tag@@@Create a GPG-signed or annotated tag"
+  "gtv@@@git tag | sort -V@@@Tag@@@List tags sorted by version"
+  "gts@@@git tag --sign@@@Tag@@@Create a GPG-signed tag"
+  "gtl@@@git tag --sort=-v:refname ...@@@Tag@@@List tags sorted by version matching a prefix"
+
+  "gwt@@@git worktree@@@Worktree@@@Manage multiple working trees (checkouts) in parallel"
+  "gwta@@@git worktree add@@@Worktree@@@Add a new worktree path and checkout a branch"
+  "gwtls@@@git worktree list@@@Worktree@@@List all active worktrees and their branches"
+  "gwtrm@@@git worktree remove@@@Worktree@@@Remove a worktree path and clean up its state"
+  "gwtmv@@@git worktree move@@@Worktree@@@Move a worktree to a new path"
+
+  "gam@@@git am@@@AM@@@Apply a series of patches from a mailbox"
+  "gama@@@git am --abort@@@AM@@@Abort the patch application process"
+  "gamc@@@git am --continue@@@AM@@@Continue patch application after resolving conflicts"
+  "gamscp@@@git am --show-current-patch@@@AM@@@Show the patch being applied when am is halted"
+  "gams@@@git am --skip@@@AM@@@Skip the current patch in the application process"
+
+  "gbs@@@git bisect@@@Bisect@@@Find by binary search the change that introduced a bug"
+  "gbsb@@@git bisect bad@@@Bisect@@@Mark the current commit as bad/broken"
+  "gbsg@@@git bisect good@@@Bisect@@@Mark the current commit as good/working"
+  "gbsn@@@git bisect new@@@Bisect@@@Mark the current commit as having the new/changed state"
+  "gbso@@@git bisect old@@@Bisect@@@Mark the current commit as having the old/unchanged state"
+  "gbsr@@@git bisect reset@@@Bisect@@@Finish bisect session and return to original branch"
+  "gbss@@@git bisect start@@@Bisect@@@Start a binary search bisect session"
+
+  "gbl@@@git blame -w@@@Blame@@@Show what revision and author last modified each line of a file (ignores whitespace)"
+
+  "gcf@@@git config --list@@@Config@@@List all git configurations"
+
+  "gg@@@git gui citool@@@GUI@@@Open Git GUI commit tool"
+  "gga@@@git gui citool --amend@@@GUI@@@Open Git GUI commit tool in amend mode"
+  "gk@@@\\gitk --all --branches &!@@@GUI@@@Run gitk GUI tool for branches in background"
+  "gke@@@\\gitk --all \$(git log --walk-reflogs...) &!@@@GUI@@@Run gitk GUI tool with reflog commits in background"
+
+  "grm@@@git rm@@@Remove@@@Remove files from the working tree and from the index"
+  "grmc@@@git rm --cached@@@Remove@@@Remove files from the index only (keep in working tree)"
+
+  "gsd@@@git svn dcommit@@@SVN@@@Commit SVN changes"
+  "git-svn-dcommit-push@@@git svn dcommit && git push...@@@SVN@@@SVN dcommit and push to git"
+  "gsr@@@git svn rebase@@@SVN@@@Rebase SVN changes"
+
+  "gunwip@@@git rev-list --max-count=1 ...@@@WIP@@@Unwip the WIP commit"
+
+  "ghh@@@git help@@@Help@@@Show git help/manual page"
+
+  "gignored@@@git ls-files -v | grep \"^[[:lower:]]\"@@@Other@@@List ignored files tracked by git"
+  "gfg@@@git ls-files | grep@@@Other@@@Find files tracked by git matching a pattern"
+  "gcount@@@git shortlog --summary --numbered@@@Other@@@Count commits per author in descending order"
+  "gsh@@@git show@@@Other@@@Show details of commits, tags, or objects"
+  "gsps@@@git show --pretty=short --show-signature@@@Other@@@Show commit details with GPG signature verification"
+  "gignore@@@git update-index --assume-unchanged@@@Other@@@Tell git to assume a file has not changed even if modified"
+  "gunignore@@@git update-index --no-assume-unchanged@@@Other@@@Stop assuming a file has not changed"
+  "gwch@@@git whatchanged -p --abbrev-commit ...@@@Other@@@Show logs with raw diffs for each commit"
+)
+
+# Categories defined in logical order of git usage progression
+local -a categories=(
+  "General"
+  "Add"
+  "Commit"
+  "Checkout"
+  "Branch"
+  "Push"
+  "Pull"
+  "Rebase"
+  "Diff"
+  "Log"
+  "Merge"
+  "Status"
+  "Stash"
+  "Restore"
+  "Revert"
+  "Reset"
+  "Clean"
+  "Clone"
+  "Apply"
+  "Remote"
+  "Submodule"
+  "Switch"
+  "Tag"
+  "Worktree"
+  "AM"
+  "Bisect"
+  "Blame"
+  "GUI"
+  "Remove"
+  "SVN"
+  "WIP"
+  "Config"
+  "Help"
+  "Other"
+)
+
+# Helper 1: Print complete cheatsheet to pager
+_git_alias_guide_print_cheatsheet() {
+  local -a pager_command
+  local chosen_category database_item current_alias current_command current_description padded_alias padded_command
+  local -a category_items item_parts
+  local -i maximum_alias_length maximum_command_length
+
+  if [[ -n $PAGER ]]; then
+    pager_command=(${(z)PAGER})
+  else
+    pager_command=(less -RFX)
+  fi
+  if [[ ! -t 1 ]]; then
+    pager_command=(cat)
+  fi
+
+  {
+    print -P "%F{cyan}%B=========================================================================%f"
+    print -P "%F{cyan}%B                 OH MY ZSH GIT ALIAS REFERENCE MANUAL                  %f"
+    print -P "%F{cyan}%B=========================================================================%f"
+    print -P "This manual documents the git aliases from Oh My Zsh. Use them to boost productivity!"
+    print -P "To search, run: %F{green}git-alias-guide search <term>%f"
+    print -P "To practice, run: %F{green}git-alias-guide quiz%f"
+    print -P ""
+
+    for chosen_category in "${categories[@]}"; do
+      category_items=()
+      for database_item in "${database[@]}"; do
+        item_parts=("${(@s:@@@:)database_item}")
+        if [[ "$item_parts[3]" == "$chosen_category" ]]; then
+          category_items+=("$database_item")
+        fi
+      done
+
+      if (( ${#category_items} == 0 )); then
+        continue
+      fi
+
+      print -P "%F{blue}%B--- ${chosen_category} Aliases ---%f"
+
+      maximum_alias_length=0
+      maximum_command_length=0
+      for database_item in "${category_items[@]}"; do
+        item_parts=("${(@s:@@@:)database_item}")
+        current_alias="${item_parts[1]}"
+        current_command="${item_parts[2]}"
+        if (( ${#current_alias} > maximum_alias_length )); then
+          maximum_alias_length=${#current_alias}
+        fi
+        if (( ${#current_command} > maximum_command_length )); then
+          maximum_command_length=${#current_command}
+        fi
+      done
+
+      for database_item in "${category_items[@]}"; do
+        item_parts=("${(@s:@@@:)database_item}")
+        current_alias="${item_parts[1]}"
+        current_command="${item_parts[2]}"
+        current_description="${item_parts[4]}"
+
+        padded_alias="${(r:maximum_alias_length + 2:: :)current_alias}"
+        padded_command="${(r:maximum_command_length + 2:: :)current_command}"
+
+        print -Pn "  %F{green}"
+        print -rn -- "$padded_alias"
+        print -Pn "%f  %F{yellow}"
+        print -rn -- "$padded_command"
+        print -Pn "%f  %F{white}"
+        print -rn -- "$current_description"
+        print -P "%f"
+      done
+      print ""
+    done
+  } | "${pager_command[@]}"
+}
+
+# Helper 2: Search alias database
+_git_alias_guide_search() {
+  local search_query="$1"
+  if [[ -z $search_query ]]; then
+    print -u2 -P "%F{red}%BError:%b Please specify a search term.%f"
+    return 1
+  fi
+
+  local search_query_lowercase="${(L)search_query}"
+  local -a matching_items=()
+  local database_item item_lowercase
+
+  for database_item in "${database[@]}"; do
+    item_lowercase="${(L)database_item}"
+    if [[ "$item_lowercase" == *"$search_query_lowercase"* ]]; then
+      matching_items+=("$database_item")
+    fi
+  done
+
+  if (( ${#matching_items} == 0 )); then
+    print -P "%F{yellow}No aliases found matching '%B${search_query}%b'.%f"
+    return 0
+  fi
+
+  print -P "%F{blue}%B=== Search Results for '${search_query}' ===%f"
+  print -P ""
+
+  local -i maximum_alias_length=0
+  local -i maximum_command_length=0
+  local -a item_parts
+  local current_alias current_command current_description padded_alias padded_command
+
+  for database_item in "${matching_items[@]}"; do
+    item_parts=("${(@s:@@@:)database_item}")
+    current_alias="${item_parts[1]}"
+    current_command="${item_parts[2]}"
+    if (( ${#current_alias} > maximum_alias_length )); then
+      maximum_alias_length=${#current_alias}
+    fi
+    if (( ${#current_command} > maximum_command_length )); then
+      maximum_command_length=${#current_command}
+    fi
+  done
+
+  for database_item in "${matching_items[@]}"; do
+    item_parts=("${(@s:@@@:)database_item}")
+    current_alias="${item_parts[1]}"
+    current_command="${item_parts[2]}"
+    current_description="${item_parts[4]}"
+
+    padded_alias="${(r:maximum_alias_length + 2:: :)current_alias}"
+    padded_command="${(r:maximum_command_length + 2:: :)current_command}"
+
+    print -Pn "  %F{green}"
+    print -rn -- "$padded_alias"
+    print -Pn "%f  %F{yellow}"
+    print -rn -- "$padded_command"
+    print -Pn "%f  %F{white}"
+    print -rn -- "$current_description"
+    print -P "%f"
+  done
+}
+
+# Helper 3: Multiple-choice quiz game for learning
+_git_alias_guide_quiz() {
+  print -P ""
+  print -P "%F{cyan}%B====================================================%f"
+  print -P "%F{cyan}%B             GIT ALIAS TRAINING QUIZ                %f"
+  print -P "%F{cyan}%B====================================================%f"
+  print -P "Test your knowledge and build muscle memory!"
+  print -P "Answer 5 questions to complete a round. Type 'q' at any time to exit."
+  print -P ""
+
+  local -i total_questions=5
+  local -i correct_answers_count=0
+  local -i question_index
+  local -i database_size=${#database}
+  local -i correct_item_index question_type option_index random_option_index user_score_percentage distractor_index
+  local correct_item correct_alias correct_command correct_description correct_option_text correct_label user_choice current_option distractor_item distractor_alias distractor_command
+  local -a correct_parts option_texts shuffled_options distractor_parts
+  local -a option_labels=("A" "B" "C" "D")
+
+  for (( question_index = 1; question_index <= total_questions; question_index++ )); do
+    print -P "%F{blue}%BQuestion ${question_index} of ${total_questions}:%f"
+
+    correct_item_index=$(( RANDOM % database_size + 1 ))
+    correct_item="${database[correct_item_index]}"
+
+    correct_parts=("${(@s:@@@:)correct_item}")
+    correct_alias="${correct_parts[1]}"
+    correct_command="${correct_parts[2]}"
+    correct_description="${correct_parts[4]}"
+
+    question_type=$(( RANDOM % 2 ))
+    option_texts=()
+
+    if (( question_type == 0 )); then
+      correct_option_text="$correct_alias"
+
+      while (( ${#option_texts} < 3 )); do
+        distractor_index=$(( RANDOM % database_size + 1 ))
+        if (( distractor_index == correct_item_index )); then
+          continue
+        fi
+        distractor_item="${database[distractor_index]}"
+        distractor_parts=("${(@s:@@@:)distractor_item}")
+        distractor_alias="${distractor_parts[1]}"
+
+        if [[ "$distractor_alias" != "$correct_alias" && "${option_texts[(Ie)$distractor_alias]}" -eq 0 ]]; then
+          option_texts+=("$distractor_alias")
+        fi
+      done
+    else
+      correct_option_text="$correct_command"
+
+      while (( ${#option_texts} < 3 )); do
+        distractor_index=$(( RANDOM % database_size + 1 ))
+        if (( distractor_index == correct_item_index )); then
+          continue
+        fi
+        distractor_item="${database[distractor_index]}"
+        distractor_parts=("${(@s:@@@:)distractor_item}")
+        distractor_command="${distractor_parts[2]}"
+
+        if [[ "$distractor_command" != "$correct_command" && "${option_texts[(Ie)$distractor_command]}" -eq 0 ]]; then
+          option_texts+=("$distractor_command")
+        fi
+      done
+    fi
+
+    option_texts+=("$correct_option_text")
+    shuffled_options=()
+
+    while (( ${#option_texts} > 0 )); do
+      random_option_index=$(( RANDOM % ${#option_texts} + 1 ))
+      shuffled_options+=("$option_texts[random_option_index]")
+      option_texts[random_option_index]=()
+    done
+
+    # Print question safely
+    if (( question_type == 0 )); then
+      print -Pn "What is the short Zsh alias for: %F{yellow}%B"
+      print -rn -- "$correct_command"
+      print -P "%b%f?"
+    else
+      print -Pn "What Git command does the alias %F{green}%B"
+      print -rn -- "$correct_alias"
+      print -P "%b%f expand to?"
+    fi
+    print -P ""
+
+    for (( option_index = 1; option_index <= 4; option_index++ )); do
+      current_option="${shuffled_options[option_index]}"
+      print -Pn "  %F{cyan}%B[${option_labels[option_index]}]%b%f "
+      print -rn -- "$current_option"
+      print ""
+      if [[ "$current_option" == "$correct_option_text" ]]; then
+        correct_label="${option_labels[option_index]}"
+      fi
+    done
+    print -P ""
+
+    while true; do
+      print -P -n "%F{blue}Your answer (A/B/C/D or Q to quit): %f"
+      read -r user_choice
+      user_choice="${(U)user_choice}"
+
+      if [[ "$user_choice" == "Q" ]]; then
+        print -P "%F{yellow}Quiz exited. Keep practicing!%f"
+        return 0
+      fi
+
+      if [[ "$user_choice" == "A" || "$user_choice" == "B" || "$user_choice" == "C" || "$user_choice" == "D" ]]; then
+        break
+      fi
+
+      print -P "%F{red}Invalid option. Please select A, B, C, or D.%f"
+    done
+
+    if [[ "$user_choice" == "$correct_label" ]]; then
+      print -P "%F{green}%B✓ Correct!%b%f"
+      correct_answers_count++
+    else
+      print -P "%F{red}%B✗ Incorrect.%b%f"
+      if (( question_type == 0 )); then
+        print -Pn "The correct alias is %F{green}%B"
+        print -rn -- "$correct_alias"
+        print -P "%b%f."
+      else
+        print -Pn "The correct command is %F{yellow}%B"
+        print -rn -- "$correct_command"
+        print -P "%b%f."
+      fi
+    fi
+
+    print -Pn "%F{white}%BExplanation:%b "
+    print -rn -- "$correct_description"
+    print -P "%f"
+    print -P ""
+
+    if (( question_index < total_questions )); then
+      print -n "Press [Enter] for the next question..."
+      read -r
+      print -P ""
+    fi
+  done
+
+  print -P "%F{cyan}%B====================================================%f"
+  print -P "%F{cyan}%B                QUIZ COMPLETED!                     %f"
+  print -P "%F{cyan}%B====================================================%f"
+  user_score_percentage=$(( (correct_answers_count * 100) / total_questions ))
+  print -P "Your final score: %F{green}%B${correct_answers_count}/${total_questions}%b%f (${user_score_percentage}%)"
+  if (( correct_answers_count == total_questions )); then
+    print -P "%F{magenta}%BPerfect score! You are a Git Alias Master! 🌟%b%f"
+  elif (( correct_answers_count >= 3 )); then
+    print -P "%F{blue}%BGreat job! You are well on your way to git mastery.%b%f"
+  else
+    print -P "%F{yellow}%BKeep practicing to build muscle memory!%b%f"
+  fi
+  print -P ""
+}
+
+# Helper 4: Interactive Dashboard / Dashboard Menu
+_git_alias_guide_menu() {
+  local user_menu_choice category_choice chosen_category database_item current_alias current_command current_description padded_alias padded_command search_query
+  local -i category_index maximum_alias_length maximum_command_length
+  local -a category_items item_parts
+
+  while true; do
+    print -P ""
+    print -P "%F{cyan}%B====================================================%f"
+    print -P "%F{cyan}%B             GIT ALIAS INTERACTIVE GUIDE            %f"
+    print -P "%F{cyan}%B====================================================%f"
+    print -P "  %F{green}%B[1]%b%f Browse Aliases by Category"
+    print -P "  %F{green}%B[2]%b%f Search for an Alias"
+    print -P "  %F{green}%B[3]%b%f Start the Practice Quiz"
+    print -P "  %F{green}%B[4]%b%f Exit Guide"
+    print -P ""
+
+    user_menu_choice=""
+    print -P -n "%F{blue}Select an option (1-4): %f"
+    read -r user_menu_choice
+
+    case "$user_menu_choice" in
+      1)
+        while true; do
+          print -P ""
+          print -P "%F{blue}%B--- Select a Category to Browse ---%f"
+          for (( category_index = 1; category_index <= ${#categories}; category_index++ )); do
+            print -P -n "  %F{green}%B[${category_index}]%b%f ${(r:12:: :)categories[category_index]}  "
+            if (( category_index % 4 == 0 )); then
+              print ""
+            fi
+          done
+          print ""
+          print -P "  %F{green}%B[B]%b%f Back to Main Menu"
+          print ""
+
+          category_choice=""
+          print -P -n "%F{blue}Select a category (1-${#categories} or B): %f"
+          read -r category_choice
+
+          if [[ "${(U)category_choice}" == "B" ]]; then
+            break
+          fi
+
+          if [[ "$category_choice" =~ ^[0-9]+$ ]] && (( category_choice >= 1 && category_choice <= ${#categories} )); then
+            chosen_category="${categories[category_choice]}"
+            print -P ""
+            print -P "%F{cyan}%B=== ${chosen_category} Aliases ===%f"
+            print -P ""
+
+            category_items=()
+            for database_item in "${database[@]}"; do
+              item_parts=("${(@s:@@@:)database_item}")
+              if [[ "$item_parts[3]" == "$chosen_category" ]]; then
+                category_items+=("$database_item")
+              fi
+            done
+
+            maximum_alias_length=0
+            maximum_command_length=0
+            for database_item in "${category_items[@]}"; do
+              item_parts=("${(@s:@@@:)database_item}")
+              current_alias="${item_parts[1]}"
+              current_command="${item_parts[2]}"
+              if (( ${#current_alias} > maximum_alias_length )); then
+                maximum_alias_length=${#current_alias}
+              fi
+              if (( ${#current_command} > maximum_command_length )); then
+                maximum_command_length=${#current_command}
+              fi
+            done
+
+            for database_item in "${category_items[@]}"; do
+              item_parts=("${(@s:@@@:)database_item}")
+              current_alias="${item_parts[1]}"
+              current_command="${item_parts[2]}"
+              current_description="${item_parts[4]}"
+
+              padded_alias="${(r:maximum_alias_length + 2:: :)current_alias}"
+              padded_command="${(r:maximum_command_length + 2:: :)current_command}"
+
+              print -Pn "  %F{green}"
+              print -rn -- "$padded_alias"
+              print -Pn "%f  %F{yellow}"
+              print -rn -- "$padded_command"
+              print -Pn "%f  %F{white}"
+              print -rn -- "$current_description"
+              print -P "%f"
+            done
+
+            print ""
+            print -n "Press [Enter] to return to category list..."
+            read -r
+          else
+            print -P "%F{red}Invalid option. Please select a valid category number or B.%f"
+          fi
+        done
+        ;;
+      2)
+        search_query=""
+        print -n "Enter search query: "
+        read -r search_query
+        _git_alias_guide_search "$search_query"
+        print ""
+        print -n "Press [Enter] to return to menu..."
+        read -r
+        ;;
+      3)
+        _git_alias_guide_quiz
+        print -n "Press [Enter] to return to menu..."
+        read -r
+        ;;
+      4)
+        print -P "%F{yellow}Exiting guide. Happy coding!%f"
+        return 0
+        ;;
+      *)
+        print -P "%F{red}Invalid option. Please select 1-4.%f"
+        ;;
+    esac
+  done
+}
+
+# Helper 5: Show usage/help page
+_git_alias_guide_print_help() {
+  print -P "%F{cyan}%BUsage: git-alias-guide [command | option]%f"
+  print -P ""
+  print -P "Commands:"
+  print -P "  %F{green}search <term>%f      Search for aliases matching a query"
+  print -P "  %F{green}quiz%f               Start the interactive training quiz"
+  print -P "  %F{green}interactive%f        Start the dashboard menu interface"
+  print -P "  %F{green}help%f               Show this help message"
+  print -P ""
+  print -P "Options:"
+  print -P "  %F{green}-s, --search <term>%f Same as search command"
+  print -P "  %F{green}-q, --quiz%f          Same as quiz command"
+  print -P "  %F{green}-i, --interactive%f   Same as interactive command"
+  print -P "  %F{green}-h, --help%f          Same as help command"
+  print -P ""
+  print -P "Without any arguments, shows the complete paginated cheatsheet like a man page."
+  print -P "If an argument does not match a command, it will be treated as a search term."
+}
+
+# 3. Main Router Switch logic
+if (( $# == 0 )); then
+  _git_alias_guide_print_cheatsheet
+  return 0
+fi
+
+  case "$1" in
+    search|-s|--search)
+      shift
+      _git_alias_guide_search "$*"
+      ;;
+    quiz|-q|--quiz)
+      _git_alias_guide_quiz
+      ;;
+    interactive|-i|--interactive)
+      _git_alias_guide_menu
+      ;;
+    help|--help|-h)
+      _git_alias_guide_print_help
+      ;;
+    *)
+      # Friendly fallback to search
+      _git_alias_guide_search "$*"
+      ;;
+  esac

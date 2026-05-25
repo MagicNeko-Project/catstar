@@ -2,6 +2,17 @@
 
 This cheatsheet documents the aliases provided by the Oh My Zsh `git` plugin.
 
+## Interactive Guide & Training Tool
+
+A fully native, interactive Zsh command `git-alias-guide` is available to browse, search, and practice these aliases:
+
+- **Reference Manual**: Run `git-alias-guide` without arguments to view this cheatsheet in a beautiful, paginated terminal manual format.
+- **Interactive Search**: Run `git-alias-guide search <query>` (or `git-alias-guide <query>`) to quickly search matching aliases.
+- **Practice Quiz**: Run `git-alias-guide quiz` to test your muscle memory on aliases and commands.
+- **Interactive Dashboard**: Run `git-alias-guide interactive` to open a menu to browse by category, search, or quiz.
+
+---
+
 ## General
 | Alias | Command | Description |
 | :--- | :--- | :--- |
