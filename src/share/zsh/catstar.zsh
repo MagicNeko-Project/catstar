@@ -39,7 +39,7 @@
 
 () {
   # ---------------------------------------------------------------------------
-  # 1. Initialization & Path Resolution
+  # 1. Path Resolution
   # ---------------------------------------------------------------------------
 
   # Resolve the stowed Zsh config directory (retaining symbolic link paths)
@@ -73,77 +73,45 @@
   oh_my_zsh_search_paths=("${default_oh_my_zsh_search_paths[@]}")
 
   # ---------------------------------------------------------------------------
-  # 3. Inner Helper Functions (Decoupled Operations)
+  # 3. Command-Line Argument Parsing (Procedural Logic)
   # ---------------------------------------------------------------------------
-
-  # Parses all input flags and sets local configuration states
-  function parse_loader_command_line_arguments() {
-    while (( $# > 0 )); do
-      case "$1" in
-        --oh-my-zsh)
-          should_load_oh_my_zsh=true
+  while (( $# > 0 )); do
+    case "$1" in
+      --oh-my-zsh)
+        should_load_oh_my_zsh=true
+        shift
+        ;;
+      --oh-my-zsh-paths)
+        if [[ -n "$2" && "$2" != -* ]]; then
+          # Split the colon-separated paths string into a native Zsh array using the (@) flag
+          oh_my_zsh_search_paths=("${(@s/:/)2}")
+          shift 2
+        else
           shift
-          ;;
-        --oh-my-zsh-paths)
-          if [[ -n "$2" && "$2" != -* ]]; then
-            # Split the colon-separated paths string into a native Zsh array
-            oh_my_zsh_search_paths=(${(s/:/)2})
-            shift 2
-          else
-            shift
-          fi
-          ;;
-        --clone-oh-my-zsh)
-          should_clone_oh_my_zsh_if_missing=true
-          shift
-          ;;
-        *)
-          # Skip unrecognized options
-          shift
-          ;;
-      esac
-    done
-  }
+        fi
+        ;;
+      --clone-oh-my-zsh)
+        should_clone_oh_my_zsh_if_missing=true
+        shift
+        ;;
+      *)
+        # Skip unrecognized options
+        shift
+        ;;
+    esac
+  done
 
-  # Clones the upstream Oh My Zsh repository to the specified path
-  function clone_oh_my_zsh_repository() {
-    local target_directory="$1"
-    if [[ -z "$target_directory" ]]; then
-      echo "Catstar Loader Error: Target directory for cloning is empty." >&2
-      return 1
-    fi
-
-    # Resolve absolute directory path, expanding any tildes
-    target_directory="${target_directory/#\~/$HOME}"
-    target_directory="${target_directory:A}"
-
-    echo "Catstar Loader: Oh My Zsh not found in search paths. Cloning to: $target_directory"
-
-    if ! command -v git >/dev/null 2>&1; then
-      echo "Catstar Loader Error: 'git' command is not installed. Cannot clone Oh My Zsh." >&2
-      return 1
-    fi
-
-    local parent_directory="${target_directory:h}"
-    mkdir -p "$parent_directory"
-
-    local git_repository_url="https://github.com/ohmyzsh/ohmyzsh.git"
-    if git clone "$git_repository_url" "$target_directory"; then
-      return 0
-    else
-      echo "Catstar Loader Error: Failed to clone Oh My Zsh repository from $git_repository_url" >&2
-      return 1
-    fi
-  }
-
-  # Traverses candidate paths, loads the framework on first match, or clones if missing
-  function search_and_load_oh_my_zsh() {
+  # ---------------------------------------------------------------------------
+  # 4. Oh My Zsh Integration (Procedural Logic)
+  # ---------------------------------------------------------------------------
+  if [[ "$should_load_oh_my_zsh" == true ]]; then
     local is_oh_my_zsh_framework_found=false
     local candidate_path
 
     for candidate_path in "${oh_my_zsh_search_paths[@]}"; do
-      # Resolve tildes to actual user home directories
+      # Expand tilde safely via string replacement and compute lowercase absolute path
       candidate_path="${candidate_path/#\~/$HOME}"
+      candidate_path="${candidate_path:a}"
       local bootstrap_script="$candidate_path/oh-my-zsh.sh"
 
       if [[ -f "$bootstrap_script" ]]; then
@@ -158,37 +126,40 @@
     if [[ "$is_oh_my_zsh_framework_found" == false && "$should_clone_oh_my_zsh_if_missing" == true ]]; then
       local primary_target_path="${oh_my_zsh_search_paths[1]}"
 
-      if clone_oh_my_zsh_repository "$primary_target_path"; then
-        # Resolve resolved absolute path after cloning
+      if [[ -n "$primary_target_path" ]]; then
+        # Expand tilde safely via string replacement and resolve lowercase absolute path
         primary_target_path="${primary_target_path/#\~/$HOME}"
-        primary_target_path="${primary_target_path:A}"
+        primary_target_path="${primary_target_path:a}"
 
-        export ZSH="$primary_target_path"
-        source "$primary_target_path/oh-my-zsh.sh"
-        is_oh_my_zsh_framework_found=true
+        print "Catstar Loader: Oh My Zsh not found in search paths. Cloning to: $primary_target_path"
+
+        if ! command -v git >/dev/null 2>&1; then
+          print -u2 "Catstar Loader Error: 'git' command is not installed. Cannot clone Oh My Zsh."
+        else
+          local parent_directory="${primary_target_path:h}"
+          mkdir -p "$parent_directory"
+
+          local git_repository_url="https://github.com/ohmyzsh/ohmyzsh.git"
+          if git clone "$git_repository_url" "$primary_target_path"; then
+            export ZSH="$primary_target_path"
+            source "$primary_target_path/oh-my-zsh.sh"
+            is_oh_my_zsh_framework_found=true
+          else
+            print -u2 "Catstar Loader Error: Failed to clone Oh My Zsh repository from $git_repository_url"
+          fi
+        fi
       fi
     fi
-  }
-
-  # ---------------------------------------------------------------------------
-  # 4. Framework Execution Sequence
-  # ---------------------------------------------------------------------------
-
-  # Step A: Parse user arguments
-  parse_loader_command_line_arguments "$@"
-
-  # Step B: Load or bootstrap Oh My Zsh if requested
-  if [[ "$should_load_oh_my_zsh" == true ]]; then
-    search_and_load_oh_my_zsh
   fi
 
-  # Step C: Modular function autoloading (Catstar modules)
+  # ---------------------------------------------------------------------------
+  # 5. Custom Catstar Function Autoloading
+  # ---------------------------------------------------------------------------
   local functions_directory="$catstar_directory/functions"
   if [[ -d "$functions_directory" ]]; then
-    # Ensure fpath doesn't already have the directory registered to avoid duplication
-    if [[ "${fpath[(r)$functions_directory]}" != "$functions_directory" ]]; then
-      fpath=("$functions_directory" $fpath)
-    fi
+    # Enforce built-in array deduplication via unique global declaration
+    typeset -g -U fpath
+    fpath=("$functions_directory" $fpath)
 
     # Autoload all non-hidden modules, excluding completion files starting with an underscore (_)
     # We isolate the setopt localoptions inside a nested anonymous function so it does
@@ -199,17 +170,11 @@
     }
   fi
 
-
-  # Step D: Sourcing auxiliary modular configuration scripts (.zsh)
+  # ---------------------------------------------------------------------------
+  # 6. Modular Configuration Loading
+  # ---------------------------------------------------------------------------
   local configuration_script
   for configuration_script in "$catstar_directory"/*.zsh(N); do
     source "$configuration_script"
   done
-
-  # ---------------------------------------------------------------------------
-  # 5. Namespace Cleanup
-  # ---------------------------------------------------------------------------
-  unfunction parse_loader_command_line_arguments
-  unfunction clone_oh_my_zsh_repository
-  unfunction search_and_load_oh_my_zsh
 } "${(%):-%x}" "$@"
