@@ -157,7 +157,7 @@
     # If missing and cloning is allowed, install the framework automatically
     if [[ "$is_oh_my_zsh_framework_found" == false && "$should_clone_oh_my_zsh_if_missing" == true ]]; then
       local primary_target_path="${oh_my_zsh_search_paths[1]}"
-      
+
       if clone_oh_my_zsh_repository "$primary_target_path"; then
         # Resolve resolved absolute path after cloning
         primary_target_path="${primary_target_path/#\~/$HOME}"
@@ -191,9 +191,14 @@
     fi
 
     # Autoload all non-hidden modules, excluding completion files starting with an underscore (_)
-    setopt localoptions extendedglob
-    autoload -Uz "$functions_directory"/(^_*)(N:t)
+    # We isolate the setopt localoptions inside a nested anonymous function so it does
+    # not affect options configured by Oh My Zsh (like promptsubst) in the outer scope.
+    () {
+      setopt localoptions extendedglob
+      autoload -Uz "$functions_directory"/(^_*)(N:t)
+    }
   fi
+
 
   # Step D: Sourcing auxiliary modular configuration scripts (.zsh)
   local configuration_script
