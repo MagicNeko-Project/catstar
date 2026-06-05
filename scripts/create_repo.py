@@ -10,8 +10,9 @@ import argparse
 from dataclasses import dataclass
 import json
 import os
+import subprocess
 import sys
-from typing import Any, Dict, Final, List, NoReturn, Tuple
+from typing import Any, Dict, Final, List, NoReturn, Optional, Tuple
 import urllib.error
 import urllib.request
 
@@ -37,6 +38,39 @@ STATUS_DISABLED_ICON: Final[str] = "🟥 Disabled"
 def exit_with_fatal_error(message: str) -> NoReturn:
     print(f"❌ Error: {message}", file=sys.stderr)
     sys.exit(1)
+
+
+def retrieve_secret_token(token_name: str) -> Optional[str]:
+    """Retrieve a credential token from environment variables or secure keyrings."""
+    env_token = os.getenv(token_name)
+    if env_token:
+        return env_token
+
+    if sys.platform == "darwin":
+        try:
+            darwin_result = subprocess.run(
+                ["security", "find-generic-password", "-s", token_name, "-w"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return darwin_result.stdout.strip()
+        except subprocess.CalledProcessError:
+            return None
+
+    if sys.platform.startswith("linux"):
+        try:
+            linux_result = subprocess.run(
+                ["secret-tool", "lookup", "service", token_name],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return linux_result.stdout.strip()
+        except subprocess.CalledProcessError:
+            return None
+
+    return None
 
 
 def execute_http_post_request(
@@ -97,9 +131,11 @@ def resolve_gitlab_access_level(is_feature_enabled: bool) -> str:
 
 
 def create_github_repository(configuration: GitHubConfiguration) -> None:
-    api_token = os.getenv("GITHUB_TOKEN")
+    api_token = retrieve_secret_token("GITHUB_TOKEN")
     if not api_token:
-        exit_with_fatal_error("GITHUB_TOKEN environment variable is missing.")
+        exit_with_fatal_error(
+            "GITHUB_TOKEN environment variable or Keychain entry is missing."
+        )
 
     # Ensure the Git repository is created without default initial commits
     request_payload: Dict[str, Any] = {
@@ -147,9 +183,11 @@ def create_github_repository(configuration: GitHubConfiguration) -> None:
 
 
 def create_gitlab_project(configuration: GitLabConfiguration) -> None:
-    api_token = os.getenv("GITLAB_TOKEN")
+    api_token = retrieve_secret_token("GITLAB_TOKEN")
     if not api_token:
-        exit_with_fatal_error("GITLAB_TOKEN environment variable is missing.")
+        exit_with_fatal_error(
+            "GITLAB_TOKEN environment variable or Keychain entry is missing."
+        )
 
     configured_base_url = os.getenv("GITLAB_URL", GITLAB_DEFAULT_BASE_URL).rstrip("/")
     target_endpoint = f"{configured_base_url}{GITLAB_PROJECTS_API_PATH}"
