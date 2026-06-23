@@ -8,17 +8,21 @@ flag and option combinations.
 """
 
 import unittest
+import unittest.mock
 from typing import Any, Dict
 from urllib.parse import ParseResult
 
 # Import functions to test directly from scripts.v2ray_tunnel
 from scripts.v2ray_tunnel import (
+    ProxyConfiguration,
     assemble_complete_configuration,
     determine_transport_protocol,
     determine_tunnel_mode,
     generate_inbound_configuration,
     generate_outbound_configuration,
+    generate_proxy_outbound_configuration,
     generate_stream_settings,
+    parse_proxy_endpoint_url,
     parse_remote_endpoint,
     validate_port_number,
 )
@@ -242,4 +246,118 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         self.assertEqual(routing_rule["type"], "field")
         self.assertEqual(routing_rule["inboundTag"], ["tag-in"])
         self.assertEqual(routing_rule["outboundTag"], "tag-out")
+
+    def test_parse_proxy_endpoint_url_socks_no_auth(self) -> None:
+        """Verifies parsing of SOCKS proxy URL without credentials."""
+        proxy_config = parse_proxy_endpoint_url("socks5://127.0.0.1:1080")
+        self.assertEqual(proxy_config.protocol, "socks")
+        self.assertEqual(proxy_config.address, "127.0.0.1")
+        self.assertEqual(proxy_config.port, 1080)
+        self.assertIsNone(proxy_config.username)
+        self.assertIsNone(proxy_config.password)
+
+    def test_parse_proxy_endpoint_url_socks_with_auth(self) -> None:
+        """Verifies parsing of SOCKS proxy URL with credentials."""
+        proxy_config = parse_proxy_endpoint_url("socks5://myuser:mypass@proxy.domain.com:1081")
+        self.assertEqual(proxy_config.protocol, "socks")
+        self.assertEqual(proxy_config.address, "proxy.domain.com")
+        self.assertEqual(proxy_config.port, 1081)
+        self.assertEqual(proxy_config.username, "myuser")
+        self.assertEqual(proxy_config.password, "mypass")
+
+    def test_parse_proxy_endpoint_url_http_default_port(self) -> None:
+        """Verifies parsing of HTTP proxy URL with default port resolution."""
+        proxy_config = parse_proxy_endpoint_url("http://127.0.0.1")
+        self.assertEqual(proxy_config.protocol, "http")
+        self.assertEqual(proxy_config.address, "127.0.0.1")
+        self.assertEqual(proxy_config.port, 8080)
+
+    def test_parse_proxy_endpoint_url_invalid_schemes(self) -> None:
+        """Verifies that unsupported or missing schemes raise ValueError."""
+        with self.assertRaises(ValueError):
+            parse_proxy_endpoint_url("127.0.0.1:1080")
+        with self.assertRaises(ValueError):
+            parse_proxy_endpoint_url("ftp://127.0.0.1:1080")
+
+    def test_generate_proxy_outbound_configuration_socks_auth(self) -> None:
+        """Verifies generation of SOCKS proxy outbound block with user authentication."""
+        proxy_config = ProxyConfiguration(
+            protocol="socks",
+            address="127.0.0.1",
+            port=1080,
+            username="testuser",
+            password="testpassword",
+        )
+        outbound = generate_proxy_outbound_configuration(proxy_config, "socks-proxy-out")
+        self.assertEqual(outbound["protocol"], "socks")
+        self.assertEqual(outbound["tag"], "socks-proxy-out")
+        server = outbound["settings"]["servers"][0]
+        self.assertEqual(server["address"], "127.0.0.1")
+        self.assertEqual(server["port"], 1080)
+        self.assertEqual(server["users"][0]["user"], "testuser")
+        self.assertEqual(server["users"][0]["pass"], "testpassword")
+
+    def test_generate_proxy_outbound_configuration_http_no_auth(self) -> None:
+        """Verifies generation of HTTP proxy outbound block without authentication."""
+        proxy_config = ProxyConfiguration(
+            protocol="http",
+            address="proxy.example.com",
+            port=8080,
+        )
+        outbound = generate_proxy_outbound_configuration(proxy_config, "http-proxy-out")
+        self.assertEqual(outbound["protocol"], "http")
+        self.assertEqual(outbound["tag"], "http-proxy-out")
+        server = outbound["settings"]["servers"][0]
+        self.assertEqual(server["address"], "proxy.example.com")
+        self.assertEqual(server["port"], 8080)
+        self.assertEqual(server["user"], [])
+
+    def test_generate_outbound_configuration_with_proxy_tag(self) -> None:
+        """Verifies that proxySettings is correctly attached to the main outbound."""
+        stream_settings = {"network": "ws"}
+        outbound = generate_outbound_configuration(
+            tunnel_mode="client",
+            stream_settings=stream_settings,
+            tag="my-tunnel",
+            proxy_tag="my-proxy-out",
+        )
+        self.assertEqual(outbound["protocol"], "freedom")
+        self.assertEqual(outbound["tag"], "my-tunnel-out")
+        self.assertEqual(outbound["proxySettings"]["tag"], "my-proxy-out")
+
+    def test_assemble_complete_configuration_with_proxy(self) -> None:
+        """Verifies assembly of complete configuration with an upstream proxy outbound."""
+        inbound = {"port": 1234, "tag": "inbound-tag"}
+        outbound = {"protocol": "freedom", "tag": "outbound-tag"}
+        proxy_outbound = {"protocol": "socks", "tag": "proxy-outbound-tag"}
+
+        config = assemble_complete_configuration(
+            inbound=inbound,
+            outbound=outbound,
+            tag=None,
+            proxy_outbound=proxy_outbound,
+        )
+        self.assertEqual(config["inbounds"], [inbound])
+        self.assertEqual(config["outbounds"], [outbound, proxy_outbound])
+
+    @unittest.mock.patch("subprocess.run")
+    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "1234", "--remote", "ws://example.com", "--run"])
+    @unittest.mock.patch("builtins.print")
+    def test_main_with_run_flag(self, mock_print: Any, mock_run: Any) -> None:
+        """Verifies that the main function calls subprocess.run when --run is specified."""
+        from scripts.v2ray_tunnel import main
+        main()
+        mock_run.assert_called_once()
+        args, kwargs = mock_run.call_args
+        self.assertEqual(args[0], ["v2ray", "run", "-format", "json"])
+        self.assertIn(b"example.com", kwargs["input"])
+
+    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "1234", "--remote", "ws://example.com", "--run", "--inbound"])
+    @unittest.mock.patch("builtins.print")
+    def test_main_with_run_and_inbound_flag(self, mock_print: Any) -> None:
+        """Verifies that the main function exits with error when --run and --inbound are combined."""
+        from scripts.v2ray_tunnel import main
+        with self.assertRaises(SystemExit) as context:
+            main()
+        self.assertEqual(context.exception.code, 1)
 

@@ -9,8 +9,9 @@ with or without TLS) for point-to-point port forwarding.
 
 import argparse
 import json
+import subprocess
 import sys
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, NamedTuple, Optional, Set
 from urllib.parse import ParseResult, urlparse
 
 # Standard Network and Protocol Constants
@@ -27,6 +28,16 @@ SUPPORTED_TLS_SCHEMES: Set[str] = {"wss", "https", "tls", "grpc", "h2"}
 SUPPORTED_WS_SCHEMES: Set[str] = {"ws", "wss"}
 SUPPORTED_GRPC_SCHEMES: Set[str] = {"grpc"}
 SUPPORTED_H2_SCHEMES: Set[str] = {"h2", "http"}
+
+# Proxy Configuration Constants
+DEFAULT_SOCKS_PROXY_PORT: int = 1080
+DEFAULT_HTTP_PROXY_PORT: int = 8080
+
+SOCKS_PROTOCOL_NAME: str = "socks"
+HTTP_PROTOCOL_NAME: str = "http"
+
+SUPPORTED_SOCKS_SCHEMES: Set[str] = {"socks", "socks4", "socks4a", "socks5", "socks5h"}
+SUPPORTED_HTTP_SCHEMES: Set[str] = {"http", "https"}
 
 
 def validate_port_number(port_value: Any) -> int:
@@ -119,6 +130,121 @@ def determine_transport_protocol(scheme: str) -> str:
     if scheme in SUPPORTED_H2_SCHEMES:
         return "h2"
     return "tcp"
+
+
+class ProxyConfiguration(NamedTuple):
+    """
+    Immutable representation of a proxy configuration.
+    """
+    protocol: str  # Must be SOCKS_PROTOCOL_NAME or HTTP_PROTOCOL_NAME
+    address: str
+    port: int
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+
+def parse_proxy_endpoint_url(proxy_url_string: str) -> ProxyConfiguration:
+    """
+    Parses a proxy URL string into an immutable ProxyConfiguration NamedTuple.
+
+    Supported schemes: socks, socks4, socks4a, socks5, socks5h, http, https.
+
+    Args:
+        proxy_url_string: The raw proxy URL string (e.g., socks5://127.0.0.1:1080).
+
+    Returns:
+        A ProxyConfiguration NamedTuple containing the parsed details.
+
+    Raises:
+        ValueError: If the URL is invalid, lacks a scheme/host, or has an unsupported scheme.
+    """
+    parsed_url = urlparse(proxy_url_string)
+    if not parsed_url.scheme:
+        raise ValueError(
+            f"Proxy URL must include a scheme (e.g., socks5:// or http://). Got: '{proxy_url_string}'"
+        )
+
+    scheme = parsed_url.scheme.lower()
+    if scheme in SUPPORTED_SOCKS_SCHEMES:
+        protocol = SOCKS_PROTOCOL_NAME
+    elif scheme in SUPPORTED_HTTP_SCHEMES:
+        protocol = HTTP_PROTOCOL_NAME
+    else:
+        supported_schemes_list = sorted(list(SUPPORTED_SOCKS_SCHEMES | SUPPORTED_HTTP_SCHEMES))
+        raise ValueError(
+            f"Unsupported proxy scheme: '{scheme}'. Supported schemes are: {', '.join(supported_schemes_list)}"
+        )
+
+    if not parsed_url.hostname:
+        raise ValueError(
+            f"Unable to parse hostname from the proxy URL: '{proxy_url_string}'"
+        )
+
+    if parsed_url.port is not None:
+        port = validate_port_number(parsed_url.port)
+    else:
+        # Resolve default ports based on the protocol
+        port = DEFAULT_SOCKS_PROXY_PORT if protocol == SOCKS_PROTOCOL_NAME else DEFAULT_HTTP_PROXY_PORT
+
+    return ProxyConfiguration(
+        protocol=protocol,
+        address=parsed_url.hostname,
+        port=port,
+        username=parsed_url.username,
+        password=parsed_url.password,
+    )
+
+
+def generate_proxy_outbound_configuration(
+    proxy_config: ProxyConfiguration,
+    proxy_tag: str,
+) -> Dict[str, Any]:
+    """
+    Generates the V2Ray outbound configuration object for an upstream proxy server.
+
+    Args:
+        proxy_config: The parsed ProxyConfiguration.
+        proxy_tag: The routing tag to assign to the proxy outbound.
+
+    Returns:
+        A dictionary matching V2Ray's outbound configuration schema for SOCKS or HTTP.
+    """
+    outbound: Dict[str, Any] = {
+        "protocol": proxy_config.protocol,
+        "tag": proxy_tag,
+    }
+
+    server_entry: Dict[str, Any] = {
+        "address": proxy_config.address,
+        "port": proxy_config.port,
+    }
+
+    if proxy_config.protocol == SOCKS_PROTOCOL_NAME:
+        users_list = []
+        if proxy_config.username and proxy_config.password:
+            users_list.append({
+                "user": proxy_config.username,
+                "pass": proxy_config.password,
+                "level": 0,
+            })
+        server_entry["users"] = users_list
+        outbound["settings"] = {
+            "servers": [server_entry]
+        }
+
+    elif proxy_config.protocol == HTTP_PROTOCOL_NAME:
+        user_list = []
+        if proxy_config.username and proxy_config.password:
+            user_list.append({
+                "user": proxy_config.username,
+                "pass": proxy_config.password,
+            })
+        server_entry["user"] = user_list
+        outbound["settings"] = {
+            "servers": [server_entry]
+        }
+
+    return outbound
 
 
 def generate_stream_settings(
@@ -233,6 +359,7 @@ def generate_outbound_configuration(
     tunnel_mode: str,
     stream_settings: Dict[str, Any],
     tag: Optional[str],
+    proxy_tag: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Generates the V2Ray outbound configuration object.
@@ -241,6 +368,7 @@ def generate_outbound_configuration(
         tunnel_mode: Operation mode ('client' or 'server').
         stream_settings: Configured streamSettings block.
         tag: Optional label for routing rules.
+        proxy_tag: Optional tag of the upstream proxy outbound.
 
     Returns:
         A dictionary representing the outbound configuration.
@@ -256,6 +384,11 @@ def generate_outbound_configuration(
     if tag:
         outbound["tag"] = f"{tag}-out"
 
+    if proxy_tag:
+        outbound["proxySettings"] = {
+            "tag": proxy_tag,
+        }
+
     return outbound
 
 
@@ -263,23 +396,29 @@ def assemble_complete_configuration(
     inbound: Dict[str, Any],
     outbound: Dict[str, Any],
     tag: Optional[str],
+    proxy_outbound: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Assembles the complete V2Ray configuration object including basic logging
-    and routing isolation rules.
+    Assembles the complete V2Ray configuration object including basic logging,
+    routing isolation rules, and optional upstream proxy outbound.
 
     Args:
         inbound: The configured inbound block.
         outbound: The configured outbound block.
         tag: Optional label for isolating traffic.
+        proxy_outbound: Optional configured proxy outbound block.
 
     Returns:
         A dictionary representing the complete V2Ray configuration.
     """
+    outbounds = [outbound]
+    if proxy_outbound:
+        outbounds.append(proxy_outbound)
+
     config: Dict[str, Any] = {
         "log": {"loglevel": "info"},
         "inbounds": [inbound],
-        "outbounds": [outbound],
+        "outbounds": outbounds,
     }
 
     if tag:
@@ -297,24 +436,50 @@ def assemble_complete_configuration(
     return config
 
 
+def generate_colorized_examples_epilog(colorize: bool) -> str:
+    """
+    Generates a colorized help epilog containing usage examples.
+
+    Args:
+        colorize: Whether to include ANSI escape sequences for color coding.
+
+    Returns:
+        A formatted string representing the examples section.
+    """
+    # ANSI escape sequences
+    ansi_bold = "\033[1m" if colorize else ""
+    ansi_cyan = "\033[36m" if colorize else ""
+    ansi_yellow = "\033[33m" if colorize else ""
+    ansi_reset = "\033[0m" if colorize else ""
+
+    lines = [
+        "Examples:",
+        f"  {ansi_cyan}# Client Mode: Local Port 1234 -> Forward to Remote WSS Server{ansi_reset}",
+        f"  {ansi_bold}python3 v2ray_tunnel.py{ansi_reset} {ansi_yellow}--listen{ansi_reset} 1234 {ansi_yellow}--remote{ansi_reset} wss://example.com/tunnel",
+        "",
+        f"  {ansi_cyan}# Client Mode through SOCKS5 Proxy:{ansi_reset}",
+        f"  {ansi_bold}python3 v2ray_tunnel.py{ansi_reset} {ansi_yellow}--listen{ansi_reset} 1234 {ansi_yellow}--remote{ansi_reset} wss://example.com/tunnel {ansi_yellow}--proxy{ansi_reset} socks5://127.0.0.1:1080",
+        "",
+        f"  {ansi_cyan}# Server Mode: Listen WS 443 with TLS -> Forward to Local SSH (22){ansi_reset}",
+        f"  {ansi_bold}python3 v2ray_tunnel.py{ansi_reset} {ansi_yellow}--listen{ansi_reset} 443 {ansi_yellow}--remote{ansi_reset} tcp://127.0.0.1:22 {ansi_yellow}--tls{ansi_reset}",
+        "",
+        f"  {ansi_cyan}# Isolated Tunnel with Routing Tags{ansi_reset}",
+        f"  {ansi_bold}python3 v2ray_tunnel.py{ansi_reset} {ansi_yellow}--listen{ansi_reset} 1234 {ansi_yellow}--remote{ansi_reset} wss://example.com/tunnel {ansi_yellow}--tag{ansi_reset} my-tunnel",
+    ]
+    return "\n".join(lines)
+
+
 def main() -> None:
     """
     Executes the command-line parsing and config generation logic.
     """
+    colorize = sys.stdout.isatty()
+    epilog_text = generate_colorized_examples_epilog(colorize)
+
     parser = argparse.ArgumentParser(
         description="V2Ray Tunnel Configuration Generator (TCP, WS, gRPC, H2)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Client Mode: Local Port 1234 -> Forward to Remote WSS Server
-  python3 v2ray_tunnel.py --listen 1234 --remote wss://example.com/tunnel
-
-  # Server Mode: Listen WS 443 with TLS -> Forward to Local SSH (22)
-  python3 v2ray_tunnel.py --listen 443 --remote tcp://127.0.0.1:22 --tls
-
-  # Isolated Tunnel with Routing Tags
-  python3 v2ray_tunnel.py --listen 1234 --remote wss://example.com/tunnel --tag my-tunnel
-""",
+        epilog=epilog_text,
     )
 
     parser.add_argument(
@@ -339,6 +504,11 @@ Examples:
         "-t",
         "--tag",
         help="Optional routing tag for isolation inside the V2Ray router",
+    )
+    parser.add_argument(
+        "-p",
+        "--proxy",
+        help="Upstream proxy URL (e.g., socks5://127.0.0.1:1080, http://user:pass@proxy.com:8080) to route the tunnel through",
     )
 
     # TLS controls
@@ -383,6 +553,12 @@ Examples:
         help="Output only the outbound block",
     )
 
+    parser.add_argument(
+        "--run",
+        action="store_true",
+        help="Start the V2Ray binary directly with the generated configuration",
+    )
+
     args = parser.parse_args()
 
     try:
@@ -417,6 +593,17 @@ Examples:
         # Resolve TLS SNI
         sni_override = args.sni if args.sni else hostname
 
+        # Resolve proxy if specified
+        proxy_tag = None
+        proxy_outbound_config = None
+        if args.proxy:
+            proxy_config = parse_proxy_endpoint_url(args.proxy)
+            proxy_tag = f"{args.tag}-proxy-out" if args.tag else "proxy-out"
+            proxy_outbound_config = generate_proxy_outbound_configuration(
+                proxy_config=proxy_config,
+                proxy_tag=proxy_tag,
+            )
+
         # Construct the settings
         stream_settings = generate_stream_settings(
             transport_protocol=transport_protocol,
@@ -443,20 +630,47 @@ Examples:
             tunnel_mode=tunnel_mode,
             stream_settings=stream_settings,
             tag=args.tag,
+            proxy_tag=proxy_tag,
         )
 
         # Output generation based on filters
         if args.inbound:
+            if args.run:
+                raise ValueError("Cannot run V2Ray with only inbound block. Complete configuration is required.")
             print(json.dumps(inbound_config, indent=2))
         elif args.outbound:
-            print(json.dumps(outbound_config, indent=2))
+            if args.run:
+                raise ValueError("Cannot run V2Ray with only outbound block. Complete configuration is required.")
+            if proxy_outbound_config:
+                print(json.dumps([outbound_config, proxy_outbound_config], indent=2))
+            else:
+                print(json.dumps(outbound_config, indent=2))
         else:
             complete_config = assemble_complete_configuration(
                 inbound=inbound_config,
                 outbound=outbound_config,
                 tag=args.tag,
+                proxy_outbound=proxy_outbound_config,
             )
-            print(json.dumps(complete_config, indent=2))
+            config_json_string = json.dumps(complete_config, indent=2)
+            print(config_json_string)
+
+            if args.run:
+                try:
+                    subprocess.run(
+                        ["v2ray", "run", "-format", "json"],
+                        input=config_json_string.encode("utf-8"),
+                        check=True,
+                    )
+                except FileNotFoundError:
+                    print(
+                        "Error: 'v2ray' binary not found in PATH. Please ensure V2Ray is installed.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                except KeyboardInterrupt:
+                    print("\nStopping V2Ray tunnel...", file=sys.stderr)
+                    sys.exit(0)
 
     except ValueError as error:
         print(f"Configuration Error: {error}", file=sys.stderr)
