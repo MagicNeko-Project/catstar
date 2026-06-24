@@ -234,6 +234,17 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         self.assertEqual(outbound["streamSettings"]["network"], "grpc")
         self.assertEqual(outbound["tag"], "mytag-out")
         self.assertEqual(outbound["proxySettings"]["tag"], "myproxy")
+        self.assertNotIn("settings", outbound)
+
+    def test_generate_outbound_configuration_with_domain_strategy(self) -> None:
+        """Verifies V2Ray outbound block with explicit domainStrategy."""
+        outbound = generate_outbound_configuration(
+            stream_settings={"network": "grpc"},
+            tag="mytag",
+            domain_strategy="UseIP",
+        )
+        self.assertEqual(outbound["protocol"], "freedom")
+        self.assertEqual(outbound["settings"]["domainStrategy"], "UseIP")
 
     def test_generate_proxy_outbound_configuration_socks(self) -> None:
         """Verifies upstream SOCKS proxy outbound block generation."""
@@ -272,6 +283,19 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         self.assertEqual(complete["inbounds"], [inbound])
         self.assertEqual(complete["outbounds"], [outbound, {"tag": "proxy-tag"}])
         self.assertEqual(complete["routing"]["rules"][0]["outboundTag"], "out-tag")
+        self.assertNotIn("dns", complete)
+
+    def test_assemble_complete_configuration_with_dns(self) -> None:
+        """Verifies merging of custom DNS block into the master config schema."""
+        inbound = {"tag": "in-tag"}
+        outbound = {"tag": "out-tag"}
+        complete = assemble_complete_configuration(
+            inbound=inbound,
+            outbound=outbound,
+            tag="mytag",
+            dns_servers=["1.1.1.1", "8.8.8.8"],
+        )
+        self.assertEqual(complete["dns"]["servers"], ["1.1.1.1", "8.8.8.8"])
 
     def test_generate_random_port(self) -> None:
         """Verifies that generate_random_port returns a valid port in the safe range."""
@@ -396,3 +420,20 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
             except (json.JSONDecodeError, TypeError):
                 continue
         self.assertTrue(inbound_printed)
+
+    @unittest.mock.patch("subprocess.run")
+    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--remote", "tcp://example.com:22", "--dns", "1.1.1.1,8.8.8.8", "--run"])
+    @unittest.mock.patch("builtins.print")
+    def test_main_with_dns_configuration(self, mock_print: Any, mock_run: Any) -> None:
+        """Verifies that passing --dns generates the root-level dns block and defaults domainStrategy to UseIP."""
+        from scripts.v2ray_tunnel import main
+        main()
+        mock_run.assert_called_once()
+        args, kwargs = mock_run.call_args
+        config = json.loads(kwargs["input"].decode("utf-8"))
+        
+        # DNS block must be present
+        self.assertEqual(config["dns"]["servers"], ["1.1.1.1", "8.8.8.8"])
+        
+        # Outbound must have domainStrategy UseIP
+        self.assertEqual(config["outbounds"][0]["settings"]["domainStrategy"], "UseIP")

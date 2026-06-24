@@ -343,6 +343,7 @@ def generate_outbound_configuration(
     stream_settings: Optional[Dict[str, Any]],
     tag: Optional[str],
     proxy_tag: Optional[str] = None,
+    domain_strategy: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Generates the V2Ray outbound configuration object.
@@ -350,6 +351,11 @@ def generate_outbound_configuration(
     outbound: Dict[str, Any] = {
         "protocol": "freedom",
     }
+
+    if domain_strategy:
+        outbound["settings"] = {
+            "domainStrategy": domain_strategy,
+        }
 
     if stream_settings:
         outbound["streamSettings"] = stream_settings
@@ -415,6 +421,7 @@ def assemble_complete_configuration(
     outbound: Dict[str, Any],
     tag: Optional[str],
     proxy_outbound: Optional[Dict[str, Any]] = None,
+    dns_servers: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Assembles the complete V2Ray configuration object including basic logging,
@@ -429,6 +436,11 @@ def assemble_complete_configuration(
         "inbounds": [inbound],
         "outbounds": outbounds,
     }
+
+    if dns_servers:
+        config["dns"] = {
+            "servers": dns_servers,
+        }
 
     if tag:
         config["routing"] = {
@@ -542,6 +554,15 @@ def main() -> None:
         const="",
         help="Start V2Ray and automatically launch an SSH session connecting to the local tunneled port. Optionally specify the SSH username (e.g. --ssh myuser). Only supported if the local listening port is plain TCP.",
     )
+    parser.add_argument(
+        "--dns",
+        help="Comma-separated list of custom DNS servers for internal V2Ray resolution (e.g. '1.1.1.1,8.8.8.8')",
+    )
+    parser.add_argument(
+        "--domain-strategy",
+        choices=["AsIs", "UseIP", "UseIPv4", "UseIPv6"],
+        help="Domain resolution strategy for outbound connections (defaults to 'UseIP' if --dns is specified)",
+    )
 
     args = parser.parse_args()
 
@@ -612,7 +633,11 @@ def main() -> None:
             key_file="",
         )
 
-        # Generate configurations
+        # Resolve domain strategy
+        domain_strategy = args.domain_strategy
+        if not domain_strategy and args.dns:
+            domain_strategy = "UseIP"
+
         inbound_config = generate_inbound_configuration(
             listen_port=inbound_endpoint.port,
             listen_address=inbound_endpoint.address,
@@ -626,7 +651,13 @@ def main() -> None:
             stream_settings=outbound_stream_settings,
             tag=args.tag,
             proxy_tag=proxy_tag,
+            domain_strategy=domain_strategy,
         )
+
+        # Parse DNS servers if specified
+        dns_servers = None
+        if args.dns:
+            dns_servers = [s.strip() for s in args.dns.split(",") if s.strip()]
 
         # Assemble the complete configuration internally
         complete_config = assemble_complete_configuration(
@@ -634,6 +665,7 @@ def main() -> None:
             outbound=outbound_config,
             tag=args.tag,
             proxy_outbound=proxy_outbound_config,
+            dns_servers=dns_servers,
         )
         config_json_string = json.dumps(complete_config, indent=2)
 
