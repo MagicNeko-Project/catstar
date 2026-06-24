@@ -9,6 +9,7 @@ and raw TCP transport protocols with optional TLS encryption on either end.
 """
 
 import argparse
+import ipaddress
 import json
 import random
 import subprocess
@@ -77,6 +78,23 @@ def generate_random_port() -> int:
         A reasonably chosen port number.
     """
     return random.randint(MIN_RANDOM_PORT, MAX_RANDOM_PORT)
+
+
+def is_ip_address(address_string: str) -> bool:
+    """
+    Checks if a given address string represents a valid IPv4 or IPv6 address.
+
+    Args:
+        address_string: The address string to verify.
+
+    Returns:
+        True if it is a valid IP address, False otherwise.
+    """
+    try:
+        ipaddress.ip_address(address_string)
+        return True
+    except ValueError:
+        return False
 
 
 def validate_port_number(port_value: Any) -> int:
@@ -269,10 +287,12 @@ def generate_endpoint_stream_settings(
     if endpoint.tls_enabled:
         stream_settings["security"] = "tls"
         if not is_inbound:
-            stream_settings["tlsSettings"] = {
-                "serverName": sni_override,
+            tls_settings: Dict[str, Any] = {
                 "allowInsecure": False,
             }
+            if sni_override:
+                tls_settings["serverName"] = sni_override
+            stream_settings["tlsSettings"] = tls_settings
         else:
             stream_settings["tlsSettings"] = {
                 "certificates": [
@@ -577,7 +597,13 @@ def main() -> None:
             key_file=args.key_file,
         )
 
-        sni_override = args.sni if args.sni else outbound_endpoint.address
+        # Resolve TLS SNI (omit for raw IP addresses unless explicitly overridden)
+        sni_override = ""
+        if args.sni:
+            sni_override = args.sni
+        elif outbound_endpoint.address and not is_ip_address(outbound_endpoint.address):
+            sni_override = outbound_endpoint.address
+
         outbound_stream_settings = generate_endpoint_stream_settings(
             endpoint=outbound_endpoint,
             is_inbound=False,
@@ -656,7 +682,7 @@ def main() -> None:
                     f"{ansi_cyan}# Launching SSH session: {' '.join(ssh_command)}{ansi_reset}",
                     file=sys.stderr,
                 )
-                
+
                 subprocess.run(ssh_command, check=True)
 
             except FileNotFoundError:

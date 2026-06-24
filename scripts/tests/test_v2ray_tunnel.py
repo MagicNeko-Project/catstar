@@ -12,6 +12,7 @@ from scripts.v2ray_tunnel import (
     generate_outbound_configuration,
     generate_proxy_outbound_configuration,
     generate_random_port,
+    is_ip_address,
     parse_endpoint,
     parse_proxy_endpoint_url,
     validate_port_number,
@@ -37,6 +38,20 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
             validate_port_number(0)
         with self.assertRaises(ValueError):
             validate_port_number(65536)
+
+    def test_is_ip_address(self) -> None:
+        """Verifies that is_ip_address correctly identifies IPv4 and IPv6 addresses."""
+        # IPv4
+        self.assertTrue(is_ip_address("127.0.0.1"))
+        self.assertTrue(is_ip_address("8.8.8.8"))
+        self.assertTrue(is_ip_address("0.0.0.0"))
+        # IPv6
+        self.assertTrue(is_ip_address("::1"))
+        self.assertTrue(is_ip_address("2001:db8::1"))
+        # Hostnames (not IPs)
+        self.assertFalse(is_ip_address("localhost"))
+        self.assertFalse(is_ip_address("example.com"))
+        self.assertFalse(is_ip_address("c5-ts.maomihz.com"))
 
     def test_parse_endpoint_plain_port(self) -> None:
         """Verifies that a simple port number resolves to plain TCP with no address."""
@@ -174,6 +189,21 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         self.assertEqual(settings["network"], "ws")
         self.assertEqual(settings["security"], "tls")
         self.assertEqual(settings["tlsSettings"]["serverName"], "custom.com")
+
+    def test_generate_endpoint_stream_settings_ws_outbound_secure_no_sni_if_empty(self) -> None:
+        """Verifies that if sni_override is empty, serverName is omitted from tlsSettings."""
+        endpoint = parse_endpoint("wss://1.2.3.4/tunnel", is_inbound=False)
+        settings = generate_endpoint_stream_settings(
+            endpoint=endpoint,
+            is_inbound=False,
+            sni_override="",
+            certificate_file="",
+            key_file="",
+        )
+        self.assertIsNotNone(settings)
+        self.assertEqual(settings["network"], "ws")
+        self.assertEqual(settings["security"], "tls")
+        self.assertNotIn("serverName", settings["tlsSettings"])
 
     def test_generate_inbound_configuration(self) -> None:
         """Verifies V2Ray inbound block schema construction."""
