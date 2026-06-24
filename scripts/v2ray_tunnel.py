@@ -571,7 +571,7 @@ def main() -> None:
         "--ssh",
         nargs="?",
         const="",
-        help="Start V2Ray and automatically launch an SSH session connecting to the local tunneled port. Optionally specify the SSH username (e.g. --ssh myuser). Only supported in client mode.",
+        help="Start V2Ray and automatically launch an SSH session connecting to the local tunneled port. Optionally specify the SSH username (e.g. --ssh myuser).",
     )
 
     args = parser.parse_args()
@@ -593,10 +593,6 @@ def main() -> None:
 
         # Mode heuristics and overrides
         tunnel_mode = determine_tunnel_mode(args.mode, parsed_remote.scheme)
-
-        # Validate SSH mode constraints
-        if args.ssh is not None and tunnel_mode != "client":
-            raise ValueError("The --ssh option is only supported in client mode.")
 
         # TLS configuration
         tls_enabled = parsed_remote.scheme in SUPPORTED_TLS_SCHEMES
@@ -660,94 +656,92 @@ def main() -> None:
             proxy_tag=proxy_tag,
         )
 
+        # We always assemble the complete configuration internally
+        complete_config = assemble_complete_configuration(
+            inbound=inbound_config,
+            outbound=outbound_config,
+            tag=args.tag,
+            proxy_outbound=proxy_outbound_config,
+        )
+        config_json_string = json.dumps(complete_config, indent=2)
+
         # Output generation based on filters
         if args.inbound:
-            if args.run or args.ssh is not None:
-                raise ValueError("Cannot run V2Ray or launch SSH with only inbound block. Complete configuration is required.")
             print(json.dumps(inbound_config, indent=2))
         elif args.outbound:
-            if args.run or args.ssh is not None:
-                raise ValueError("Cannot run V2Ray or launch SSH with only outbound block. Complete configuration is required.")
             if proxy_outbound_config:
                 print(json.dumps([outbound_config, proxy_outbound_config], indent=2))
             else:
                 print(json.dumps(outbound_config, indent=2))
         else:
-            complete_config = assemble_complete_configuration(
-                inbound=inbound_config,
-                outbound=outbound_config,
-                tag=args.tag,
-                proxy_outbound=proxy_outbound_config,
-            )
-            config_json_string = json.dumps(complete_config, indent=2)
             print(config_json_string)
 
-            if args.ssh is not None:
-                try:
-                    # Launch V2Ray in the background
-                    v2ray_process = subprocess.Popen(
-                        ["v2ray", "run", "-format", "json"],
-                        stdin=subprocess.PIPE,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    v2ray_process.stdin.write(config_json_string.encode("utf-8"))
-                    v2ray_process.stdin.close()
+        if args.ssh is not None:
+            try:
+                # Launch V2Ray in the background
+                v2ray_process = subprocess.Popen(
+                    ["v2ray", "run", "-format", "json"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                v2ray_process.stdin.write(config_json_string.encode("utf-8"))
+                v2ray_process.stdin.close()
 
-                    # Pause to let V2Ray bind to the port
-                    time.sleep(0.2)
+                # Pause to let V2Ray bind to the port
+                time.sleep(0.2)
 
-                    # Verify that the V2Ray process is still running
-                    if v2ray_process.poll() is not None:
-                        print("Error: V2Ray process failed to start.", file=sys.stderr)
-                        sys.exit(1)
-
-                    # Build the SSH command
-                    ssh_command = ["ssh", "-p", str(listen_port)]
-                    if args.ssh:  # Username is specified
-                        ssh_command.append(f"{args.ssh}@127.0.0.1")
-                    else:
-                        ssh_command.append("127.0.0.1")
-
-                    ansi_cyan = "\033[36m" if colorize else ""
-                    ansi_reset = "\033[0m" if colorize else ""
-                    print(
-                        f"{ansi_cyan}# Launching SSH session: {' '.join(ssh_command)}{ansi_reset}",
-                        file=sys.stderr,
-                    )
-                    
-                    subprocess.run(ssh_command, check=True)
-
-                except FileNotFoundError:
-                    print(
-                        "Error: 'v2ray' or 'ssh' binary not found in PATH.",
-                        file=sys.stderr,
-                    )
+                # Verify that the V2Ray process is still running
+                if v2ray_process.poll() is not None:
+                    print("Error: V2Ray process failed to start.", file=sys.stderr)
                     sys.exit(1)
-                except KeyboardInterrupt:
-                    pass
-                finally:
-                    # Always clean up the background process cleanly
-                    print("\nStopping V2Ray tunnel...", file=sys.stderr)
-                    v2ray_process.terminate()
-                    v2ray_process.wait()
 
-            elif args.run:
-                try:
-                    subprocess.run(
-                        ["v2ray", "run", "-format", "json"],
-                        input=config_json_string.encode("utf-8"),
-                        check=True,
-                    )
-                except FileNotFoundError:
-                    print(
-                        "Error: 'v2ray' binary not found in PATH. Please ensure V2Ray is installed.",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
-                except KeyboardInterrupt:
-                    print("\nStopping V2Ray tunnel...", file=sys.stderr)
-                    sys.exit(0)
+                # Build the SSH command
+                ssh_command = ["ssh", "-p", str(listen_port)]
+                if args.ssh:  # Username is specified
+                    ssh_command.append(f"{args.ssh}@127.0.0.1")
+                else:
+                    ssh_command.append("127.0.0.1")
+
+                ansi_cyan = "\033[36m" if colorize else ""
+                ansi_reset = "\033[0m" if colorize else ""
+                print(
+                    f"{ansi_cyan}# Launching SSH session: {' '.join(ssh_command)}{ansi_reset}",
+                    file=sys.stderr,
+                )
+
+                subprocess.run(ssh_command, check=True)
+
+            except FileNotFoundError:
+                print(
+                    "Error: 'v2ray' or 'ssh' binary not found in PATH.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            except KeyboardInterrupt:
+                pass
+            finally:
+                # Always clean up the background process cleanly
+                print("\nStopping V2Ray tunnel...", file=sys.stderr)
+                v2ray_process.terminate()
+                v2ray_process.wait()
+
+        elif args.run:
+            try:
+                subprocess.run(
+                    ["v2ray", "run", "-format", "json"],
+                    input=config_json_string.encode("utf-8"),
+                    check=True,
+                )
+            except FileNotFoundError:
+                print(
+                    "Error: 'v2ray' binary not found in PATH. Please ensure V2Ray is installed.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            except KeyboardInterrupt:
+                print("\nStopping V2Ray tunnel...", file=sys.stderr)
+                sys.exit(0)
 
     except ValueError as error:
         print(f"Configuration Error: {error}", file=sys.stderr)
