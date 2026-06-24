@@ -34,7 +34,7 @@ DEFAULT_PATH: str = "/"
 SUPPORTED_TLS_SCHEMES: Set[str] = {"wss", "https", "tls", "grpc", "h2"}
 SUPPORTED_WS_SCHEMES: Set[str] = {"ws", "wss"}
 SUPPORTED_GRPC_SCHEMES: Set[str] = {"grpc"}
-SUPPORTED_H2_SCHEMES: Set[str] = {"h2", "http"}
+SUPPORTED_H2_SCHEMES: Set[str] = {"h2"}
 
 # Proxy Configuration Constants
 DEFAULT_SOCKS_PROXY_PORT: int = 1080
@@ -52,7 +52,7 @@ class EndpointConfiguration(NamedTuple):
     Immutable representation of an inbound or outbound tunnel endpoint.
     """
     transport_protocol: str
-    address: str
+    address: Optional[str]
     port: int
     path: str
     tls_enabled: bool
@@ -120,7 +120,7 @@ def parse_endpoint(url_string: str, is_inbound: bool) -> EndpointConfiguration:
         port = validate_port_number(url_string)
         return EndpointConfiguration(
             transport_protocol="tcp",
-            address="127.0.0.1",
+            address=None,
             port=port,
             path="",
             tls_enabled=False,
@@ -145,8 +145,14 @@ def parse_endpoint(url_string: str, is_inbound: bool) -> EndpointConfiguration:
 
     tls_enabled = scheme in SUPPORTED_TLS_SCHEMES
 
-    # Resolve address (default to localhost for safety)
-    address = parsed_url.hostname if parsed_url.hostname else "127.0.0.1"
+    # Resolve address (None if not specified)
+    address = parsed_url.hostname if parsed_url.hostname else None
+
+    # Validate that outbound (remote) destination has a host
+    if not is_inbound and not address:
+        raise ValueError(
+            f"Remote destination must specify a target address or hostname. Got: '{url_string}'"
+        )
 
     # Resolve port
     if parsed_url.port is not None:
@@ -297,7 +303,7 @@ def generate_inbound_configuration(
         "settings": {
             "address": address,
             "port": target_port,
-            "networks": "tcp",
+            "network": "tcp",
         },
     }
 
@@ -376,7 +382,7 @@ def generate_proxy_outbound_configuration(
                 "user": proxy_config.username,
                 "pass": proxy_config.password,
             })
-        server_entry["user"] = user_list
+        server_entry["users"] = user_list
         outbound["settings"] = {
             "servers": [server_entry]
         }
@@ -485,12 +491,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--cert-file",
-        default="/etc/ssl/example.com/full.pem",
         help="Path to the TLS certificate file for secure inbound listeners",
     )
     parser.add_argument(
         "--key-file",
-        default="/etc/ssl/example.com/key.pem",
         help="Path to the TLS private key file for secure inbound listeners",
     )
 
@@ -533,7 +537,7 @@ def main() -> None:
             random_port = generate_random_port()
             inbound_endpoint = EndpointConfiguration(
                 transport_protocol="tcp",
-                address="127.0.0.1",
+                address=None,
                 port=random_port,
                 path="",
                 tls_enabled=False,
@@ -550,6 +554,13 @@ def main() -> None:
             if inbound_endpoint.tls_enabled or inbound_endpoint.transport_protocol != "tcp":
                 raise ValueError(
                     "The --ssh option cannot be used when the local listening port expects secure decorated traffic (TLS/WS/gRPC/H2)."
+                )
+
+        # Validate secure inbound TLS certificate and key presence
+        if inbound_endpoint.tls_enabled:
+            if not args.cert_file or not args.key_file:
+                raise ValueError(
+                    "TLS certificate file (--cert-file) and key file (--key-file) must be provided when TLS is enabled on the inbound listener."
                 )
 
         # Resolve proxy if specified
@@ -613,7 +624,7 @@ def main() -> None:
             if proxy_outbound_config:
                 print(json.dumps([outbound_config, proxy_outbound_config], indent=2))
             else:
-                print(json.dumps(outbound_config, indent=2))
+                print(json.dumps([outbound_config], indent=2))
         else:
             print(config_json_string)
 

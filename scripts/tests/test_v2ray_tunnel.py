@@ -39,13 +39,13 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
             validate_port_number(65536)
 
     def test_parse_endpoint_plain_port(self) -> None:
-        """Verifies that a simple port number resolves to plain TCP on localhost."""
+        """Verifies that a simple port number resolves to plain TCP with no address."""
         endpoint = parse_endpoint("1234", is_inbound=True)
         self.assertEqual(
             endpoint,
             EndpointConfiguration(
                 transport_protocol="tcp",
-                address="127.0.0.1",
+                address=None,
                 port=1234,
                 path="",
                 tls_enabled=False,
@@ -217,6 +217,18 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         self.assertEqual(server["users"][0]["user"], "user")
         self.assertEqual(server["users"][0]["pass"], "pass")
 
+    def test_generate_proxy_outbound_configuration_http(self) -> None:
+        """Verifies upstream HTTP proxy outbound block generation uses the correct 'users' key."""
+        proxy_config = parse_proxy_endpoint_url("http://user:pass@localhost:8080")
+        outbound = generate_proxy_outbound_configuration(proxy_config, "proxy-tag")
+        self.assertEqual(outbound["protocol"], "http")
+        self.assertEqual(outbound["tag"], "proxy-tag")
+        server = outbound["settings"]["servers"][0]
+        self.assertEqual(server["address"], "localhost")
+        self.assertEqual(server["port"], 8080)
+        self.assertEqual(server["users"][0]["user"], "user")
+        self.assertEqual(server["users"][0]["pass"], "pass")
+
     def test_assemble_complete_configuration(self) -> None:
         """Verifies merging of components into the master config schema."""
         inbound = {"tag": "in-tag"}
@@ -247,8 +259,9 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         args, kwargs = mock_run.call_args
         config = json.loads(kwargs["input"].decode("utf-8"))
         
-        # Inbound must be plain TCP
+        # Inbound must be plain TCP and have no listen key (defaults to all interfaces)
         self.assertNotIn("streamSettings", config["inbounds"][0])
+        self.assertNotIn("listen", config["inbounds"][0])
         self.assertEqual(config["inbounds"][0]["port"], 1234)
         
         # Outbound must be secure WebSocket
@@ -256,7 +269,7 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         self.assertEqual(config["outbounds"][0]["streamSettings"]["security"], "tls")
 
     @unittest.mock.patch("subprocess.run")
-    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "wss://:443/tunnel", "--remote", "tcp://127.0.0.1:22", "--run"])
+    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "wss://:443/tunnel", "--remote", "tcp://127.0.0.1:22", "--run", "--cert-file", "/tmp/cert.pem", "--key-file", "/tmp/key.pem"])
     @unittest.mock.patch("builtins.print")
     def test_main_server_flow(self, mock_print: Any, mock_run: Any) -> None:
         """Verifies integrated execution for a secure server decryption tunnel."""
@@ -266,12 +279,25 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         args, kwargs = mock_run.call_args
         config = json.loads(kwargs["input"].decode("utf-8"))
 
-        # Inbound must be secure WebSocket
+        # Inbound must be secure WebSocket and have no listen key (defaults to all interfaces)
         self.assertEqual(config["inbounds"][0]["streamSettings"]["network"], "ws")
         self.assertEqual(config["inbounds"][0]["streamSettings"]["security"], "tls")
+        self.assertNotIn("listen", config["inbounds"][0])
         
         # Outbound must be plain TCP
         self.assertNotIn("streamSettings", config["outbounds"][0])
+
+    @unittest.mock.patch("subprocess.run")
+    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "127.0.0.1:1234", "--remote", "wss://example.com/ws", "--run"])
+    @unittest.mock.patch("builtins.print")
+    def test_main_with_explicit_listen_address(self, mock_print: Any, mock_run: Any) -> None:
+        """Verifies that an explicit listen IP is preserved in the V2Ray config."""
+        from scripts.v2ray_tunnel import main
+        main()
+        mock_run.assert_called_once()
+        args, kwargs = mock_run.call_args
+        config = json.loads(kwargs["input"].decode("utf-8"))
+        self.assertEqual(config["inbounds"][0]["listen"], "127.0.0.1")
 
     @unittest.mock.patch("subprocess.run")
     @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--remote", "tcp://example.com:22", "--run"])
@@ -303,10 +329,19 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         mock_run.assert_called_once()
         self.assertEqual(mock_run.call_args[0][0][0], "ssh")
 
-    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "wss://:443", "--remote", "tcp://127.0.0.1:22", "--ssh"])
+    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "wss://:443", "--remote", "tcp://127.0.0.1:22", "--ssh", "--cert-file", "/tmp/cert.pem", "--key-file", "/tmp/key.pem"])
     @unittest.mock.patch("builtins.print")
     def test_main_ssh_failure_on_secure_listener(self, mock_print: Any) -> None:
         """Verifies that --ssh is rejected when the inbound listener is secure."""
+        from scripts.v2ray_tunnel import main
+        with self.assertRaises(SystemExit) as context:
+            main()
+        self.assertEqual(context.exception.code, 1)
+
+    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "wss://:443", "--remote", "tcp://127.0.0.1:22"])
+    @unittest.mock.patch("builtins.print")
+    def test_main_tls_inbound_validation_failure(self, mock_print: Any) -> None:
+        """Verifies that secure inbound without cert/key files fails validation."""
         from scripts.v2ray_tunnel import main
         with self.assertRaises(SystemExit) as context:
             main()
