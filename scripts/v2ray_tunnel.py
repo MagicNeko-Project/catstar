@@ -2,9 +2,10 @@
 """
 V2Ray Tunnel Configuration Generator.
 
-This script generates client and server V2Ray configurations to establish
-secure transport tunnels (supporting Websocket, gRPC, HTTP/2, and raw TCP
-with or without TLS) for point-to-point port forwarding.
+This script generates V2Ray configurations to establish secure transport tunnels
+by bridging a local Inbound listener (configured via --listen) to a remote Outbound
+client connection (configured via --remote). It supports WebSocket, gRPC, HTTP/2,
+and raw TCP transport protocols with optional TLS encryption on either end.
 """
 
 import argparse
@@ -46,6 +47,28 @@ SUPPORTED_SOCKS_SCHEMES: Set[str] = {"socks", "socks4", "socks4a", "socks5", "so
 SUPPORTED_HTTP_SCHEMES: Set[str] = {"http", "https"}
 
 
+class EndpointConfiguration(NamedTuple):
+    """
+    Immutable representation of an inbound or outbound tunnel endpoint.
+    """
+    transport_protocol: str
+    address: str
+    port: int
+    path: str
+    tls_enabled: bool
+
+
+class ProxyConfiguration(NamedTuple):
+    """
+    Immutable representation of an upstream proxy configuration.
+    """
+    protocol: str  # Must be SOCKS_PROTOCOL_NAME or HTTP_PROTOCOL_NAME
+    address: str
+    port: int
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+
 def generate_random_port() -> int:
     """
     Generates a random port number within a safe, unassigned range (10000 to 65535).
@@ -81,82 +104,66 @@ def validate_port_number(port_value: Any) -> int:
     return port
 
 
-def parse_remote_endpoint(remote_url_string: str) -> ParseResult:
+def parse_endpoint(url_string: str, is_inbound: bool) -> EndpointConfiguration:
     """
-    Parses the remote URL endpoint, providing defaults if a scheme is missing.
+    Parses a port number or URL string into a strongly-typed EndpointConfiguration.
 
     Args:
-        remote_url_string: The raw remote endpoint input.
+        url_string: The port string (e.g. '1234') or URL (e.g. 'wss://example.com:443/path').
+        is_inbound: True if parsing the inbound listener, False for the outbound client.
 
     Returns:
-        A ParseResult object representing the parsed URL components.
+        An EndpointConfiguration NamedTuple.
     """
-    # Fallback to WebSocket if no protocol scheme is specified
-    normalized_url_string = remote_url_string
-    if "://" not in normalized_url_string:
-        normalized_url_string = f"ws://{normalized_url_string}"
-
-    parsed_url = urlparse(normalized_url_string)
-
-    if not parsed_url.hostname:
-        raise ValueError(
-            f"Unable to parse hostname from the remote endpoint: '{remote_url_string}'"
+    # Handle plain port number
+    if url_string.isdigit():
+        port = validate_port_number(url_string)
+        return EndpointConfiguration(
+            transport_protocol="tcp",
+            address="127.0.0.1",
+            port=port,
+            path="",
+            tls_enabled=False,
         )
 
-    return parsed_url
+    # Handle URL
+    normalized_string = url_string
+    if "://" not in normalized_string:
+        normalized_string = f"tcp://{normalized_string}"
 
+    parsed_url = urlparse(normalized_string)
 
-def determine_tunnel_mode(forced_mode: Optional[str], scheme: str) -> str:
-    """
-    Determines the tunnel operation mode (client or server).
-
-    Args:
-        forced_mode: User-defined override mode ('client' or 'server').
-        scheme: The parsed protocol scheme.
-
-    Returns:
-        A string representing the active mode: 'client' or 'server'.
-    """
-    if forced_mode:
-        if forced_mode not in {"client", "server"}:
-            raise ValueError(f"Invalid tunnel mode: '{forced_mode}'. Must be 'client' or 'server'.")
-        return forced_mode
-
-    # Default heuristics: TCP endpoints represent the listening backend (Server mode)
-    if scheme == "tcp":
-        return "server"
-
-    return "client"
-
-
-def determine_transport_protocol(scheme: str) -> str:
-    """
-    Determines the V2Ray transport protocol based on the scheme.
-
-    Args:
-        scheme: The parsed protocol scheme.
-
-    Returns:
-        The V2Ray transport protocol string name.
-    """
+    scheme = parsed_url.scheme.lower()
     if scheme in SUPPORTED_WS_SCHEMES:
-        return "ws"
-    if scheme in SUPPORTED_GRPC_SCHEMES:
-        return "grpc"
-    if scheme in SUPPORTED_H2_SCHEMES:
-        return "h2"
-    return "tcp"
+        transport_protocol = "ws"
+    elif scheme in SUPPORTED_GRPC_SCHEMES:
+        transport_protocol = "grpc"
+    elif scheme in SUPPORTED_H2_SCHEMES:
+        transport_protocol = "h2"
+    else:
+        transport_protocol = "tcp"
 
+    tls_enabled = scheme in SUPPORTED_TLS_SCHEMES
 
-class ProxyConfiguration(NamedTuple):
-    """
-    Immutable representation of a proxy configuration.
-    """
-    protocol: str  # Must be SOCKS_PROTOCOL_NAME or HTTP_PROTOCOL_NAME
-    address: str
-    port: int
-    username: Optional[str] = None
-    password: Optional[str] = None
+    # Resolve address (default to localhost for safety)
+    address = parsed_url.hostname if parsed_url.hostname else "127.0.0.1"
+
+    # Resolve port
+    if parsed_url.port is not None:
+        port = validate_port_number(parsed_url.port)
+    else:
+        port = DEFAULT_TLS_PORT if tls_enabled else DEFAULT_HTTP_PORT
+
+    # Resolve path
+    path = parsed_url.path if parsed_url.path else ""
+
+    return EndpointConfiguration(
+        transport_protocol=transport_protocol,
+        address=address,
+        port=port,
+        path=path,
+        tls_enabled=tls_enabled,
+    )
 
 
 def parse_proxy_endpoint_url(proxy_url_string: str) -> ProxyConfiguration:
@@ -199,7 +206,6 @@ def parse_proxy_endpoint_url(proxy_url_string: str) -> ProxyConfiguration:
     if parsed_url.port is not None:
         port = validate_port_number(parsed_url.port)
     else:
-        # Resolve default ports based on the protocol
         port = DEFAULT_SOCKS_PROXY_PORT if protocol == SOCKS_PROTOCOL_NAME else DEFAULT_HTTP_PROXY_PORT
 
     return ProxyConfiguration(
@@ -211,19 +217,134 @@ def parse_proxy_endpoint_url(proxy_url_string: str) -> ProxyConfiguration:
     )
 
 
+def generate_endpoint_stream_settings(
+    endpoint: EndpointConfiguration,
+    is_inbound: bool,
+    sni_override: str,
+    certificate_file: str,
+    key_file: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Generates the V2Ray streamSettings block for an inbound or outbound endpoint.
+
+    Args:
+        endpoint: The EndpointConfiguration.
+        is_inbound: True for inbound listener, False for outbound client.
+        sni_override: Server Name Indication for outbound TLS handshakes.
+        certificate_file: Path to the TLS certificate file (inbound).
+        key_file: Path to the TLS private key file (inbound).
+
+    Returns:
+        A dictionary matching V2Ray streamSettings schema, or None if plain TCP.
+    """
+    if endpoint.transport_protocol == "tcp" and not endpoint.tls_enabled:
+        return None
+
+    stream_settings: Dict[str, Any] = {"network": endpoint.transport_protocol}
+
+    if endpoint.transport_protocol == "ws":
+        ws_path = endpoint.path if endpoint.path else DEFAULT_PATH
+        stream_settings["wsSettings"] = {"path": ws_path}
+
+    elif endpoint.transport_protocol == "grpc":
+        service_name = endpoint.path.strip("/") if endpoint.path else DEFAULT_GRPC_SERVICE_NAME
+        stream_settings["grpcSettings"] = {
+            "serviceName": service_name,
+            "host": endpoint.address,
+        }
+
+    elif endpoint.transport_protocol == "h2":
+        h2_path = endpoint.path if endpoint.path else DEFAULT_PATH
+        stream_settings["httpSettings"] = {
+            "path": h2_path,
+            "host": [endpoint.address],
+        }
+
+    if endpoint.tls_enabled:
+        stream_settings["security"] = "tls"
+        if not is_inbound:
+            stream_settings["tlsSettings"] = {
+                "serverName": sni_override,
+                "allowInsecure": False,
+            }
+        else:
+            stream_settings["tlsSettings"] = {
+                "certificates": [
+                    {
+                        "certificateFile": certificate_file,
+                        "keyFile": key_file,
+                    }
+                ]
+            }
+
+    return stream_settings
+
+
+def generate_inbound_configuration(
+    listen_port: int,
+    listen_address: Optional[str],
+    address: str,
+    target_port: int,
+    stream_settings: Optional[Dict[str, Any]],
+    tag: Optional[str],
+) -> Dict[str, Any]:
+    """
+    Generates the V2Ray inbound configuration object.
+    """
+    inbound: Dict[str, Any] = {
+        "port": listen_port,
+        "protocol": "dokodemo-door",
+        "settings": {
+            "address": address,
+            "port": target_port,
+            "networks": "tcp",
+        },
+    }
+
+    if listen_address:
+        inbound["listen"] = listen_address
+
+    if stream_settings:
+        inbound["streamSettings"] = stream_settings
+
+    if tag:
+        inbound["tag"] = f"{tag}-in"
+
+    return inbound
+
+
+def generate_outbound_configuration(
+    stream_settings: Optional[Dict[str, Any]],
+    tag: Optional[str],
+    proxy_tag: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Generates the V2Ray outbound configuration object.
+    """
+    outbound: Dict[str, Any] = {
+        "protocol": "freedom",
+    }
+
+    if stream_settings:
+        outbound["streamSettings"] = stream_settings
+
+    if tag:
+        outbound["tag"] = f"{tag}-out"
+
+    if proxy_tag:
+        outbound["proxySettings"] = {
+            "tag": proxy_tag,
+        }
+
+    return outbound
+
+
 def generate_proxy_outbound_configuration(
     proxy_config: ProxyConfiguration,
     proxy_tag: str,
 ) -> Dict[str, Any]:
     """
     Generates the V2Ray outbound configuration object for an upstream proxy server.
-
-    Args:
-        proxy_config: The parsed ProxyConfiguration.
-        proxy_tag: The routing tag to assign to the proxy outbound.
-
-    Returns:
-        A dictionary matching V2Ray's outbound configuration schema for SOCKS or HTTP.
     """
     outbound: Dict[str, Any] = {
         "protocol": proxy_config.protocol,
@@ -263,151 +384,6 @@ def generate_proxy_outbound_configuration(
     return outbound
 
 
-def generate_stream_settings(
-    transport_protocol: str,
-    hostname: str,
-    path: str,
-    tls_enabled: bool,
-    tunnel_mode: str,
-    sni_override: str,
-    certificate_file: str,
-    key_file: str,
-) -> Dict[str, Any]:
-    """
-    Generates the V2Ray streamSettings block for the tunnel.
-
-    Args:
-        transport_protocol: The transport type ('ws', 'grpc', 'h2', 'tcp').
-        hostname: The target host address or name.
-        path: The request path/service name if applicable.
-        tls_enabled: Whether TLS is enabled for transport encryption.
-        tunnel_mode: The active tunnel mode ('client' or 'server').
-        sni_override: Server Name Indication for TLS handshakes.
-        certificate_file: Path to the TLS certificate file (server mode).
-        key_file: Path to the TLS private key file (server mode).
-
-    Returns:
-        A dictionary matching V2Ray streamSettings schema.
-    """
-    stream_settings: Dict[str, Any] = {"network": transport_protocol}
-
-    if transport_protocol == "ws":
-        ws_path = path if path else DEFAULT_PATH
-        stream_settings["wsSettings"] = {"path": ws_path}
-
-    elif transport_protocol == "grpc":
-        service_name = path.strip("/") if path else DEFAULT_GRPC_SERVICE_NAME
-        stream_settings["grpcSettings"] = {
-            "serviceName": service_name,
-            "host": hostname,
-        }
-
-    elif transport_protocol == "h2":
-        h2_path = path if path else DEFAULT_PATH
-        stream_settings["httpSettings"] = {
-            "path": h2_path,
-            "host": [hostname],
-        }
-
-    if tls_enabled:
-        stream_settings["security"] = "tls"
-        if tunnel_mode == "client":
-            stream_settings["tlsSettings"] = {
-                "serverName": sni_override,
-                "allowInsecure": False,
-            }
-        else:
-            stream_settings["tlsSettings"] = {
-                "certificates": [
-                    {
-                        "certificateFile": certificate_file,
-                        "keyFile": key_file,
-                    }
-                ]
-            }
-
-    return stream_settings
-
-
-def generate_inbound_configuration(
-    listen_port: int,
-    address: str,
-    target_port: int,
-    tunnel_mode: str,
-    stream_settings: Dict[str, Any],
-    tag: Optional[str],
-) -> Dict[str, Any]:
-    """
-    Generates the V2Ray inbound configuration object.
-
-    Args:
-        listen_port: Local or public port to receive traffic.
-        address: Target host address to route connections to.
-        target_port: Target port of the remote service.
-        tunnel_mode: Operation mode ('client' or 'server').
-        stream_settings: Configured streamSettings block.
-        tag: Optional label for routing rules.
-
-    Returns:
-        A dictionary representing the inbound configuration.
-    """
-    inbound: Dict[str, Any] = {
-        "port": listen_port,
-        "protocol": "dokodemo-door",
-        "settings": {
-            "address": address,
-            "port": target_port,
-            "networks": "tcp",
-        },
-    }
-
-    # Server mode binds the secure transport settings to the incoming connection
-    if tunnel_mode == "server":
-        inbound["streamSettings"] = stream_settings
-
-    if tag:
-        inbound["tag"] = f"{tag}-in"
-
-    return inbound
-
-
-def generate_outbound_configuration(
-    tunnel_mode: str,
-    stream_settings: Dict[str, Any],
-    tag: Optional[str],
-    proxy_tag: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    Generates the V2Ray outbound configuration object.
-
-    Args:
-        tunnel_mode: Operation mode ('client' or 'server').
-        stream_settings: Configured streamSettings block.
-        tag: Optional label for routing rules.
-        proxy_tag: Optional tag of the upstream proxy outbound.
-
-    Returns:
-        A dictionary representing the outbound configuration.
-    """
-    outbound: Dict[str, Any] = {
-        "protocol": "freedom",
-    }
-
-    # Client mode binds the secure transport settings to the outgoing connection
-    if tunnel_mode == "client":
-        outbound["streamSettings"] = stream_settings
-
-    if tag:
-        outbound["tag"] = f"{tag}-out"
-
-    if proxy_tag:
-        outbound["proxySettings"] = {
-            "tag": proxy_tag,
-        }
-
-    return outbound
-
-
 def assemble_complete_configuration(
     inbound: Dict[str, Any],
     outbound: Dict[str, Any],
@@ -417,15 +393,6 @@ def assemble_complete_configuration(
     """
     Assembles the complete V2Ray configuration object including basic logging,
     routing isolation rules, and optional upstream proxy outbound.
-
-    Args:
-        inbound: The configured inbound block.
-        outbound: The configured outbound block.
-        tag: Optional label for isolating traffic.
-        proxy_outbound: Optional configured proxy outbound block.
-
-    Returns:
-        A dictionary representing the complete V2Ray configuration.
     """
     outbounds = [outbound]
     if proxy_outbound:
@@ -455,14 +422,7 @@ def assemble_complete_configuration(
 def generate_colorized_examples_epilog(colorize: bool) -> str:
     """
     Generates a colorized help epilog containing usage examples.
-
-    Args:
-        colorize: Whether to include ANSI escape sequences for color coding.
-
-    Returns:
-        A formatted string representing the examples section.
     """
-    # ANSI escape sequences
     ansi_bold = "\033[1m" if colorize else ""
     ansi_cyan = "\033[36m" if colorize else ""
     ansi_yellow = "\033[33m" if colorize else ""
@@ -470,17 +430,17 @@ def generate_colorized_examples_epilog(colorize: bool) -> str:
 
     lines = [
         "Examples:",
-        f"  {ansi_cyan}# Client Mode: Local Port 1234 -> Forward to Remote WSS Server{ansi_reset}",
+        f"  {ansi_cyan}# Client Forwarding: Local Port 1234 -> Forward to Remote Secure WebSocket Server{ansi_reset}",
         f"  {ansi_bold}python3 v2ray_tunnel.py{ansi_reset} {ansi_yellow}--listen{ansi_reset} 1234 {ansi_yellow}--remote{ansi_reset} wss://example.com/tunnel",
         "",
-        f"  {ansi_cyan}# Client Mode through SOCKS5 Proxy:{ansi_reset}",
+        f"  {ansi_cyan}# Client Forwarding through a SOCKS5 Proxy:{ansi_reset}",
         f"  {ansi_bold}python3 v2ray_tunnel.py{ansi_reset} {ansi_yellow}--listen{ansi_reset} 1234 {ansi_yellow}--remote{ansi_reset} wss://example.com/tunnel {ansi_yellow}--proxy{ansi_reset} socks5://127.0.0.1:1080",
         "",
-        f"  {ansi_cyan}# Server Mode: Listen WS 443 with TLS -> Forward to Local SSH (22){ansi_reset}",
-        f"  {ansi_bold}python3 v2ray_tunnel.py{ansi_reset} {ansi_yellow}--listen{ansi_reset} 443 {ansi_yellow}--remote{ansi_reset} tcp://127.0.0.1:22 {ansi_yellow}--tls{ansi_reset}",
+        f"  {ansi_cyan}# Server Decryption: Public Secure WebSocket listener -> Forward decrypt to local SSH (22){ansi_reset}",
+        f"  {ansi_bold}python3 v2ray_tunnel.py{ansi_reset} {ansi_yellow}--listen{ansi_reset} wss://:443 {ansi_yellow}--remote{ansi_reset} tcp://127.0.0.1:22",
         "",
-        f"  {ansi_cyan}# Isolated Tunnel with Routing Tags{ansi_reset}",
-        f"  {ansi_bold}python3 v2ray_tunnel.py{ansi_reset} {ansi_yellow}--listen{ansi_reset} 1234 {ansi_yellow}--remote{ansi_reset} wss://example.com/tunnel {ansi_yellow}--tag{ansi_reset} my-tunnel",
+        f"  {ansi_cyan}# Plain TCP Proxy with Dynamic Port Allocation and Auto-SSH connection:{ansi_reset}",
+        f"  {ansi_bold}python3 v2ray_tunnel.py{ansi_reset} {ansi_yellow}--remote{ansi_reset} tcp://c5-ts.maomihz.com:22 {ansi_yellow}--ssh{ansi_reset} myuser",
     ]
     return "\n".join(lines)
 
@@ -493,7 +453,7 @@ def main() -> None:
     epilog_text = generate_colorized_examples_epilog(colorize)
 
     parser = argparse.ArgumentParser(
-        description="V2Ray Tunnel Configuration Generator (TCP, WS, gRPC, H2)",
+        description="V2Ray Tunnel Configuration Generator (TCP, WS, gRPC, H2 Proxy)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=epilog_text,
     )
@@ -501,19 +461,13 @@ def main() -> None:
     parser.add_argument(
         "-l",
         "--listen",
-        help="Port to listen on. If not specified, a free port is dynamically allocated.",
+        help="Listening port or URL (e.g. 1234, ws://:1234, wss://127.0.0.1:1234). If not specified, a random port is allocated.",
     )
     parser.add_argument(
         "-r",
         "--remote",
         required=True,
-        help="Remote URL endpoint (e.g., wss://example.com/path, grpc://host, tcp://127.0.0.1:22)",
-    )
-    parser.add_argument(
-        "-m",
-        "--mode",
-        choices=["client", "server"],
-        help="Force specific tunnel mode (client or server). Autodetected if omitted.",
+        help="Remote destination URL (e.g. wss://example.com/path, grpc://host, tcp://127.0.0.1:22)",
     )
     parser.add_argument(
         "-t",
@@ -523,30 +477,21 @@ def main() -> None:
     parser.add_argument(
         "-p",
         "--proxy",
-        help="Upstream proxy URL (e.g., socks5://127.0.0.1:1080, http://user:pass@proxy.com:8080) to route the tunnel through",
+        help="Upstream proxy URL (e.g. socks5://127.0.0.1:1080, http://user:pass@proxy.com:8080) to route the outbound connection through",
     )
-
-    # TLS controls
-    parser.add_argument(
-        "--tls",
-        action=argparse.BooleanOptionalAction,
-        help="Force enable or disable TLS encryption",
-    )
-
     parser.add_argument(
         "--sni",
-        help="Override TLS Server Name Indication (SNI) handshake",
+        help="Override TLS Server Name Indication (SNI) handshake for outbound TLS",
     )
-
     parser.add_argument(
         "--cert-file",
         default="/etc/ssl/example.com/full.pem",
-        help="Path to the TLS certificate file for server mode",
+        help="Path to the TLS certificate file for secure inbound listeners",
     )
     parser.add_argument(
         "--key-file",
         default="/etc/ssl/example.com/key.pem",
-        help="Path to the TLS private key file for server mode",
+        help="Path to the TLS private key file for secure inbound listeners",
     )
 
     # Output filtration
@@ -571,50 +516,41 @@ def main() -> None:
         "--ssh",
         nargs="?",
         const="",
-        help="Start V2Ray and automatically launch an SSH session connecting to the local tunneled port. Optionally specify the SSH username (e.g. --ssh myuser).",
+        help="Start V2Ray and automatically launch an SSH session connecting to the local tunneled port. Optionally specify the SSH username (e.g. --ssh myuser). Only supported if the local listening port is plain TCP.",
     )
 
     args = parser.parse_args()
 
     try:
-        # Input validation
+        # Parse remote (outbound) endpoint details
+        outbound_endpoint = parse_endpoint(args.remote, is_inbound=False)
+
+        # Parse local (inbound) endpoint details
         if args.listen:
-            listen_port = validate_port_number(args.listen)
+            inbound_endpoint = parse_endpoint(args.listen, is_inbound=True)
         else:
-            listen_port = generate_random_port()
+            # Generate a random local port
+            random_port = generate_random_port()
+            inbound_endpoint = EndpointConfiguration(
+                transport_protocol="tcp",
+                address="127.0.0.1",
+                port=random_port,
+                path="",
+                tls_enabled=False,
+            )
             ansi_cyan = "\033[36m" if colorize else ""
             ansi_reset = "\033[0m" if colorize else ""
             print(
-                f"{ansi_cyan}# Dynamically allocated free listening port: {listen_port}{ansi_reset}",
+                f"{ansi_cyan}# Dynamically allocated free listening port: {random_port}{ansi_reset}",
                 file=sys.stderr,
             )
 
-        parsed_remote = parse_remote_endpoint(args.remote)
-
-        # Mode heuristics and overrides
-        tunnel_mode = determine_tunnel_mode(args.mode, parsed_remote.scheme)
-
-        # TLS configuration
-        tls_enabled = parsed_remote.scheme in SUPPORTED_TLS_SCHEMES
-        if args.tls is not None:
-            tls_enabled = args.tls
-
-        # Resolve transport details
-        transport_protocol = determine_transport_protocol(parsed_remote.scheme)
-        hostname = parsed_remote.hostname
-        assert hostname is not None  # Guaranteed by parse_remote_endpoint validation
-
-        # Resolve remote port
-        if parsed_remote.port is not None:
-            remote_port = validate_port_number(parsed_remote.port)
-        else:
-            remote_port = DEFAULT_TLS_PORT if tls_enabled else DEFAULT_HTTP_PORT
-
-        # Resolve path or default
-        path = parsed_remote.path if parsed_remote.path else ""
-
-        # Resolve TLS SNI
-        sni_override = args.sni if args.sni else hostname
+        # Validate SSH mode constraints (SSH only works with plain TCP listeners)
+        if args.ssh is not None:
+            if inbound_endpoint.tls_enabled or inbound_endpoint.transport_protocol != "tcp":
+                raise ValueError(
+                    "The --ssh option cannot be used when the local listening port expects secure decorated traffic (TLS/WS/gRPC/H2)."
+                )
 
         # Resolve proxy if specified
         proxy_tag = None
@@ -627,36 +563,41 @@ def main() -> None:
                 proxy_tag=proxy_tag,
             )
 
-        # Construct the settings
-        stream_settings = generate_stream_settings(
-            transport_protocol=transport_protocol,
-            hostname=hostname,
-            path=path,
-            tls_enabled=tls_enabled,
-            tunnel_mode=tunnel_mode,
-            sni_override=sni_override,
+        # Generate stream settings for both ends
+        inbound_stream_settings = generate_endpoint_stream_settings(
+            endpoint=inbound_endpoint,
+            is_inbound=True,
+            sni_override="",
             certificate_file=args.cert_file,
             key_file=args.key_file,
         )
 
-        # Generate inbound & outbound configurations
+        sni_override = args.sni if args.sni else outbound_endpoint.address
+        outbound_stream_settings = generate_endpoint_stream_settings(
+            endpoint=outbound_endpoint,
+            is_inbound=False,
+            sni_override=sni_override,
+            certificate_file="",
+            key_file="",
+        )
+
+        # Generate configurations
         inbound_config = generate_inbound_configuration(
-            listen_port=listen_port,
-            address=hostname,
-            target_port=remote_port,
-            tunnel_mode=tunnel_mode,
-            stream_settings=stream_settings,
+            listen_port=inbound_endpoint.port,
+            listen_address=inbound_endpoint.address,
+            address=outbound_endpoint.address,
+            target_port=outbound_endpoint.port,
+            stream_settings=inbound_stream_settings,
             tag=args.tag,
         )
 
         outbound_config = generate_outbound_configuration(
-            tunnel_mode=tunnel_mode,
-            stream_settings=stream_settings,
+            stream_settings=outbound_stream_settings,
             tag=args.tag,
             proxy_tag=proxy_tag,
         )
 
-        # We always assemble the complete configuration internally
+        # Assemble the complete configuration internally
         complete_config = assemble_complete_configuration(
             inbound=inbound_config,
             outbound=outbound_config,
@@ -676,6 +617,7 @@ def main() -> None:
         else:
             print(config_json_string)
 
+        # Execution logic
         if args.ssh is not None:
             try:
                 # Launch V2Ray in the background
@@ -697,7 +639,7 @@ def main() -> None:
                     sys.exit(1)
 
                 # Build the SSH command
-                ssh_command = ["ssh", "-p", str(listen_port)]
+                ssh_command = ["ssh", "-p", str(inbound_endpoint.port)]
                 if args.ssh:  # Username is specified
                     ssh_command.append(f"{args.ssh}@127.0.0.1")
                 else:
@@ -709,7 +651,7 @@ def main() -> None:
                     f"{ansi_cyan}# Launching SSH session: {' '.join(ssh_command)}{ansi_reset}",
                     file=sys.stderr,
                 )
-
+                
                 subprocess.run(ssh_command, check=True)
 
             except FileNotFoundError:
