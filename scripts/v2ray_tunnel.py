@@ -512,16 +512,10 @@ def main() -> None:
     )
 
     # TLS controls
-    group_tls = parser.add_mutually_exclusive_group()
-    group_tls.add_argument(
+    parser.add_argument(
         "--tls",
-        action="store_true",
-        help="Force enable TLS encryption",
-    )
-    group_tls.add_argument(
-        "--no-tls",
-        action="store_true",
-        help="Force disable TLS encryption",
+        action=argparse.BooleanOptionalAction,
+        help="Force enable or disable TLS encryption",
     )
 
     parser.add_argument(
@@ -571,10 +565,8 @@ def main() -> None:
 
         # TLS configuration
         tls_enabled = parsed_remote.scheme in SUPPORTED_TLS_SCHEMES
-        if args.tls:
-            tls_enabled = True
-        elif args.no_tls:
-            tls_enabled = False
+        if args.tls is not None:
+            tls_enabled = args.tls
 
         # Resolve transport details
         transport_protocol = determine_transport_protocol(parsed_remote.scheme)
