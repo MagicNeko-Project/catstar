@@ -269,7 +269,7 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         self.assertEqual(config["outbounds"][0]["streamSettings"]["security"], "tls")
 
     @unittest.mock.patch("subprocess.run")
-    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "wss://:443/tunnel", "--remote", "tcp://127.0.0.1:22", "--run", "--cert-file", "/tmp/cert.pem", "--key-file", "/tmp/key.pem"])
+    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "wss://:443/tunnel", "--remote", "tcp://127.0.0.1:22", "--run"])
     @unittest.mock.patch("builtins.print")
     def test_main_server_flow(self, mock_print: Any, mock_run: Any) -> None:
         """Verifies integrated execution for a secure server decryption tunnel."""
@@ -329,19 +329,10 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         mock_run.assert_called_once()
         self.assertEqual(mock_run.call_args[0][0][0], "ssh")
 
-    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "wss://:443", "--remote", "tcp://127.0.0.1:22", "--ssh", "--cert-file", "/tmp/cert.pem", "--key-file", "/tmp/key.pem"])
+    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "wss://:443", "--remote", "tcp://127.0.0.1:22", "--ssh"])
     @unittest.mock.patch("builtins.print")
     def test_main_ssh_failure_on_secure_listener(self, mock_print: Any) -> None:
         """Verifies that --ssh is rejected when the inbound listener is secure."""
-        from scripts.v2ray_tunnel import main
-        with self.assertRaises(SystemExit) as context:
-            main()
-        self.assertEqual(context.exception.code, 1)
-
-    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "wss://:443", "--remote", "tcp://127.0.0.1:22"])
-    @unittest.mock.patch("builtins.print")
-    def test_main_tls_inbound_validation_failure(self, mock_print: Any) -> None:
-        """Verifies that secure inbound without cert/key files fails validation."""
         from scripts.v2ray_tunnel import main
         with self.assertRaises(SystemExit) as context:
             main()

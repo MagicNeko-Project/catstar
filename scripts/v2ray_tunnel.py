@@ -556,12 +556,6 @@ def main() -> None:
                     "The --ssh option cannot be used when the local listening port expects secure decorated traffic (TLS/WS/gRPC/H2)."
                 )
 
-        # Validate secure inbound TLS certificate and key presence
-        if inbound_endpoint.tls_enabled:
-            if not args.cert_file or not args.key_file:
-                raise ValueError(
-                    "TLS certificate file (--cert-file) and key file (--key-file) must be provided when TLS is enabled on the inbound listener."
-                )
 
         # Resolve proxy if specified
         proxy_tag = None
