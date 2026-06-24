@@ -7,6 +7,7 @@ streamSettings creation, and inbound/outbound JSON generation under various
 flag and option combinations.
 """
 
+import json
 import unittest
 import unittest.mock
 from typing import Any, Dict
@@ -356,6 +357,60 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
     @unittest.mock.patch("builtins.print")
     def test_main_with_run_and_inbound_flag(self, mock_print: Any) -> None:
         """Verifies that the main function exits with error when --run and --inbound are combined."""
+        from scripts.v2ray_tunnel import main
+        with self.assertRaises(SystemExit) as context:
+            main()
+        self.assertEqual(context.exception.code, 1)
+
+    def test_generate_random_port(self) -> None:
+        """Verifies that generate_random_port returns a valid port within the safe range."""
+        from scripts.v2ray_tunnel import generate_random_port
+        port = generate_random_port()
+        self.assertTrue(10000 <= port <= 65535)
+
+    @unittest.mock.patch("subprocess.run")
+    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--remote", "ws://example.com", "--run"])
+    @unittest.mock.patch("builtins.print")
+    def test_main_with_dynamic_port_allocation(self, mock_print: Any, mock_run: Any) -> None:
+        """Verifies that main works without --listen and allocates a dynamic port."""
+        from scripts.v2ray_tunnel import main
+        main()
+        mock_run.assert_called_once()
+        # Verify that the generated config has a valid listening port
+        args, kwargs = mock_run.call_args
+        config_data = json.loads(kwargs["input"].decode("utf-8"))
+        inbound_port = config_data["inbounds"][0]["port"]
+        self.assertTrue(1024 <= inbound_port <= 65535)
+
+    @unittest.mock.patch("subprocess.run")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--remote", "ws://example.com", "--ssh", "myuser"])
+    @unittest.mock.patch("builtins.print")
+    def test_main_with_ssh_flag_success(self, mock_print: Any, mock_popen: Any, mock_run: Any) -> None:
+        """Verifies that --ssh starts v2ray in background and ssh in foreground."""
+        from scripts.v2ray_tunnel import main
+        # Mock Popen return value to mock v2ray process
+        mock_process = unittest.mock.MagicMock()
+        mock_process.poll.return_value = None  # Process is running
+        mock_popen.return_value = mock_process
+
+        main()
+
+        # Check Popen was called for V2Ray
+        mock_popen.assert_called_once()
+        popen_args = mock_popen.call_args[0][0]
+        self.assertEqual(popen_args, ["v2ray", "run", "-format", "json"])
+
+        # Check subprocess.run was called for SSH
+        mock_run.assert_called_once()
+        ssh_args = mock_run.call_args[0][0]
+        self.assertEqual(ssh_args[0], "ssh")
+        self.assertIn("myuser@127.0.0.1", ssh_args)
+
+    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--remote", "tcp://example.com", "--mode", "server", "--ssh"])
+    @unittest.mock.patch("builtins.print")
+    def test_main_with_ssh_flag_server_mode_failure(self, mock_print: Any) -> None:
+        """Verifies that --ssh in server mode raises ValueError and exits."""
         from scripts.v2ray_tunnel import main
         with self.assertRaises(SystemExit) as context:
             main()
