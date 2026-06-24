@@ -245,8 +245,8 @@ def generate_endpoint_stream_settings(
     endpoint: EndpointConfiguration,
     is_inbound: bool,
     sni_override: str,
-    certificate_file: str,
-    key_file: str,
+    certificate_file: Optional[str],
+    key_file: Optional[str],
 ) -> Optional[Dict[str, Any]]:
     """
     Generates the V2Ray streamSettings block for an inbound or outbound endpoint.
@@ -557,7 +557,7 @@ def main() -> None:
             random_port = generate_random_port()
             inbound_endpoint = EndpointConfiguration(
                 transport_protocol="tcp",
-                address=None,
+                address="127.0.0.1",
                 port=random_port,
                 path="",
                 tls_enabled=False,

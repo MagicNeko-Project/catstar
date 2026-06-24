@@ -333,7 +333,7 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
     @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--remote", "tcp://example.com:22", "--run"])
     @unittest.mock.patch("builtins.print")
     def test_main_dynamic_port_allocation(self, mock_print: Any, mock_run: Any) -> None:
-        """Verifies that dynamic port allocation generates a valid random port."""
+        """Verifies that dynamic port allocation generates a valid random port and binds securely to localhost."""
         from scripts.v2ray_tunnel import main
         main()
         mock_run.assert_called_once()
@@ -341,6 +341,7 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         config = json.loads(kwargs["input"].decode("utf-8"))
         inbound_port = config["inbounds"][0]["port"]
         self.assertTrue(10000 <= inbound_port <= 65535)
+        self.assertEqual(config["inbounds"][0]["listen"], "127.0.0.1")
 
     @unittest.mock.patch("subprocess.run")
     @unittest.mock.patch("subprocess.Popen")
