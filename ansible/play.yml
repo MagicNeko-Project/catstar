@@ -6,21 +6,21 @@
     ssl_cert_src: ~/.acme.sh/certs
 
   roles:
-    - role: common
+    - role: local.infra.common
       tags:
         - common
 
-    - role: ssl
+    - role: local.infra.ssl
       tags:
         - ssl
       when: not (skip_nginx | default(false))
 
-    - role: nginx
+    - role: local.infra.nginx
       tags:
         - nginx
       when: not (skip_nginx | default(false))
 
-    - role: v2ray
+    - role: local.infra.v2ray
       tags:
         - v2ray
       when: not (skip_v2ray | default(false))

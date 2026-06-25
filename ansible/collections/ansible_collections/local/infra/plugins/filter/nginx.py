@@ -17,7 +17,12 @@ def dataclass_from_dict(cls, data):
     return cls(**relevant), extras
 
 
-HTTP_PORTS = set(range(80, 90)) | set(range(8000, 8010)) | set(range(8080, 8090)) | set(range(80, 65536, 100))
+HTTP_PORTS = (
+    set(range(80, 90))
+    | set(range(8000, 8010))
+    | set(range(8080, 8090))
+    | set(range(80, 65536, 100))
+)
 
 
 @dataclass
@@ -104,14 +109,21 @@ class FilterModule:
         }
 
     def nginx_location_block(self, location_config):
-        return [self._create_nginx_location(config) for config in force_list(location_config)]
+        return [
+            self._create_nginx_location(config)
+            for config in force_list(location_config)
+        ]
 
     def nginx_server_block(self, server_config, name):
-        return [self._create_nginx_server(config, name) for config in force_list(server_config)]
+        return [
+            self._create_nginx_server(config, name)
+            for config in force_list(server_config)
+        ]
 
     def gather_ssl_hosts(self, sites_enabled_config):
         return [
-            site.ssl_host for name, server in sites_enabled_config.items()
+            site.ssl_host
+            for name, server in sites_enabled_config.items()
             for site in self.nginx_server_block(server, name)
             if site.ssl_host is not None
         ]
@@ -137,7 +149,9 @@ class FilterModule:
 
         if server_block.ssl_host is None:
             if any(port.has_ssl() for port in server_block.listen):
-                server_block.ssl_host = '.'.join(server_block.server_name.split()[0].split('.')[-2:])
+                server_block.ssl_host = ".".join(
+                    server_block.server_name.split()[0].split(".")[-2:]
+                )
 
         return server_block
 
@@ -153,7 +167,7 @@ class FilterModule:
                     formatted_options.append(f"{name} on;")
                 elif value is False:
                     formatted_options.append(f"{name} off;")
-                elif name == 'if':
+                elif name == "if":
                     formatted_options.append(f"{name} {value}")
                 else:
                     formatted_options.append(f"{name} {value};")
@@ -164,12 +178,26 @@ class FilterModule:
 if __name__ == "__main__":
     # Example test cases
     module = FilterModule()
-    print(module.nginx_location_block([{"location": "/app", "proxy": "http://backend"}]))
-    print(module.nginx_server_block([{"server_name": "example.com", "locations": [{"location": "/", "proxy": "http://frontend"}]}], "default_name"))
-    print(module.gather_ssl_hosts({
-        "default": {},
-        "c5.example.com": {},
-        "c6.example.com": {
-            "server_name": "c6.example.com"
-        }
-    }))
+    print(
+        module.nginx_location_block([{"location": "/app", "proxy": "http://backend"}])
+    )
+    print(
+        module.nginx_server_block(
+            [
+                {
+                    "server_name": "example.com",
+                    "locations": [{"location": "/", "proxy": "http://frontend"}],
+                }
+            ],
+            "default_name",
+        )
+    )
+    print(
+        module.gather_ssl_hosts(
+            {
+                "default": {},
+                "c5.example.com": {},
+                "c6.example.com": {"server_name": "c6.example.com"},
+            }
+        )
+    )
