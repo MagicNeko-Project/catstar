@@ -1,2 +1,4 @@
 profile: production
 strict: true
+skip_list:
+  - galaxy

@@ -1,0 +1,12 @@
+---
+namespace: local
+name: infra
+version: 1.0.0
+authors:
+  - Catstar DevOps
+description: Local infrastructure automation collection
+readme: README.md
+license:
+  - MIT
+tags:
+  - infrastructure
