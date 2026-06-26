@@ -1,15 +1,8 @@
 """Unit tests for the Nginx Ansible filter plugins."""
 
-import os
-import sys
 from typing import Any, Dict, List
 
-# Ensure the parent collection directories are in the Python path
-# so that the plugins package can be imported correctly.
-COLLECTION_ROOT: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-sys.path.insert(0, COLLECTION_ROOT)
-
-from plugins.filter import nginx  # noqa: E402 # type: ignore
+from ansible_collections.local.infra.plugins.filter import nginx
 
 
 def test_force_list_behavior() -> None:
