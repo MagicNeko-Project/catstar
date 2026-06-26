@@ -30,7 +30,7 @@ def test_build_vless_inbound() -> None:
     block = v2ray.build_vless_inbound(inbound_spec)
     assert block["protocol"] == "vless"
     assert block["port"] == 10087
-    assert block["listen"] == "::"
+    assert block["listen"] == "127.0.0.1"
     assert block["tag"] == "vless-in"
     assert block["settings"]["clients"] == [{"id": "uuid-placeholder"}]
     assert block["settings"]["decryption"] == "none"
@@ -59,7 +59,7 @@ def test_build_socks_inbound() -> None:
     block = v2ray.build_socks_inbound(inbound_spec)
     assert block["protocol"] == "socks"
     assert block["port"] == 1080
-    assert block["listen"] == "::"
+    assert block["listen"] == "127.0.0.1"
     assert block["tag"] == "socks-in"
     assert block["settings"]["auth"] == "noauth"
 
@@ -70,7 +70,7 @@ def test_build_http_inbound() -> None:
     block = v2ray.build_http_inbound(inbound_spec)
     assert block["protocol"] == "http"
     assert block["port"] == 8080
-    assert block["listen"] == "::"
+    assert block["listen"] == "127.0.0.1"
     assert block["tag"] == "http-in"
     assert block["settings"]["auth"] == "noauth"
 
@@ -94,6 +94,7 @@ def test_build_telegram_inbound() -> None:
     block = v2ray.build_telegram_inbound(inbound_spec)
     assert block["protocol"] == "socks"
     assert block["port"] == 1088
+    assert block["listen"] == "127.0.0.1"
     assert block["tag"] == "inbound-tg"
     assert block["settings"]["auth"] == "noauth"
 
@@ -107,6 +108,7 @@ def test_build_telegram_inbound() -> None:
     assert block_auth["settings"]["accounts"] == [
         {"user": "tg-user", "pass": "tg-pass"}
     ]
+    assert block_auth["listen"] == "::"
 
 
 def test_v2ray_config_filter_integration() -> None:

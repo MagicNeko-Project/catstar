@@ -27,7 +27,7 @@ def build_vless_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "protocol": "vless",
         "port": inbound_spec["vless"],
-        "listen": inbound_spec.get("listen", "::"),
+        "listen": inbound_spec.get("listen", "127.0.0.1"),
         "tag": inbound_spec.get("tag"),
         "settings": {
             "clients": inbound_spec.get("clients", []),
@@ -57,7 +57,7 @@ def build_socks_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "protocol": "socks",
         "port": inbound_spec["socks"],
-        "listen": inbound_spec.get("listen", "::"),
+        "listen": inbound_spec.get("listen", "127.0.0.1"),
         "tag": inbound_spec.get("tag"),
         "settings": {"auth": "noauth"},
         "streamSettings": inbound_spec.get("stream_settings", {}),
@@ -69,7 +69,7 @@ def build_http_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "protocol": "http",
         "port": inbound_spec["http"],
-        "listen": inbound_spec.get("listen", "::"),
+        "listen": inbound_spec.get("listen", "127.0.0.1"),
         "tag": inbound_spec.get("tag"),
         "settings": {"auth": "noauth"},
         "streamSettings": inbound_spec.get("stream_settings", {}),
@@ -102,13 +102,15 @@ def build_telegram_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     if accounts is not None:
         settings["auth"] = "password"
         settings["accounts"] = accounts
+        default_listen = "::"
     else:
         settings["auth"] = "noauth"
+        default_listen = "127.0.0.1"
 
     return {
         "protocol": "socks",
         "port": inbound_spec["tg"],
-        "listen": inbound_spec.get("listen", "::"),
+        "listen": inbound_spec.get("listen", default_listen),
         "tag": "inbound-tg",
         "settings": settings,
     }
