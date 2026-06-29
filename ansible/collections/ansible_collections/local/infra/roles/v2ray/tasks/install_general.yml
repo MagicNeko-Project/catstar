@@ -9,32 +9,34 @@
     state: directory
     mode: "0755"
   loop:
-    - "{{ v2ray_prefix }}"
+    - "/usr/local/opt/v2ray-{{ v2ray_version }}"
     - "{{ v2ray_install }}"
     - "{{ v2ray_install }}/bin"
     - "{{ v2ray_install }}/etc/v2ray"
 
-- name: Download archive
-  ansible.builtin.get_url:
-    url: "{{ v2ray_url }}"
-    dest: "{{ v2ray_archive }}"
-    mode: "0644"
+- name: Download and extract V2Ray archive
+  ansible.builtin.unarchive:
+    src: "{{ v2ray_url }}"
+    dest: "/usr/local/opt/v2ray-{{ v2ray_version }}"
+    remote_src: true
+    creates: "/usr/local/opt/v2ray-{{ v2ray_version }}/v2ray"
+    checksum: "{{ v2ray_checksum[ansible_facts.architecture] }}"
   notify:
     - Restart v2ray
 
-- name: Extract contents
-  ansible.builtin.unarchive:
-    remote_src: true
-    src: "{{ v2ray_archive }}"
-    dest: "{{ v2ray_prefix }}"
-
-- name: Link binaries
+- name: Create symlink to current version
   ansible.builtin.file:
-    path: "{{ v2ray_install }}/bin/{{ item }}"
-    src: "{{ v2ray_prefix }}/{{ item }}"
+    src: "/usr/local/opt/v2ray-{{ v2ray_version }}"
+    dest: "/usr/local/opt/v2ray"
     state: link
-  loop:
-    - v2ray
+  notify:
+    - Restart v2ray
+
+- name: Link binary to system path
+  ansible.builtin.file:
+    src: "/usr/local/opt/v2ray/v2ray"
+    dest: "{{ v2ray_install }}/bin/v2ray"
+    state: link
 
 - name: Copy service file
   ansible.builtin.template:

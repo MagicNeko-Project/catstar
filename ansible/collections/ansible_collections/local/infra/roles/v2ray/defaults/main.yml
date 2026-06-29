@@ -2,7 +2,7 @@
 # Installation options
 
 # curl -s https://api.github.com/repos/v2fly/v2ray-core/releases/latest | jq -r '.tag_name'
-v2ray_version: v5.30.0
+v2ray_version: v5.49.0
 v2ray_prefix: /usr/local/opt/v2ray
 v2ray_install: /usr/local
 
@@ -10,6 +10,10 @@ v2ray_install: /usr/local
 v2ray_arch:
   x86_64: linux-64
   aarch64: arm64-v8a
+
+v2ray_checksum:
+  x86_64: "sha256:6c27d3f12c89a51b2efcf465ec37395ca7e51eaa7a9a58b8e3f43253df3143dd"
+  aarch64: "sha256:0fd40348a2994cd3d33e3ca7cb227221c2b42c195638ba2e43d921fb623be1fb"
 
 v2ray_file: "v2ray-{{ v2ray_arch[ansible_facts.architecture] }}.zip"
 v2ray_url: "https://github.com/v2fly/v2ray-core/releases/download/{{ v2ray_version }}/{{ v2ray_file }}"
