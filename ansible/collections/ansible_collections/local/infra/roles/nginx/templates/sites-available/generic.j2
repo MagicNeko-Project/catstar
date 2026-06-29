@@ -1,8 +1,8 @@
 # DO NOT EDIT: this file is managed by Ansible
 
-{% for s in site | nginx_server_block(site_name) %}
+{% for s in site | local.infra.nginx_server_block(site_name) %}
 
-{% for option in s.options_global | nginx_options %}
+{% for option in s.options_global | local.infra.nginx_options %}
 {{ option }}
 {% endfor %}
 
@@ -18,7 +18,7 @@ server {
 
 server_name {{ s.server_name }};
 
-{% for location in s.locations | nginx_location_block %}
+{% for location in s.locations | local.infra.nginx_location_block %}
   location {{ location.location }} {
 
     {% set proxy_list = location.proxy | split %}
@@ -52,13 +52,13 @@ server_name {{ s.server_name }};
       include snippets/{{ snippet }}.conf;
     {% endfor %}
 
-    {% for option in location.options | nginx_options %}
+    {% for option in location.options | local.infra.nginx_options %}
       {{ option }}
     {% endfor %}
   }
 {% endfor %}
 
-{% for option in s.options | nginx_options %}
+{% for option in s.options | local.infra.nginx_options %}
   {{ option }}
 {% endfor %}
 

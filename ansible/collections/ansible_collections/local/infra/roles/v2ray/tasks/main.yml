@@ -15,7 +15,7 @@
 - name: Copy config file
   ansible.builtin.copy:
     content: >-
-      {{ v2ray_inbounds | v2ray_config(v2ray_outbounds_default,
+      {{ v2ray_inbounds | local.infra.v2ray_config(v2ray_outbounds_default,
       v2ray_outbounds, v2ray_rules_default, v2ray_ads_domains,
       v2ray_telegram_ips, v2ray_rules) | to_nice_json(indent=2) }}
     dest: "{{ v2ray_install }}/etc/v2ray/config.json"
