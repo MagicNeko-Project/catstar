@@ -16,7 +16,3 @@
   loop: "{{ ssl_all }}"
   loop_control:
     loop_var: ssl_cert_name
-
-- name: Generate nginx snippets
-  ansible.builtin.import_tasks: nginx_snippets.yml
-  when: ssl_nginx_snippets_enabled

@@ -13,6 +13,14 @@
     - "templates/nginx/conf.d/*.j2"
     - "templates/nginx/snippets/*.j2"
 
+- name: Create nginx SSL snippet files
+  ansible.builtin.template:
+    src: nginx/snippets/ssl.conf.j2
+    dest: "{{ (nginx_root, nginx_ssl_snippets, item) | path_join }}/{{ item }}.conf"
+    mode: "0644"
+  loop: "{{ [ssl_copy | default([]), nginx_sites_enabled | local.infra.gather_ssl_hosts] | flatten | unique }}"
+  notify: Reload nginx
+
 - name: Create htpasswd files
   ansible.builtin.template:
     src: htpasswd.j2
