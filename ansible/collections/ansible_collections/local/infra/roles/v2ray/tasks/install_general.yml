@@ -14,15 +14,35 @@
     - "{{ v2ray_install }}/bin"
     - "{{ v2ray_install }}/etc/v2ray"
 
-- name: Download and extract V2Ray archive
+- name: Download V2Ray archive
+  ansible.builtin.get_url:
+    url: "{{ v2ray_url }}"
+    dest: "/usr/local/opt/v2ray-{{ v2ray_version }}.zip"
+    checksum: "{{ v2ray_checksum[ansible_facts.architecture] }}"
+    mode: "0644"
+
+- name: Extract V2Ray archive
   ansible.builtin.unarchive:
-    src: "{{ v2ray_url }}"
+    src: "/usr/local/opt/v2ray-{{ v2ray_version }}.zip"
     dest: "/usr/local/opt/v2ray-{{ v2ray_version }}"
     remote_src: true
     creates: "/usr/local/opt/v2ray-{{ v2ray_version }}/v2ray"
-    checksum: "{{ v2ray_checksum[ansible_facts.architecture] }}"
   notify:
     - Restart v2ray
+
+# TODO: Remove legacy directory migration tasks once all hosts are migrated.
+- name: Check if legacy v2ray directory exists
+  ansible.builtin.stat:
+    path: "/usr/local/opt/v2ray"
+  register: v2ray_legacy_dir_stat
+
+- name: Remove legacy v2ray directory if it is a physical directory
+  ansible.builtin.file:
+    path: "/usr/local/opt/v2ray"
+    state: absent
+  when:
+    - v2ray_legacy_dir_stat.stat.exists
+    - not v2ray_legacy_dir_stat.stat.islnk
 
 - name: Create symlink to current version
   ansible.builtin.file:
