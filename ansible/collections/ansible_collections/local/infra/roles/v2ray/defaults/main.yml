@@ -18,6 +18,7 @@ v2ray_archive: "{{ v2ray_prefix }}/{{ v2ray_version }}.zip"
 v2ray_inbounds: []
 v2ray_outbounds: []
 v2ray_rules: []
+v2ray_ssl_enabled: false
 v2ray_outbounds_default:
   - protocol: freedom
     tag: direct

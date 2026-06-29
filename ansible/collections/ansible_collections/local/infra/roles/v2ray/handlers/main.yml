@@ -14,4 +14,10 @@
   ansible.builtin.service:
     name: v2ray
     state: restarted
+
+- name: Restart v2ray on SSL update
+  ansible.builtin.service:
+    name: v2ray
+    state: restarted
   listen: ssl cert updated
+  when: v2ray_ssl_enabled | default(false)
