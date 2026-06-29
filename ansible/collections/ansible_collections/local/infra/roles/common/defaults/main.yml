@@ -2,7 +2,6 @@
 common_cache_dirs:
   - /var/cache/pacman
   - /var/cache/apt
-  - /var/lib/apt/lists
 
 common_copy_bash_skel_to_root: false
 
