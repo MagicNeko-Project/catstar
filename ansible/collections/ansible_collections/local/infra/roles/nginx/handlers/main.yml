@@ -9,6 +9,7 @@
   ansible.builtin.service:
     name: nginx
     state: reloaded
+  listen: ssl cert updated
 
 - name: Restart php-fpm
   ansible.builtin.service:

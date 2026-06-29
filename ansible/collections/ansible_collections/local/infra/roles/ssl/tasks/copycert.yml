@@ -20,6 +20,7 @@
       mode: "0600"
   when: ssl_local_cert_stat.stat.exists
   register: ssl_real_cert_copy
+  notify: ssl cert updated
 
 - name: Copy fallback certificates if real certificates are missing
   ansible.builtin.copy:
@@ -33,3 +34,4 @@
     - dest: key.pem
       mode: "0600"
   when: not ssl_local_cert_stat.stat.exists
+  notify: ssl cert updated

@@ -14,3 +14,4 @@
   ansible.builtin.service:
     name: v2ray
     state: restarted
+  listen: ssl cert updated
