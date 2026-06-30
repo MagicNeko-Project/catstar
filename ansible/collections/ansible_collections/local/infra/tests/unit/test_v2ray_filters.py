@@ -408,3 +408,26 @@ def test_v2ray_config_filter_integration_extended() -> None:
     assert config["dns"] == {"servers": ["1.1.1.1", "8.8.8.8"]}
     assert config["policy"] == {"levels": {"0": {"uplinkOnly": 0}}}
     assert config["other"] == "value"
+
+
+def test_default_tags_generation() -> None:
+    """Verify that default unique tags are generated for inbounds/outbounds when tag is missing."""
+    # Test VMess Inbound default tag
+    inbound_spec_vmess = {"vmess": 10086}
+    block_vmess = v2ray.build_vmess_inbound(inbound_spec_vmess)
+    assert block_vmess["tag"] == "inbound-vmess-10086"
+
+    # Test VLESS Inbound default tag
+    inbound_spec_vless = {"vless": 10087}
+    block_vless = v2ray.build_vless_inbound(inbound_spec_vless)
+    assert block_vless["tag"] == "inbound-vless-10087"
+
+    # Test VLESS Outbound default tag
+    outbound_spec_vless = {"vless": "proxy.example.com", "port": 443}
+    block_vless_out = v2ray.build_vless_outbound(outbound_spec_vless)
+    assert block_vless_out["tag"] == "outbound-vless-proxy.example.com-443"
+
+    # Test SOCKS Outbound default tag
+    outbound_spec_socks = {"socks": "socks.example.com", "port": 1080}
+    block_socks_out = v2ray.build_socks_outbound(outbound_spec_socks)
+    assert block_socks_out["tag"] == "outbound-socks-socks.example.com-1080"

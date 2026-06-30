@@ -16,7 +16,7 @@ def build_vmess_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         "protocol": "vmess",
         "port": inbound_spec["vmess"],
         "listen": inbound_spec.get("listen", "::"),
-        "tag": inbound_spec.get("tag"),
+        "tag": inbound_spec.get("tag") or f"inbound-vmess-{inbound_spec['vmess']}",
         "settings": {"clients": inbound_spec.get("clients", [])},
         "streamSettings": inbound_spec.get("stream_settings", {}),
     }
@@ -28,7 +28,7 @@ def build_vless_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         "protocol": "vless",
         "port": inbound_spec["vless"],
         "listen": inbound_spec.get("listen", "127.0.0.1"),
-        "tag": inbound_spec.get("tag"),
+        "tag": inbound_spec.get("tag") or f"inbound-vless-{inbound_spec['vless']}",
         "settings": {
             "clients": inbound_spec.get("clients", []),
             "decryption": "none",
@@ -43,7 +43,7 @@ def build_shadowsocks_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         "protocol": "shadowsocks",
         "port": inbound_spec["ss"],
         "listen": inbound_spec.get("listen", "::"),
-        "tag": inbound_spec.get("tag"),
+        "tag": inbound_spec.get("tag") or f"inbound-ss-{inbound_spec['ss']}",
         "settings": {
             "method": inbound_spec.get("method", "aes-256-gcm"),
             "password": inbound_spec.get("password", ""),
@@ -58,7 +58,7 @@ def build_socks_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         "protocol": "socks",
         "port": inbound_spec["socks"],
         "listen": inbound_spec.get("listen", "127.0.0.1"),
-        "tag": inbound_spec.get("tag"),
+        "tag": inbound_spec.get("tag") or f"inbound-socks-{inbound_spec['socks']}",
         "settings": {"auth": "noauth"},
         "streamSettings": inbound_spec.get("stream_settings", {}),
     }
@@ -70,7 +70,7 @@ def build_http_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         "protocol": "http",
         "port": inbound_spec["http"],
         "listen": inbound_spec.get("listen", "127.0.0.1"),
-        "tag": inbound_spec.get("tag"),
+        "tag": inbound_spec.get("tag") or f"inbound-http-{inbound_spec['http']}",
         "settings": {"auth": "noauth"},
         "streamSettings": inbound_spec.get("stream_settings", {}),
     }
@@ -111,7 +111,8 @@ def build_telegram_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         "protocol": "socks",
         "port": inbound_spec["tg"],
         "listen": inbound_spec.get("listen", default_listen),
-        "tag": "inbound-tg",
+        "tag": inbound_spec.get("tag") or "inbound-tg",
+
         "settings": settings,
     }
 
@@ -136,7 +137,8 @@ def build_dokodemo_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         "protocol": "dokodemo-door",
         "port": inbound_spec["dokodemo"],
         "listen": inbound_spec.get("listen", "127.0.0.1"),
-        "tag": inbound_spec.get("tag"),
+        "tag": inbound_spec.get("tag")
+        or f"inbound-dokodemo-{inbound_spec['dokodemo']}",
         "settings": settings,
         "streamSettings": inbound_spec.get("stream_settings", {}),
     }
@@ -163,7 +165,8 @@ def build_vless_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
 
     outbound: Dict[str, Any] = {
         "protocol": "vless",
-        "tag": outbound_spec.get("tag"),
+        "tag": outbound_spec.get("tag")
+        or f"outbound-vless-{outbound_spec['vless']}-{outbound_spec.get('port', 443)}",
         "settings": settings,
     }
 
@@ -224,7 +227,8 @@ def build_vmess_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
 
     outbound: Dict[str, Any] = {
         "protocol": "vmess",
-        "tag": outbound_spec.get("tag"),
+        "tag": outbound_spec.get("tag")
+        or f"outbound-vmess-{outbound_spec['vmess']}-{outbound_spec.get('port', 443)}",
         "settings": settings,
     }
 
@@ -274,7 +278,8 @@ def build_shadowsocks_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     }
     return {
         "protocol": "shadowsocks",
-        "tag": outbound_spec.get("tag"),
+        "tag": outbound_spec.get("tag")
+        or f"outbound-ss-{outbound_spec['ss']}-{outbound_spec.get('port')}",
         "settings": {"servers": [server]},
         "streamSettings": outbound_spec.get("stream_settings", {}),
     }
@@ -289,7 +294,8 @@ def build_trojan_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     }
     return {
         "protocol": "trojan",
-        "tag": outbound_spec.get("tag"),
+        "tag": outbound_spec.get("tag")
+        or f"outbound-trojan-{outbound_spec['trojan']}-{outbound_spec.get('port', 443)}",
         "settings": {"servers": [server]},
         "streamSettings": outbound_spec.get("stream_settings", {}),
     }
@@ -314,7 +320,8 @@ def build_socks_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "protocol": "socks",
-        "tag": outbound_spec.get("tag"),
+        "tag": outbound_spec.get("tag")
+        or f"outbound-socks-{outbound_spec['socks']}-{outbound_spec.get('port')}",
         "settings": {"servers": [server]},
     }
 
@@ -338,7 +345,8 @@ def build_http_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "protocol": "http",
-        "tag": outbound_spec.get("tag"),
+        "tag": outbound_spec.get("tag")
+        or f"outbound-http-{outbound_spec['http']}-{outbound_spec.get('port')}",
         "settings": {"servers": [server]},
     }
 
@@ -373,6 +381,11 @@ def process_single_inbound(
         return blocks
 
     # Fallback for raw configuration blocks
+    if isinstance(inbound_spec, dict) and "tag" not in inbound_spec:
+        protocol = inbound_spec.get("protocol", "unknown")
+        port = inbound_spec.get("port", "unknown")
+        inbound_spec = dict(inbound_spec)
+        inbound_spec["tag"] = f"inbound-{protocol}-{port}"
     return [inbound_spec]
 
 
@@ -392,6 +405,10 @@ def process_single_outbound(outbound_spec: Dict[str, Any]) -> List[Dict[str, Any
         return [build_http_outbound(outbound_spec)]
 
     # Fallback for raw configuration blocks
+    if isinstance(outbound_spec, dict) and "tag" not in outbound_spec:
+        protocol = outbound_spec.get("protocol", "unknown")
+        outbound_spec = dict(outbound_spec)
+        outbound_spec["tag"] = f"outbound-{protocol}"
     return [outbound_spec]
 
 
