@@ -1,6 +1,6 @@
 """V2Ray configuration generator filter plugin."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 def force_list(item: Any) -> List[Any]:
