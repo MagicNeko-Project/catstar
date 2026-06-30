@@ -31,4 +31,3 @@
     mode: "0644"
   notify:
     - Restart v2ray
-

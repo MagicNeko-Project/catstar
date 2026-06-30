@@ -76,4 +76,3 @@ v2ray_routing_strategy: ""
 v2ray_dns_servers: []
 v2ray_policy: {}
 v2ray_extra_config: {}
-
