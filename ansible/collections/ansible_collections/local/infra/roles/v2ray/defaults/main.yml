@@ -70,3 +70,10 @@ v2ray_telegram_ips:
   - 2001:b28:f23c::/48
   - 2001:b28:f23d::/48
   - 2001:b28:f23f::/48
+
+v2ray_routing_strategy: ""
+
+v2ray_dns_servers: []
+v2ray_policy: {}
+v2ray_extra_config: {}
+
