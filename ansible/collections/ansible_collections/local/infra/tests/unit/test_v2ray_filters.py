@@ -95,7 +95,7 @@ def test_build_telegram_inbound() -> None:
     assert block["protocol"] == "socks"
     assert block["port"] == 1088
     assert block["listen"] == "127.0.0.1"
-    assert block["tag"] == "inbound-tg"
+    assert block["tag"] == "inbound-tg-1088"
     assert block["settings"]["auth"] == "noauth"
 
     # User/Pass auth case
@@ -161,7 +161,7 @@ def test_v2ray_config_filter_integration() -> None:
     assert "socks-in" in inbound_tags
     assert "tcp_relay_1234" in inbound_tags
     assert "tcp_relay_5678" in inbound_tags
-    assert "inbound-tg" in inbound_tags
+    assert "inbound-tg-1089" in inbound_tags
 
     # Verify routing rules
     rules = config["routing"]["rules"]
@@ -181,10 +181,10 @@ def test_v2ray_config_filter_integration() -> None:
 
     # 4. Telegram Routing Rules
     assert rules[3]["ip"] == ["91.108.4.0/22", "149.154.160.0/20"]
-    assert rules[3]["inboundTag"] == ["inbound-tg"]
+    assert rules[3]["inboundTag"] == ["inbound-tg-1089"]
     assert rules[3]["outboundTag"] == "direct"
 
-    assert rules[4]["inboundTag"] == ["inbound-tg"]
+    assert rules[4]["inboundTag"] == ["inbound-tg-1089"]
     assert rules[4]["outboundTag"] == "blocked"
 
     # 5. Custom Rules

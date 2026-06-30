@@ -111,8 +111,7 @@ def build_telegram_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         "protocol": "socks",
         "port": inbound_spec["tg"],
         "listen": inbound_spec.get("listen", default_listen),
-        "tag": inbound_spec.get("tag") or "inbound-tg",
-
+        "tag": inbound_spec.get("tag") or f"inbound-tg-{inbound_spec['tg']}",
         "settings": settings,
     }
 
@@ -417,6 +416,7 @@ def build_routing_rules(
     rules_default: List[Dict[str, Any]],
     ads_domains: List[str],
     telegram_ips: List[str],
+    telegram_tag: str,
     rules_custom: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """Construct the list of V2Ray routing rules."""
@@ -455,14 +455,14 @@ def build_routing_rules(
             {
                 "type": "field",
                 "ip": list(telegram_ips),
-                "inboundTag": ["inbound-tg"],
+                "inboundTag": [telegram_tag],
                 "outboundTag": "direct",
             }
         )
         rules.append(
             {
                 "type": "field",
-                "inboundTag": ["inbound-tg"],
+                "inboundTag": [telegram_tag],
                 "outboundTag": "blocked",
             }
         )
@@ -512,12 +512,20 @@ class FilterModule:
         for outbound in force_list(outbounds_custom):
             outbound_blocks.extend(process_single_outbound(outbound))
 
+        # Determine Telegram inbound tag dynamically if present
+        telegram_tag = "inbound-tg"
+        for inbound in force_list(inbounds):
+            if "tg" in inbound:
+                telegram_tag = inbound.get("tag") or f"inbound-tg-{inbound['tg']}"
+                break
+
         # Construct routing rules
         routing_rules = build_routing_rules(
             tcp_relay_tags=tcp_relay_tags,
             rules_default=force_list(rules_default),
             ads_domains=force_list(ads_domains),
             telegram_ips=force_list(telegram_ips),
+            telegram_tag=telegram_tag,
             rules_custom=force_list(rules_custom),
         )
 
