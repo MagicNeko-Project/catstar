@@ -6,7 +6,7 @@
 nginx_web_root: /srv
 nginx_html_root: /srv/html
 nginx_data_root: /data
-nginx_ssl_root: /ssl
+nginx_ssl_root: "{{ ssl_root | default('/ssl') }}"
 
 nginx_root: /etc/nginx
 
