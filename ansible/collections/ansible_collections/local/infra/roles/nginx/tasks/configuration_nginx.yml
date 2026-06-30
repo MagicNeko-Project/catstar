@@ -13,12 +13,18 @@
     - "templates/nginx/conf.d/*.j2"
     - "templates/nginx/snippets/*.j2"
 
+- name: Check if certificate exists on remote host
+  ansible.builtin.stat:
+    path: "{{ (ssl_root, item) | path_join }}/full.pem"
+  loop: "{{ [ssl_copy | default([]), nginx_sites_enabled | local.infra.gather_ssl_hosts] | flatten | unique }}"
+  register: nginx_remote_certs_stat
+
 - name: Create nginx SSL snippet files
   ansible.builtin.template:
     src: ssl.conf.j2
-    dest: "{{ (nginx_root, nginx_ssl_snippets) | path_join }}/{{ item }}.conf"
+    dest: "{{ (nginx_root, nginx_ssl_snippets) | path_join }}/{{ item.item }}.conf"
     mode: "0644"
-  loop: "{{ [ssl_copy | default([]), nginx_sites_enabled | local.infra.gather_ssl_hosts] | flatten | unique }}"
+  loop: "{{ nginx_remote_certs_stat.results }}"
   notify: Reload nginx
 
 - name: Create htpasswd files

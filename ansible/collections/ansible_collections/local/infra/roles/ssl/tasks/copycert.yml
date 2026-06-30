@@ -6,6 +6,13 @@
   register: ssl_local_cert_stat
   become: false
 
+- name: Create ssl directory for domain
+  ansible.builtin.file:
+    path: "{{ ssl_root }}/{{ ssl_cert_name }}"
+    state: directory
+    mode: "0700"
+  when: ssl_local_cert_stat.stat.exists
+
 - name: Copy real certificates to host
   ansible.builtin.copy:
     src: "{{ ssl_cert_src | expanduser }}/{{ item.src }}"
@@ -20,18 +27,4 @@
       mode: "0600"
   when: ssl_local_cert_stat.stat.exists
   register: ssl_real_cert_copy
-  notify: ssl cert updated
-
-- name: Copy fallback certificates if real certificates are missing
-  ansible.builtin.copy:
-    src: "{{ ssl_root }}/_/{{ item.dest }}"
-    dest: "{{ ssl_root }}/{{ ssl_cert_name }}/{{ item.dest }}"
-    mode: "{{ item.mode }}"
-    remote_src: true
-  loop:
-    - dest: full.pem
-      mode: "0644"
-    - dest: key.pem
-      mode: "0600"
-  when: not ssl_local_cert_stat.stat.exists
   notify: ssl cert updated

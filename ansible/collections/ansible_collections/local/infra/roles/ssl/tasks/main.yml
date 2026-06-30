@@ -1,10 +1,9 @@
 ---
-- name: Create ssl directories
+- name: Create fallback ssl directory
   ansible.builtin.file:
-    path: "{{ ssl_root }}/{{ item }}"
+    path: "{{ ssl_root }}/_"
     state: directory
     mode: "0700"
-  loop: "{{ ssl_all + ['_'] }}"
 
 - name: Generate default certificate
   ansible.builtin.command:
