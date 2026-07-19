@@ -5,6 +5,9 @@ Description=Jupyter Lab (for user) - System installation
 WorkingDirectory=%h
 ExecStart=/usr/bin/jupyter lab --no-browser
 Type=simple
+NoNewPrivileges=yes
+ProtectSystem=full
+PrivateTmp=yes
 
 [Install]
 WantedBy=default.target

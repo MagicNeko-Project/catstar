@@ -3,7 +3,9 @@ Description=Aria2 download manager with RPC
 
 [Service]
 ExecStart=/usr/bin/aria2c --enable-rpc
-NoNewPrivileges=true
+NoNewPrivileges=yes
+ProtectSystem=full
+PrivateTmp=yes
 Restart=on-failure
 
 [Install]

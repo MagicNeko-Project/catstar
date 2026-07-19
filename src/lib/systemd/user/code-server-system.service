@@ -1,13 +1,15 @@
 [Unit]
-Description=Jupyter Lab (for user)
+Description=code-server (for user) - System installation
+After=network.target
 
 [Service]
 WorkingDirectory=%h
-ExecStart=%h/.local/bin/jupyter lab --no-browser
+ExecStart=/usr/bin/code-server
 Type=simple
 NoNewPrivileges=yes
 ProtectSystem=full
 PrivateTmp=yes
+Restart=always
 
 [Install]
 WantedBy=default.target

@@ -7,6 +7,9 @@ Type=simple
 Environment=SSH_AUTH_SOCK=%t/ssh-agent.socket
 ExecStart=/usr/bin/ssh-agent -D -a $SSH_AUTH_SOCK
 SuccessExitStatus=0 2
+NoNewPrivileges=yes
+ProtectSystem=full
+PrivateTmp=yes
 
 [Install]
 WantedBy=default.target
