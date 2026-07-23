@@ -1,27 +1,24 @@
 # Note: There are 3 variants of this unit file:
 # 1. jupyterlab.service (user unit, user-local installation)
 # 2. jupyterlab-system.service (user unit, system installation)
-# 3. jupyterlab@.service (system unit, dynamic user/instance installation)
+# 3. jupyterlab@.service (system unit, system-wide running as specific user)
 
 [Unit]
-Description=Jupyter Lab %i
+Description=Jupyter Lab for %i
+After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env jupyter-lab --no-browser --JupyterApp.config_file=/usr/local/etc/jupyterlab-%i.py
-StateDirectory=jupyterlab-%i
-WorkingDirectory=%S/jupyterlab-%i
-Environment=HOME=%S/jupyterlab-%i
-Environment=SHELL=/usr/bin/zsh
+User=%i
+WorkingDirectory=~
+ExecStart=/usr/bin/jupyter lab --no-browser
+Restart=always
 
 # Security & Sandboxing
 NoNewPrivileges=yes
 KeyringMode=private
-DynamicUser=yes
 PrivateTmp=yes
 PrivateDevices=yes
-PrivateUsers=yes
-ProtectHome=yes
 ProtectSystem=full
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

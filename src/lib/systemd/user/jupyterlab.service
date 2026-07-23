@@ -1,7 +1,7 @@
 # Note: There are 3 variants of this unit file:
 # 1. jupyterlab.service (user unit, user-local installation)
 # 2. jupyterlab-system.service (user unit, system installation)
-# 3. jupyterlab@.service (system unit, dynamic user/instance installation)
+# 3. jupyterlab@.service (system unit, system-wide running as specific user)
 
 [Unit]
 Description=Jupyter Lab (for user)
