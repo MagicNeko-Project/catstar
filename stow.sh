@@ -132,14 +132,25 @@ fi
 ACTIVE_REQUIRED_SUBDIRECTORIES=("${BASE_REQUIRED_SUBDIRECTORIES[@]}")
 ACTIVE_IGNORE_PATTERNS=()
 
-if [[ "$IS_SYSTEM_TARGET" == "true" ]]; then
-    ACTIVE_REQUIRED_SUBDIRECTORIES+=("${SYSTEM_REQUIRED_SUBDIRECTORIES[@]}")
-elif [[ "$IS_USER_TARGET" == "true" ]]; then
-    ACTIVE_REQUIRED_SUBDIRECTORIES+=("lib/systemd/user")
-    ACTIVE_IGNORE_PATTERNS+=("lib/systemd/system")
+# Check if systemd is present on the host system
+HAS_SYSTEMD=false
+if command -v systemctl &>/dev/null || [[ -d /lib/systemd || -d /usr/lib/systemd ]]; then
+    HAS_SYSTEMD=true
+fi
+
+if [[ "$HAS_SYSTEMD" == "true" ]]; then
+    if [[ "$IS_SYSTEM_TARGET" == "true" ]]; then
+        ACTIVE_REQUIRED_SUBDIRECTORIES+=("${SYSTEM_REQUIRED_SUBDIRECTORIES[@]}")
+    elif [[ "$IS_USER_TARGET" == "true" ]]; then
+        ACTIVE_REQUIRED_SUBDIRECTORIES+=("lib/systemd/user")
+        ACTIVE_IGNORE_PATTERNS+=("lib/systemd/system")
+    else
+        # Non-standard target: ignore the entire systemd folder tree
+        ACTIVE_IGNORE_PATTERNS+=("lib/systemd")
+    fi
 else
-    # Non-standard target: ignore the entire systemd folder tree
-    ACTIVE_IGNORE_PATTERNS+=("lib/systemd")
+    # Systemd is not present on the host: ignore the entire systemd folder tree and the lib directory
+    ACTIVE_IGNORE_PATTERNS+=("lib")
 fi
 
 
