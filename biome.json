@@ -1,0 +1,31 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
+  "files": {
+    "includes": ["scripts/**/*"]
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "all",
+      "complexity": {
+        "noExcessiveLinesPerFunction": "off"
+      },
+      "correctness": {
+        "noGlobalDirnameFilename": "off",
+        "noNodejsModules": "off",
+        "noProcessGlobal": "off",
+        "noUndeclaredDependencies": "off",
+        "noUnresolvedImports": "off"
+      },
+      "style": {
+        "noContinue": "off",
+        "noMagicNumbers": "off",
+        "noProcessEnv": "off",
+        "noTernary": "off"
+      },
+      "suspicious": {
+        "noConsole": "off"
+      }
+    }
+  }
+}

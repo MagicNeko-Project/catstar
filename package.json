@@ -1,0 +1,13 @@
+{
+  "name": "catstar",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "biome lint scripts",
+    "lint:write": "biome lint --write scripts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.4"
+  }
+}
