@@ -74,6 +74,7 @@ ${YELLOW}Commands:${NC}
 
 ${YELLOW}Options:${NC}
   -t, --target <dir>  Override the target system directory (Default: /usr/local)
+  --user              Alias for --target $HOME/.local
   -d, --dry-run       Simulate deployment/removal showing planned filesystem changes
   -h, --help          Show this help menu
 
@@ -100,6 +101,10 @@ while [[ "$#" -gt 0 ]]; do
             fi
             TARGET_DIR="$2"
             shift 2
+            ;;
+        --user)
+            TARGET_DIR="$HOME/.local"
+            shift
             ;;
         -d|--dry-run)
             DRY_RUN=true
