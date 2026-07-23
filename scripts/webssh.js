@@ -1,28 +1,22 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import fs from "node:fs";
 
 const args = process.argv.slice(2);
 
 if (args[0] === "--ws-proxy") {
-  const hostIdx = args.indexOf("--ws-proxy") + 1;
-  const host = args[hostIdx];
+  const host = args[1];
   if (!host) {
     console.error("Error: --ws-proxy requires a target host.");
     process.exit(1);
   }
   const insecure = args.includes("--insecure");
   await runProxy(host, insecure);
-} else if (
-  args.length === 0 ||
-  args.includes("-h") ||
-  args.includes("--help")
-) {
-  console.log("Usage: webssh [options] [user@]hostname[/path] [command]");
-  console.log("Options:");
-  console.log("  -k, --insecure      Bypass TLS/SSL certificate verification");
-  console.log("  -h, --help          Show this help message");
+} else if (args.length === 0 || args.includes("--help")) {
+  console.log("Usage: webssh [wrapper-options] [ssh-options] [host] [command]");
+  console.log("Wrapper Options:");
+  console.log("  --insecure      Bypass TLS/SSL certificate verification");
+  console.log("  --help          Show this help message");
   process.exit(0);
 } else {
   runWrapper(args);
@@ -30,40 +24,23 @@ if (args[0] === "--ws-proxy") {
 
 function runWrapper(sshArgs) {
   let insecure = false;
-  const cleanedArgs = [];
+  let i = 0;
 
-  let hostFound = false;
-  let prevWasFlag = false;
-
-  for (const arg of sshArgs) {
-    if (hostFound) {
-      cleanedArgs.push(arg);
-      continue;
-    }
-
-    if (arg.startsWith("-")) {
-      if (arg === "-k" || arg === "--insecure") {
-        insecure = true;
-        continue;
-      }
-      cleanedArgs.push(arg);
-      prevWasFlag = true;
+  // Consume leading wrapper-specific options
+  while (i < sshArgs.length) {
+    const arg = sshArgs[i];
+    if (arg === "--insecure") {
+      insecure = true;
+      i++;
     } else {
-      cleanedArgs.push(arg);
-      if (!prevWasFlag) {
-        hostFound = true;
-      }
-      prevWasFlag = false;
+      break;
     }
   }
 
-  const scriptPath = fs
-    .realpathSync(import.meta.filename)
-    .replace(/\\/g, "/")
-    .replace(/"/g, '\\"');
-  const nodePath = process.execPath.replace(/\\/g, "/").replace(/"/g, '\\"');
+  const cleanedArgs = sshArgs.slice(i);
+  const scriptPath = import.meta.filename;
+  const nodePath = process.execPath;
   const insecureFlag = insecure ? " --insecure" : "";
-  // Secure %h against shell injection by double-quoting it
   const proxyCmd = `"${nodePath}" "${scriptPath}" --ws-proxy "%h"${insecureFlag}`;
 
   const sshProc = spawn(
@@ -89,22 +66,17 @@ async function runProxy(host, insecure) {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
   }
 
-  let WsClient;
-  try {
-    const wsModule = await import("ws");
-    WsClient = globalThis.WebSocket || wsModule.WebSocket || wsModule.default;
-  } catch {
+  if (typeof globalThis.WebSocket === "undefined") {
     console.error(
-      "Error: Built-in WebSocket not found and 'ws' package is not installed.",
+      "Error: Native globalThis.WebSocket is not available in this Node.js version.",
     );
     process.exit(1);
   }
 
   const wsUrl = host.includes("://") ? host : `wss://${host}`;
   const options = {};
-
-  // Custom headers injection (works for both built-in WebSocket and fallback 'ws' package)
   const headers = {};
+
   if (process.env.CF_ACCESS_TOKEN) {
     headers["cf-access-token"] = process.env.CF_ACCESS_TOKEN;
   }
@@ -116,35 +88,28 @@ async function runProxy(host, insecure) {
     options.headers = headers;
   }
 
-  const ws = new WsClient(wsUrl, options);
+  const ws = new globalThis.WebSocket(wsUrl, options);
   ws.binaryType = "arraybuffer";
 
-  const connectionTimeout = setTimeout(() => {
+  const timeout = setTimeout(() => {
     if (ws.readyState === 0) {
-      console.error(
-        `\r\nwebssh error: Connection to ${wsUrl} timed out after 10s`,
-      );
-      try {
-        ws.close();
-      } catch {
-        // Ignore
-      }
+      console.error(`Connection to ${wsUrl} timed out after 10s`);
+      ws.close();
       process.exit(1);
     }
   }, 10_000);
 
-  // Queue to buffer stdin until the handshake completes
   const queue = [];
   let opened = false;
 
   ws.addEventListener("open", () => {
-    clearTimeout(connectionTimeout);
+    clearTimeout(timeout);
     opened = true;
     for (const chunk of queue) {
       try {
         ws.send(chunk);
       } catch (err) {
-        console.error(`\r\nwebssh send error: ${err.message}`);
+        console.error(`Write error: ${err.message}`);
         process.exit(1);
       }
     }
@@ -156,7 +121,7 @@ async function runProxy(host, insecure) {
       try {
         ws.send(chunk);
       } catch (err) {
-        console.error(`\r\nwebssh send error: ${err.message}`);
+        console.error(`Write error: ${err.message}`);
         process.exit(1);
       }
     } else {
@@ -165,34 +130,24 @@ async function runProxy(host, insecure) {
   });
 
   ws.addEventListener("message", (event) => {
-    // Zero-copy wrapping of ArrayBuffer to Buffer for faster stdout writes
     process.stdout.write(Buffer.from(event.data));
   });
 
   ws.addEventListener("close", () => {
-    process.stdout.write("", () => {
-      process.exit(0);
-    });
+    process.stdout.write("", () => process.exit(0));
   });
 
   ws.addEventListener("error", (event) => {
-    clearTimeout(connectionTimeout);
+    clearTimeout(timeout);
     const errorObj = event.error || event;
-    const msg = errorObj.message || errorObj.code || "Unknown error";
-    console.error(`\r\nwebssh error connecting to ${wsUrl}: ${msg}`);
+    const msg = errorObj.message || errorObj.code || "Connection error";
+    console.error(`Connection error: ${msg}`);
     process.exit(1);
   });
 
   process.stdin.on("end", () => {
     if (ws.readyState === 1) {
       ws.close();
-    } else if (ws.readyState === 0) {
-      try {
-        ws.close();
-      } catch {
-        // Ignore TypeError on connecting sockets
-      }
-      process.exit(0);
     } else {
       process.exit(0);
     }
