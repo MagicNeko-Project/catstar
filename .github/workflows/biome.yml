@@ -1,0 +1,22 @@
+---
+name: Biome CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  biome:
+    name: Run Biome CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Biome
+        uses: biomejs/setup-biome@v2
+        with:
+          version: 2.5.4
+
+      - name: Run Biome
+        run: biome ci
