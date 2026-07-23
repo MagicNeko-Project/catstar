@@ -117,6 +117,17 @@ while [[ "$#" -gt 0 ]]; do
     esac
 done
 
+# Verify stow command is available
+if ! command -v stow &>/dev/null; then
+    echo -e "${RED}Error: 'stow' command not found. Please install GNU Stow before running this script.${NC}" >&2
+    exit 5
+fi
+
+# Normalize target path by removing trailing slash if present (except for root '/')
+if [[ "$TARGET_DIR" != "/" ]]; then
+    TARGET_DIR="${TARGET_DIR%/}"
+fi
+
 # Determine target classification
 IS_SYSTEM_TARGET=false
 if [[ "$TARGET_DIR" == "/usr/local" || "$TARGET_DIR" == "/usr" || "$TARGET_DIR" == "/" ]]; then
@@ -124,7 +135,7 @@ if [[ "$TARGET_DIR" == "/usr/local" || "$TARGET_DIR" == "/usr" || "$TARGET_DIR" 
 fi
 
 IS_USER_TARGET=false
-if [[ "$TARGET_DIR" == */.local || "$TARGET_DIR" == */.local/ ]]; then
+if [[ "$TARGET_DIR" == */.local ]]; then
     IS_USER_TARGET=true
 fi
 
@@ -160,8 +171,14 @@ check_permissions() {
         return 0
     fi
 
-    if [[ ! -w "$TARGET_DIR" ]]; then
-        echo -e "${RED}Error: Target directory '$TARGET_DIR' is not writable by the current user.${NC}" >&2
+    # Find the nearest existing parent directory of TARGET_DIR to verify permissions
+    local test_dir="$TARGET_DIR"
+    while [[ ! -d "$test_dir" && "$test_dir" != "/" && -n "$test_dir" ]]; do
+        test_dir="$(dirname "$test_dir")"
+    done
+
+    if [[ ! -w "$test_dir" ]]; then
+        echo -e "${RED}Error: Target directory '$TARGET_DIR' (or its nearest parent '$test_dir') is not writable by the current user.${NC}" >&2
         echo -e "${RED}Please run this script with root privileges (e.g., sudo ./stow.sh).${NC}" >&2
         exit 4
     fi
@@ -169,6 +186,15 @@ check_permissions() {
 
 
 ensure_target_directories() {
+    if [[ ! -d "$TARGET_DIR" ]]; then
+        if [[ "$DRY_RUN" == "true" ]]; then
+            echo -e "${CYAN}[Dry-Run] Would create target base directory: $TARGET_DIR${NC}"
+        else
+            echo -e "  Creating target base directory: $TARGET_DIR"
+            mkdir -p "$TARGET_DIR"
+        fi
+    fi
+
     echo -e "${BLUE}Ensuring target subdirectories exist in '$TARGET_DIR'...${NC}"
     for subdir in "${ACTIVE_REQUIRED_SUBDIRECTORIES[@]}"; do
         local full_path="$TARGET_DIR/$subdir"
@@ -236,7 +262,7 @@ check_conflicts() {
             echo -e "${RED}Conflict detected: Regular file or directory exists at destination: $dest_path${NC}" >&2
             conflicts_found=1
         fi
-    done < <(find "$BASE_DIR/src" -type f -print0)
+    done < <(find "$BASE_DIR/src" \( -type f -o -type l \) -print0)
 
     if [[ "$conflicts_found" -ne 0 ]]; then
         echo -e "${RED}Error: Conflicts detected. Please resolve them before deploying.${NC}" >&2
@@ -402,7 +428,7 @@ execute_prune() {
                 pruned_count=$((pruned_count + 1))
             fi
         fi
-    done < <(find "$BASE_DIR/src" -type f -print0)
+    done < <(find "$BASE_DIR/src" \( -type f -o -type l \) -print0)
 
     echo -e "\n${GREEN}Pruning complete. Total links removed: $pruned_count${NC}"
 }
@@ -457,7 +483,7 @@ execute_status() {
                 dead_links=$((dead_links + 1))
             fi
         fi
-    done < <(find "$BASE_DIR/src" -type f -print0)
+    done < <(find "$BASE_DIR/src" \( -type f -o -type l \) -print0)
 
     echo -e "\n${BLUE}Summary:${NC}"
     echo -e "  Total links tracked: $total_links"
