@@ -4,15 +4,28 @@
 # 3. code-server@.service (system unit, system-wide running as specific user)
 
 [Unit]
-Description=code-server (for user) - System installation
+Description=code-server for %i
 After=network.target
 
 [Service]
+Type=simple
+User=%i
 WorkingDirectory=%h
 ExecStart=/usr/bin/code-server
-Type=simple
-NoNewPrivileges=yes
 Restart=always
 
+# Security & Sandboxing
+NoNewPrivileges=yes
+KeyringMode=private
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectProc=invisible
+
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target

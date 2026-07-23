@@ -1,3 +1,8 @@
+# Note: There are 3 variants of this unit file:
+# 1. jupyterlab.service (user unit, user-local installation)
+# 2. jupyterlab-system.service (user unit, system installation)
+# 3. jupyterlab@.service (system unit, dynamic user/instance installation)
+
 [Unit]
 Description=Jupyter Lab (for user)
 
@@ -6,8 +11,6 @@ WorkingDirectory=%h
 ExecStart=%h/.local/bin/jupyter lab --no-browser
 Type=simple
 NoNewPrivileges=yes
-ProtectSystem=full
-PrivateTmp=yes
 
 [Install]
 WantedBy=default.target

@@ -1,3 +1,8 @@
+# Note: There are 3 variants of this unit file:
+# 1. code-server.service (user unit, user-local installation)
+# 2. code-server-system.service (user unit, system installation)
+# 3. code-server@.service (system unit, system-wide running as specific user)
+
 [Unit]
 Description=code-server (for user)
 After=network.target
@@ -7,8 +12,6 @@ WorkingDirectory=%h
 ExecStart=%h/.local/bin/code-server
 Type=simple
 NoNewPrivileges=yes
-ProtectSystem=full
-PrivateTmp=yes
 Restart=always
 
 [Install]
