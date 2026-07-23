@@ -3,29 +3,15 @@
   "files": {
     "includes": ["scripts/**/*"]
   },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "all",
-      "complexity": {
-        "noExcessiveLinesPerFunction": "off"
-      },
-      "correctness": {
-        "noGlobalDirnameFilename": "off",
-        "noNodejsModules": "off",
-        "noProcessGlobal": "off",
-        "noUndeclaredDependencies": "off",
-        "noUnresolvedImports": "off"
-      },
-      "style": {
-        "noContinue": "off",
-        "noMagicNumbers": "off",
-        "noProcessEnv": "off",
-        "noTernary": "off"
-      },
-      "suspicious": {
-        "noConsole": "off"
-      }
+      "recommended": true
     }
   }
 }

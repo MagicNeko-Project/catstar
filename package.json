@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "lint": "biome lint scripts",
-    "lint:write": "biome lint --write scripts"
+    "lint:write": "biome lint --write scripts",
+    "format": "biome format --write scripts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.4"
