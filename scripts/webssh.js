@@ -15,8 +15,9 @@ if (args[0] === "--ws-proxy") {
 } else if (args.length === 0 || args.includes("--help")) {
   console.log("Usage: webssh [wrapper-options] [ssh-options] [host] [command]");
   console.log("Wrapper Options:");
-  console.log("  --insecure      Bypass TLS/SSL certificate verification");
-  console.log("  --help          Show this help message");
+  console.log("  --insecure        Bypass TLS/SSL certificate verification");
+  console.log("  --ssh <path>      Overwrite the path to the ssh binary");
+  console.log("  --help            Show this help message");
   process.exit(0);
 } else {
   runWrapper(args);
@@ -24,6 +25,7 @@ if (args[0] === "--ws-proxy") {
 
 function runWrapper(sshArgs) {
   let insecure = false;
+  let sshPath = process.env.SSH_PATH || "ssh";
   let i = 0;
 
   // Consume leading wrapper-specific options
@@ -32,6 +34,13 @@ function runWrapper(sshArgs) {
     if (arg === "--insecure") {
       insecure = true;
       i++;
+    } else if (arg === "--ssh") {
+      sshPath = sshArgs[i + 1];
+      if (!sshPath) {
+        console.error("Error: --ssh requires an argument.");
+        process.exit(1);
+      }
+      i += 2;
     } else {
       break;
     }
@@ -44,7 +53,7 @@ function runWrapper(sshArgs) {
   const proxyCmd = `"${nodePath}" "${scriptPath}" --ws-proxy "%h"${insecureFlag}`;
 
   const sshProc = spawn(
-    "ssh",
+    sshPath,
     ["-o", `ProxyCommand=${proxyCmd}`, ...cleanedArgs],
     {
       stdio: "inherit",
