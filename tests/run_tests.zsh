@@ -6,13 +6,20 @@
 
   local script_path="${(%):-%x}"
   local test_dir="${script_path:a:h}"
-  local lib_dir="${test_dir}/lib"
+  local lib_dir="${ZTEST_LIB_DIR:-${test_dir}/lib}"
 
-  if [[ ! -f "${lib_dir}/ztest.zsh" ]]; then
-    print -u2 "Error: ztest framework library not found in ${lib_dir}"
+  local engine_script=""
+  if [[ -f "${lib_dir}/ztest.zsh" ]]; then
+    engine_script="${lib_dir}/ztest.zsh"
+  elif [[ -f "${test_dir}/ztest.zsh" ]]; then
+    engine_script="${test_dir}/ztest.zsh"
+  fi
+
+  if [[ -z "$engine_script" ]]; then
+    print -u2 "Error: ztest framework engine not found in ${lib_dir} or ${test_dir}"
     return 1
   fi
 
-  source "${lib_dir}/ztest.zsh"
+  source "$engine_script"
   ztest_main "$test_dir" "$@"
 } "$@"

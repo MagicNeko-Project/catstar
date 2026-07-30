@@ -25,6 +25,8 @@ ztest_execute_single_test() {
   local test_start_time=$EPOCHREALTIME
 
   (
+    (( $+functions[SetUp] )) && unfunction SetUp
+    (( $+functions[TearDown] )) && unfunction TearDown
     local src_file="${TEST_FILE_PATHS[$run_k]}"
     [[ -f "$src_file" ]] && source "$src_file"
     if (( $+functions[TearDown] )); then trap 'TearDown' EXIT; fi

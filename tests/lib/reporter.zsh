@@ -29,6 +29,26 @@ ztest_report_test_ok() {
   printf "${C_GREEN}[       OK ]${C_RESET} %s (%.2f ms)\n" "$1" "$2"
 }
 
+_ztest_format_exit_status() {
+  local code="$1"
+  if (( code > 128 && code < 255 )); then
+    local sig=$(( code - 128 ))
+    case "$sig" in
+      6)  print "Subshell terminated by signal 6: SIGABRT (Aborted)" ;;
+      7)  print "Subshell terminated by signal 7: SIGBUS (Bus error)" ;;
+      8)  print "Subshell terminated by signal 8: SIGFPE (Floating point exception)" ;;
+      9)  print "Subshell terminated by signal 9: SIGKILL (Killed)" ;;
+      11) print "Subshell terminated by signal 11: SIGSEGV (Segmentation fault)" ;;
+      13) print "Subshell terminated by signal 13: SIGPIPE (Broken pipe)" ;;
+      14) print "Subshell terminated by signal 14: SIGALRM (Alarm clock)" ;;
+      15) print "Subshell terminated by signal 15: SIGTERM (Terminated)" ;;
+      *)  print "Subshell terminated by signal ${sig}" ;;
+    esac
+  else
+    print "Subshell exited with status ${code}"
+  fi
+}
+
 ztest_report_test_fail() {
   printf "${C_RED}[  FAILED  ]${C_RESET} %s (%.2f ms)\n" "$1" "$2"
 
@@ -42,7 +62,8 @@ ztest_report_test_fail() {
       print -u2 "${f_msg}"
     done
   elif (( TEST_SUBSHELL_STATUS != 0 )); then
-    print -u2 "${C_RED}${1}: Failure - Subshell exited with status ${TEST_SUBSHELL_STATUS}${C_RESET}"
+    local status_msg="$(_ztest_format_exit_status "$TEST_SUBSHELL_STATUS")"
+    print -u2 "${C_RED}${1}: Failure - ${status_msg}${C_RESET}"
   fi
 
   if [[ -s "$_ZTEST_OUTPUT_FILE" ]]; then

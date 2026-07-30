@@ -2,6 +2,7 @@
 
 zmodload -i zsh/datetime
 
+typeset -g _ZTEST_LIB_DIR="${${(%):-%x}:a:h}"
 typeset -g _ZTEST_CURRENT_SUITE="Default"
 typeset -g _ZTEST_RESULT_FILE=""
 typeset -g _ZTEST_OUTPUT_FILE=""
@@ -14,10 +15,16 @@ _ztest_log_failure() {
   setopt localoptions noksharrays
   local msg="$1"
   local frame_idx=2
+  local total_frames=${#funcfiletrace}
 
-  if [[ "${funcstack[3]:-}" == assert_* ]]; then
-    frame_idx=3
-  fi
+  while (( frame_idx <= total_frames )); do
+    local frame_file="${funcfiletrace[$frame_idx]%%:*}"
+    local abs_frame_file="${frame_file:a}"
+    if [[ "$abs_frame_file" != "${_ZTEST_LIB_DIR}"/* ]]; then
+      break
+    fi
+    (( frame_idx++ ))
+  done
 
   local location="${funcfiletrace[$frame_idx]:-unknown:0}"
 
@@ -98,11 +105,11 @@ ${detail}"
   return 0
 }
 
-expect_status() {
-  local actual_status="$?"
+_expect_status_internal() {
   setopt localoptions noksharrays
-  local expected_status="$1"
-  local user_msg="${2:-}"
+  local actual_status="$1"
+  local expected_status="$2"
+  local user_msg="${3:-}"
 
   if [[ "$actual_status" -ne "$expected_status" ]]; then
     local detail="Expected exit status:
@@ -114,6 +121,13 @@ ${detail}"
     return 1
   fi
   return 0
+}
+
+expect_status() {
+  local actual_status="$?"
+  local expected_status="$1"
+  local user_msg="${2:-}"
+  _expect_status_internal "$actual_status" "$expected_status" "$user_msg"
 }
 
 assert_eq() {
@@ -134,6 +148,7 @@ assert_contains() {
 
 assert_status() {
   local actual_status="$?"
-  setopt localoptions noksharrays
-  expect_status "$actual_status" "$@" || exit 1
+  local expected_status="$1"
+  local user_msg="${2:-}"
+  _expect_status_internal "$actual_status" "$expected_status" "$user_msg" || exit 1
 }

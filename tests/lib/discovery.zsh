@@ -24,6 +24,8 @@ ztest_discover_test_funcs() {
   local t_file="" fn_item=""
   for t_file in "${(@)DISCOVERED_FILES}"; do
     local -a old_tests=( ${(M)${(k)functions}:#test_*} ${(M)${(k)functions}:#test:*} )
+    (( $+functions[SetUp] )) && old_tests+=( SetUp )
+    (( $+functions[TearDown] )) && old_tests+=( TearDown )
     (( ${#old_tests} > 0 )) && unfunction "${(@)old_tests}"
 
     local -a funcs_before=() funcs_after=() new_funcs=()
