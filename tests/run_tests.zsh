@@ -113,6 +113,7 @@
 
   typeset -A TEST_FUNCS
   typeset -A TEST_SUITES
+  typeset -A TEST_FILE_PATHS
   typeset -a DISCOVERED_TEST_KEYS=()
 
   local t_file="" fn_item=""
@@ -142,6 +143,7 @@
         local t_key="${s_name}.${t_name}"
         TEST_FUNCS[$t_key]="$fn_item"
         TEST_SUITES[$t_key]="$s_name"
+        TEST_FILE_PATHS[$t_key]="$t_file"
         DISCOVERED_TEST_KEYS+=("$t_key")
       fi
     done
@@ -214,6 +216,8 @@
       local test_start_time=$EPOCHREALTIME
 
       (
+        local src_file="${TEST_FILE_PATHS[$run_k]}"
+        [[ -f "$src_file" ]] && source "$src_file"
         if (( $+functions[SetUp] )); then SetUp || exit 1; fi
         "$fn_name"
         local ret=$?
