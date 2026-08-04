@@ -1,0 +1,43 @@
+name: Unit Tests
+
+on:
+  push:
+    paths:
+      - "tests/**"
+      - "src/**"
+      - "scripts/**"
+      - ".github/workflows/tests.yml"
+  pull_request:
+    paths:
+      - "tests/**"
+      - "src/**"
+      - "scripts/**"
+
+jobs:
+  test-zsh:
+    name: ZSH Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install ZSH
+        run: sudo apt-get update && sudo apt-get install -y zsh
+
+      - name: Run ZSH Unit Tests
+        run: ./tests/run_tests.zsh
+
+  test-python:
+    name: Python Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run Python Unit Tests
+        run: python3 -m unittest discover -s tests
