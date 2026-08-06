@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "biome lint scripts",
-    "lint:write": "biome lint --write scripts",
-    "format": "biome format --write scripts"
+    "test": "node --test tests/node/*.test.js",
+    "lint": "biome lint scripts tests/node",
+    "lint:write": "biome lint --write scripts tests/node",
+    "format": "biome format --write scripts tests/node"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.4"
