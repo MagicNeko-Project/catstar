@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/node/*.test.js",
-    "lint": "biome lint scripts tests/node",
-    "lint:write": "biome lint --write scripts tests/node",
+    "lint": "biome check scripts tests/node",
+    "lint:write": "biome check --write scripts tests/node",
     "format": "biome format --write scripts tests/node"
   },
   "devDependencies": {

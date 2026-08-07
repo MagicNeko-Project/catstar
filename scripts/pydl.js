@@ -567,16 +567,16 @@ async function main() {
 }
 
 export {
+  compareVersions,
   detectArch,
   detectPlatform,
-  parseVersion,
-  versionMatches,
-  compareVersions,
-  parseAssetInfo,
-  scoreAsset,
   filterAndRankAssets,
   formatBytes,
+  parseAssetInfo,
+  parseVersion,
   renderProgressBar,
+  scoreAsset,
+  versionMatches,
 };
 
 if (

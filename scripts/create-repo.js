@@ -366,10 +366,10 @@ async function main() {
 }
 
 export {
-  retrieveSecretToken,
-  resolveGitLabAccessLevel,
   buildGitHubPayload,
   buildGitLabPayload,
+  resolveGitLabAccessLevel,
+  retrieveSecretToken,
 };
 
 if (
