@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import {
   createWriteStream,
   existsSync,
@@ -294,21 +294,32 @@ function extractArchive(archivePath, targetDir, quiet) {
   const isZip = archivePath.endsWith(".zip");
 
   if (isTarGz) {
-    execSync(`tar -xzf "${archivePath}" -C "${targetDir}"`, {
+    execFileSync("tar", ["-xzf", archivePath, "-C", targetDir], {
       stdio: "inherit",
     });
   } else if (isTarZst) {
-    execSync(`tar --zstd -xf "${archivePath}" -C "${targetDir}"`, {
+    execFileSync("tar", ["--zstd", "-xf", archivePath, "-C", targetDir], {
       stdio: "inherit",
     });
   } else if (isZip) {
     if (os.platform() === "win32") {
-      execSync(
-        `powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${targetDir}' -Force"`,
+      execFileSync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "Expand-Archive",
+          "-LiteralPath",
+          archivePath,
+          "-DestinationPath",
+          targetDir,
+          "-Force",
+        ],
         { stdio: "inherit" },
       );
     } else {
-      execSync(`unzip -q "${archivePath}" -d "${targetDir}"`, {
+      execFileSync("unzip", ["-q", archivePath, "-d", targetDir], {
         stdio: "inherit",
       });
     }

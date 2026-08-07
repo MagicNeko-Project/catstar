@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -67,9 +67,10 @@ function retrieveSecretToken(tokenName) {
 
   if (process.platform === "darwin") {
     try {
-      const output = execSync(
-        `security find-generic-password -s "${tokenName}" -w`,
-        { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"] },
+      const output = execFileSync(
+        "security",
+        ["find-generic-password", "-s", tokenName, "-w"],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
       );
       return output.trim();
     } catch {
@@ -79,10 +80,14 @@ function retrieveSecretToken(tokenName) {
 
   if (process.platform === "linux") {
     try {
-      const output = execSync(`secret-tool lookup service "${tokenName}"`, {
-        encoding: "utf8",
-        stdio: ["pipe", "pipe", "ignore"],
-      });
+      const output = execFileSync(
+        "secret-tool",
+        ["lookup", "service", tokenName],
+        {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        },
+      );
       return output.trim();
     } catch {
       return null;
