@@ -304,6 +304,12 @@ def build_parser(default_dir: Path) -> argparse.ArgumentParser:
 
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument(
+        "-i",
+        "--install",
+        action="store_true",
+        help="Fetch, verify, and install binary into target directory.",
+    )
+    mode_group.add_argument(
         "-c",
         "--check",
         action="store_true",
@@ -333,6 +339,12 @@ def main(argv: list[str] | None = None) -> None:
     default_dir = Path(env_target_dir) if env_target_dir else get_default_install_dir()
 
     parser = build_parser(default_dir)
+
+    raw_args = argv if argv is not None else sys.argv[1:]
+    if not raw_args:
+        parser.print_help()
+        return
+
     args = parser.parse_args(argv)
 
     if args.download_dir and (args.force or args.target_dir != default_dir):
@@ -352,11 +364,13 @@ def main(argv: list[str] | None = None) -> None:
         elif args.check:
             current_version = get_installed_version(target_binary)
             handle_check_mode(manifest, current_version)
-        else:
+        elif args.install or args.force or args.target_dir != default_dir:
             current_version = get_installed_version(target_binary)
             handle_install_mode(
                 manifest, target_dir, target_binary, current_version, args.force
             )
+        else:
+            parser.print_help()
 
     except (RuntimeError, OSError) as err:
         print(f"Error: {err}", file=sys.stderr)

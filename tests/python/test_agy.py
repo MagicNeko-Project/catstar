@@ -234,6 +234,12 @@ class TestAgyInstaller(unittest.TestCase):
                 verify_path_env(test_path)
                 mock_print.assert_called()
 
+    @patch("argparse.ArgumentParser.print_help")
+    def test_main_no_args_prints_help(self, mock_print_help: MagicMock) -> None:
+        """Verifies main without arguments prints help and does not download or install."""
+        main([])
+        mock_print_help.assert_called_once()
+
     @patch("scripts.agy.detect_host_platform", return_value="linux_amd64")
     @patch("scripts.agy.fetch_release_manifest")
     @patch("scripts.agy.download_and_verify_package")
