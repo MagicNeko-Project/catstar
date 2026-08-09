@@ -91,6 +91,7 @@ class TestAgyInstaller(unittest.TestCase):
                 version="1.2.3",
                 download_url="https://example.com/agy.tar.gz",
                 sha512=sample_sha512,
+                raw_payload=payload,
             ),
         )
 
@@ -215,14 +216,22 @@ class TestAgyInstaller(unittest.TestCase):
         mock_detect: MagicMock,
     ) -> None:
         """Verifies main --check flow when binary is up to date."""
+        sample_sha512 = "a" * 128
+        payload = {
+            "version": "1.2.3",
+            "url": "https://example.com/agy.tar.gz",
+            "sha512": sample_sha512,
+        }
         mock_fetch_manifest.return_value = ReleaseManifest(
             version="1.2.3",
             download_url="https://example.com/agy.tar.gz",
-            sha512="a" * 128,
+            sha512=sample_sha512,
+            raw_payload=payload,
         )
 
         main(["--check"])
-        mock_print.assert_called_with("Up-to-date! Current installed version is 1.2.3.")
+        mock_print.assert_any_call("Platform:           linux_amd64")
+        mock_print.assert_any_call("Latest Version:     1.2.3")
 
     @patch("builtins.print")
     def test_verify_path_env_not_in_path(self, mock_print: MagicMock) -> None:
@@ -253,10 +262,16 @@ class TestAgyInstaller(unittest.TestCase):
     ) -> None:
         """Verifies main --download flow saves package to target directory using release filename."""
         sample_sha512 = "a" * 128
+        payload = {
+            "version": "1.2.3",
+            "url": "https://example.com/agy-1.2.3-linux_amd64.tar.gz",
+            "sha512": sample_sha512,
+        }
         mock_fetch_manifest.return_value = ReleaseManifest(
             version="1.2.3",
             download_url="https://example.com/agy-1.2.3-linux_amd64.tar.gz",
             sha512=sample_sha512,
+            raw_payload=payload,
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -287,10 +302,16 @@ class TestAgyInstaller(unittest.TestCase):
     ) -> None:
         """Verifies --output-dir and --download-only aliases work identically to --download."""
         sample_sha512 = "a" * 128
+        payload = {
+            "version": "1.2.3",
+            "url": "https://example.com/agy-1.2.3-linux_amd64.tar.gz",
+            "sha512": sample_sha512,
+        }
         mock_fetch_manifest.return_value = ReleaseManifest(
             version="1.2.3",
             download_url="https://example.com/agy-1.2.3-linux_amd64.tar.gz",
             sha512=sample_sha512,
+            raw_payload=payload,
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -324,10 +345,16 @@ class TestAgyInstaller(unittest.TestCase):
     ) -> None:
         """Verifies --download without argument auto-infers current directory and release filename."""
         sample_sha512 = "a" * 128
+        payload = {
+            "version": "1.2.3",
+            "url": "https://example.com/releases/agy-1.2.3-linux_amd64.tar.gz",
+            "sha512": sample_sha512,
+        }
         mock_fetch_manifest.return_value = ReleaseManifest(
             version="1.2.3",
             download_url="https://example.com/releases/agy-1.2.3-linux_amd64.tar.gz",
             sha512=sample_sha512,
+            raw_payload=payload,
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:

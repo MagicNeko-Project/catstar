@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 DEFAULT_MANIFEST_BASE_URL: Final[str] = (
     "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests"
@@ -39,6 +39,7 @@ class ReleaseManifest:
     version: str
     download_url: str
     sha512: str
+    raw_payload: dict[str, Any]
 
 
 def detect_host_platform() -> str:
@@ -84,7 +85,8 @@ def fetch_release_manifest(
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.URLError as err:
         raise RuntimeError(
-            f"Failed to fetch release manifest from '{url}': {err}"
+            f"Failed to fetch release manifest from '{url}': {err}.\n"
+            f"Network check: Please verify your internet connection, proxy configuration, or IPv6 route settings."
         ) from err
     except json.JSONDecodeError as err:
         raise RuntimeError(f"Invalid manifest JSON from '{url}': {err}") from err
@@ -106,6 +108,7 @@ def fetch_release_manifest(
         version=version.strip(),
         download_url=download_url.strip(),
         sha512=sha512.strip().lower(),
+        raw_payload=payload,
     )
 
 
@@ -134,7 +137,10 @@ def download_file(url: str, destination: Path, timeout_seconds: int = 30) -> Non
     except urllib.error.URLError as err:
         if destination.exists():
             destination.unlink(missing_ok=True)
-        raise RuntimeError(f"Download failed for '{url}': {err}") from err
+        raise RuntimeError(
+            f"Download failed for '{url}': {err}.\n"
+            f"Network check: Please verify your internet connection, proxy configuration, or IPv6 route settings."
+        ) from err
 
 
 def download_and_verify_package(
@@ -248,17 +254,32 @@ def handle_download_mode(manifest: ReleaseManifest, target_dir: Path | None) -> 
     )
 
 
-def handle_check_mode(manifest: ReleaseManifest, current_version: str | None) -> None:
-    """Execute version checking workflow."""
+def handle_check_mode(
+    manifest: ReleaseManifest,
+    platform_id: str,
+    target_binary: Path,
+    current_version: str | None,
+) -> None:
+    """Execute version checking workflow and print full server release metadata."""
     if current_version is None:
-        print(f"Not installed. Latest version available: {manifest.version}")
+        status_str = "Not installed"
     elif current_version == manifest.version:
-        print(f"Up-to-date! Current installed version is {current_version}.")
+        status_str = f"Up-to-date ({current_version})"
     else:
-        print(
-            f"Update available: {current_version} -> {manifest.version}\n"
-            f"Run without '--check' to upgrade."
-        )
+        status_str = f"Update available ({current_version} -> {manifest.version})"
+
+    print(f"Platform:           {platform_id}")
+    print(f"Target Binary:      {target_binary}")
+    print(f"Status:             {status_str}")
+    print(f"Latest Version:     {manifest.version}")
+    print(f"Download URL:       {manifest.download_url}")
+    print(f"SHA-512 Checksum:   {manifest.sha512}")
+
+    known_keys = {"version", "url", "sha512"}
+    extra_keys = {k: v for k, v in manifest.raw_payload.items() if k not in known_keys}
+    for key, value in extra_keys.items():
+        formatted_key = key.replace("_", " ").title()
+        print(f"{formatted_key:<20}: {value}")
 
 
 def handle_install_mode(
@@ -363,7 +384,7 @@ def main(argv: list[str] | None = None) -> None:
             handle_download_mode(manifest, args.download_dir)
         elif args.check:
             current_version = get_installed_version(target_binary)
-            handle_check_mode(manifest, current_version)
+            handle_check_mode(manifest, platform_id, target_binary, current_version)
         elif args.install or args.force or args.target_dir != default_dir:
             current_version = get_installed_version(target_binary)
             handle_install_mode(
