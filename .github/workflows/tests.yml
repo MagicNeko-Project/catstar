@@ -6,12 +6,14 @@ on:
       - "tests/**"
       - "src/**"
       - "scripts/**"
+      - "pyproject.toml"
       - ".github/workflows/tests.yml"
   pull_request:
     paths:
       - "tests/**"
       - "src/**"
       - "scripts/**"
+      - "pyproject.toml"
 
 jobs:
   test-zsh:
@@ -28,8 +30,11 @@ jobs:
         run: ./tests/run_tests.zsh
 
   test-python:
-    name: Python Unit Tests
+    name: Python Unit Tests (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -37,14 +42,17 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
       - name: Run Python Unit Tests
         run: python3 -m unittest discover -s tests
 
   test-node:
-    name: Node Unit Tests
+    name: Node Unit Tests (${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["24", "26"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -52,7 +60,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: ${{ matrix.node-version }}
 
       - name: Run Node Unit Tests
         run: node --test tests/node/*.test.js
