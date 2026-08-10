@@ -23,52 +23,145 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum, auto
 from pathlib import Path
-from typing import Optional, Tuple, List, Dict, Set, TextIO
-
+from typing import TextIO
 
 # ==============================================================================
 # CONFIGURATION & CONSTANTS
 # ==============================================================================
 
+
 class Visibility(Enum):
     """Defines the inclusion tier for a path during the extraction process."""
-    PRUNED = auto()    # Omitted completely.
-    GHOSTED = auto()   # Path is listed in the directory tree; content is omitted.
+
+    PRUNED = auto()  # Omitted completely.
+    GHOSTED = auto()  # Path is listed in the directory tree; content is omitted.
     REDACTED = auto()  # Path is listed in tree and metadata block; content is stripped.
     INCLUDED = auto()  # Path is listed in tree; full content is extracted.
 
 
 # File extension to generic language identifier mapping.
-EXT_TO_LANG: Dict[str, str] = {
-    ".py": "python", ".js": "javascript", ".ts": "typescript", ".tsx": "typescript",
-    ".html": "html", ".css": "css", ".md": "markdown", ".json": "json",
-    ".yaml": "yaml", ".yml": "yaml", ".sh": "bash", ".cpp": "cpp", ".c": "c",
-    ".java": "java", ".jsx": "javascript", ".go": "go", ".rs": "rust",
-    ".kt": "kotlin", ".m": "objectivec", ".swift": "swift", ".rb": "ruby",
-    ".php": "php", ".ps1": "powershell", ".sql": "sql", ".proto": "protobuf",
-    ".toml": "toml", ".ini": "ini", ".xml": "xml", ".svg": "xml", ".tex": "latex",
+EXT_TO_LANG: dict[str, str] = {
+    ".py": "python",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".html": "html",
+    ".css": "css",
+    ".md": "markdown",
+    ".json": "json",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".sh": "bash",
+    ".cpp": "cpp",
+    ".c": "c",
+    ".java": "java",
+    ".jsx": "javascript",
+    ".go": "go",
+    ".rs": "rust",
+    ".kt": "kotlin",
+    ".m": "objectivec",
+    ".swift": "swift",
+    ".rb": "ruby",
+    ".php": "php",
+    ".ps1": "powershell",
+    ".sql": "sql",
+    ".proto": "protobuf",
+    ".toml": "toml",
+    ".ini": "ini",
+    ".xml": "xml",
+    ".svg": "xml",
+    ".tex": "latex",
 }
 
 # Standard exclusion rulesets
 DEFAULT_PRUNE_VCS = [".git/", ".svn/", ".hg/"]
 DEFAULT_PRUNE_OS = [".DS_Store", "Thumbs.db"]
-DEFAULT_GHOST_DEPS = ["node_modules/", "venv/", ".venv/", "env/", "vendor/", ".tox/", "bower_components/"]
-DEFAULT_GHOST_BUILD = ["dist/", "build/", "target/", "out/", "bin/", "__pycache__/", "*.pyc", "*.egg-info/", ".eggs/"]
-DEFAULT_GHOST_LOCKFILES = ["package-lock.json", "yarn.lock", "pnpm-lock.yaml", "composer.lock", "poetry.lock", "Cargo.lock"]
+DEFAULT_GHOST_DEPS = [
+    "node_modules/",
+    "venv/",
+    ".venv/",
+    "env/",
+    "vendor/",
+    ".tox/",
+    "bower_components/",
+]
+DEFAULT_GHOST_BUILD = [
+    "dist/",
+    "build/",
+    "target/",
+    "out/",
+    "bin/",
+    "__pycache__/",
+    "*.pyc",
+    "*.egg-info/",
+    ".eggs/",
+]
+DEFAULT_GHOST_LOCKFILES = [
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "composer.lock",
+    "poetry.lock",
+    "Cargo.lock",
+]
 
 # Static binary extensions (bypasses I/O read attempts)
-DEFAULT_GHOST_MEDIA = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.ico", "*.webp", "*.pdf", "*.mp3", "*.mp4", "*.wav", "*.avi", "*.mkv", "*.mov"]
-DEFAULT_GHOST_COMPILED = ["*.exe", "*.dll", "*.so", "*.dylib", "*.class", "*.jar", "*.bin", "*.o", "*.a", "*.lib", "*.pyc", "*.pyd", "*.whl", "*.egg", "*.zip", "*.tar", "*.gz", "*.7z", "*.rar"]
+DEFAULT_GHOST_MEDIA = [
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.bmp",
+    "*.ico",
+    "*.webp",
+    "*.pdf",
+    "*.mp3",
+    "*.mp4",
+    "*.wav",
+    "*.avi",
+    "*.mkv",
+    "*.mov",
+]
+DEFAULT_GHOST_COMPILED = [
+    "*.exe",
+    "*.dll",
+    "*.so",
+    "*.dylib",
+    "*.class",
+    "*.jar",
+    "*.bin",
+    "*.o",
+    "*.a",
+    "*.lib",
+    "*.pyc",
+    "*.pyd",
+    "*.whl",
+    "*.egg",
+    "*.zip",
+    "*.tar",
+    "*.gz",
+    "*.7z",
+    "*.rar",
+]
 
 # Security exclusion ruleset
-DEFAULT_REDACT_SECRETS = [".env*", "*.pem", "id_rsa", "id_ed25519", "*.key", "secrets.json", "credentials.xml"]
+DEFAULT_REDACT_SECRETS = [
+    ".env*",
+    "*.pem",
+    "id_rsa",
+    "id_ed25519",
+    "*.key",
+    "secrets.json",
+    "credentials.xml",
+]
 
 
 # ==============================================================================
 # DATA STRUCTURES
 # ==============================================================================
 
-def parse_size_to_bytes(size_str: Optional[str], default_bytes: int) -> int:
+
+def parse_size_to_bytes(size_str: str | None, default_bytes: int) -> int:
     """Parses a human-readable size string into bytes.
 
     Args:
@@ -85,7 +178,9 @@ def parse_size_to_bytes(size_str: Optional[str], default_bytes: int) -> int:
         return default_bytes
     match = re.match(r"^(\d+(?:\.\d+)?)\s*([KMG]?B)$", size_str.strip(), re.IGNORECASE)
     if not match:
-        raise ValueError(f"Invalid size format: {size_str}. Use e.g., '2MB', '500KB', '1.5GB'.")
+        raise ValueError(
+            f"Invalid size format: {size_str}. Use e.g., '2MB', '500KB', '1.5GB'."
+        )
 
     val = float(match.group(1))
     unit = match.group(2).upper()
@@ -96,26 +191,29 @@ def parse_size_to_bytes(size_str: Optional[str], default_bytes: int) -> int:
 @dataclass(frozen=True)
 class Rule:
     """Compiled pattern rule and its associated visibility assignment."""
+
     raw: str
     pattern: str
     regex: re.Pattern[str]
     visibility: Visibility
     anchored: bool
     dir_only: bool
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 @dataclass
 class DirectoryNode:
     """Tree node representing a directory hierarchy."""
+
     name: str
-    directories: Dict[str, "DirectoryNode"] = field(default_factory=dict)
-    files: Set[str] = field(default_factory=set)
+    directories: dict[str, "DirectoryNode"] = field(default_factory=dict)
+    files: set[str] = field(default_factory=set)
 
 
 @dataclass
 class Telemetry:
     """Execution metrics and operational telemetry tracker."""
+
     scanned_paths: int = 0
     included_files: int = 0
     ghosted_paths: int = 0
@@ -128,9 +226,9 @@ class Telemetry:
     def print_summary(self) -> None:
         """Outputs a formatted telemetry summary to stderr."""
         print(file=sys.stderr)
-        print("="*55, file=sys.stderr)
+        print("=" * 55, file=sys.stderr)
         print(" EXECUTION TELEMETRY SUMMARY", file=sys.stderr)
-        print("="*55, file=sys.stderr)
+        print("=" * 55, file=sys.stderr)
         print(f" Total Paths Scanned : {self.scanned_paths}", file=sys.stderr)
         print(f" Files Included      : {self.included_files}", file=sys.stderr)
         print(f" Paths Ghosted       : {self.ghosted_paths}", file=sys.stderr)
@@ -143,14 +241,20 @@ class Telemetry:
         if self.limit_reached:
             print(file=sys.stderr)
             print(" [!] LIMIT ENFORCEMENT TRIGGERED", file=sys.stderr)
-            print(" The configured output size limit was reached. Data stream truncated.", file=sys.stderr)
+            print(
+                " The configured output size limit was reached. Data stream truncated.",
+                file=sys.stderr,
+            )
 
         if self.secrets_redacted > 0:
             print(file=sys.stderr)
             print(" [!] SECURITY NOTICE", file=sys.stderr)
-            print(f" {self.secrets_redacted} credential files were redacted.", file=sys.stderr)
+            print(
+                f" {self.secrets_redacted} credential files were redacted.",
+                file=sys.stderr,
+            )
             print(" Use --allow-secrets to override if intentional.", file=sys.stderr)
-        print("="*55, file=sys.stderr)
+        print("=" * 55, file=sys.stderr)
         print(file=sys.stderr)
 
 
@@ -158,10 +262,11 @@ class Telemetry:
 # ENGINE COMPONENTS
 # ==============================================================================
 
+
 class VisibilityMatcher:
     """Evaluates file paths against compiled rulesets to determine visibility."""
 
-    def __init__(self, rules: List[Rule]):
+    def __init__(self, rules: list[Rule]):
         self.rules = rules
 
     @staticmethod
@@ -174,7 +279,9 @@ class VisibilityMatcher:
         return p.strip("/")
 
     @classmethod
-    def compile_pattern(cls, raw: str, vis: Visibility, reason: Optional[str] = None) -> Rule:
+    def compile_pattern(
+        cls, raw: str, vis: Visibility, reason: str | None = None
+    ) -> Rule:
         """Translates a gitignore-style glob pattern into a regex Rule."""
         if raw.startswith("\x00"):
             pat = "!" + raw[1:]
@@ -224,10 +331,10 @@ class VisibilityMatcher:
             visibility=vis,
             anchored=anchored,
             dir_only=dir_only,
-            reason=reason
+            reason=reason,
         )
 
-    def get_visibility(self, rel_path: str) -> Tuple[Visibility, Optional[str]]:
+    def get_visibility(self, rel_path: str) -> tuple[Visibility, str | None]:
         """Evaluates a path against rules, returning the last matched visibility."""
         path = self._norm_posix(rel_path)
         if not path:
@@ -260,7 +367,11 @@ class VisibilityMatcher:
             if rule.visibility in (Visibility.INCLUDED, Visibility.REDACTED):
                 if not rule.anchored or any(c in rule.pattern for c in "*?[]"):
                     return False
-                if (rule.pattern.startswith(path + "/") or path.startswith(rule.pattern + "/") or rule.pattern == path):
+                if (
+                    rule.pattern.startswith(path + "/")
+                    or path.startswith(rule.pattern + "/")
+                    or rule.pattern == path
+                ):
                     return False
 
         return True
@@ -270,7 +381,7 @@ class FileReader:
     """Provides resilient, encoding-aware file reading operations."""
 
     @staticmethod
-    def read_text(file_path: Path) -> Tuple[Optional[str], int, bool]:
+    def read_text(file_path: Path) -> tuple[str | None, int, bool]:
         """Reads file text, managing fallbacks and binary detection.
 
         Returns:
@@ -283,10 +394,10 @@ class FileReader:
             return None, 0, False
 
         # Detect null bytes prior to decode attempts
-        if b'\x00' in data:
+        if b"\x00" in data:
             return None, 0, True
 
-        encodings = ['utf-8', 'utf-8-sig', 'latin-1']
+        encodings = ["utf-8", "utf-8-sig", "latin-1"]
         text = None
         for enc in encodings:
             try:
@@ -306,21 +417,32 @@ class RepoScanner:
     """Traverses target paths and generates the directory structure map."""
 
     def __init__(
-        self, root_dir: Path, matcher: VisibilityMatcher, telemetry: Telemetry,
-        file_types: Optional[List[str]], max_file_bytes: int, output_file: Optional[Path]
+        self,
+        root_dir: Path,
+        matcher: VisibilityMatcher,
+        telemetry: Telemetry,
+        file_types: list[str] | None,
+        max_file_bytes: int,
+        output_file: Path | None,
     ):
         self.root_dir = root_dir
         self.matcher = matcher
         self.telemetry = telemetry
         self.max_file_bytes = max_file_bytes
         self.output_file = output_file.resolve() if output_file else None
-        self.file_types = [t if t.startswith('.') else f".{t}" for t in file_types] if file_types else None
+        self.file_types = (
+            [t if t.startswith(".") else f".{t}" for t in file_types]
+            if file_types
+            else None
+        )
 
-    def scan(self, target_paths: List[Path]) -> Tuple[DirectoryNode, List[Path], List[Tuple[Path, str]]]:
+    def scan(
+        self, target_paths: list[Path]
+    ) -> tuple[DirectoryNode, list[Path], list[tuple[Path, str]]]:
         """Executes the filesystem scan."""
         root_node = DirectoryNode("/")
-        included_files: List[Path] = []
-        redacted_files: List[Tuple[Path, str]] = []
+        included_files: list[Path] = []
+        redacted_files: list[tuple[Path, str]] = []
 
         for target in target_paths:
             if not target.exists():
@@ -329,13 +451,21 @@ class RepoScanner:
             if target.is_file():
                 self._process_file(target, root_node, included_files, redacted_files)
             elif target.is_dir():
-                self._traverse_directory(target, root_node, included_files, redacted_files)
+                self._traverse_directory(
+                    target, root_node, included_files, redacted_files
+                )
 
         included_files.sort()
         redacted_files.sort(key=lambda x: x[0])
         return root_node, included_files, redacted_files
 
-    def _traverse_directory(self, current_dir: Path, root_node: DirectoryNode, included: List[Path], redacted: List[Tuple[Path, str]]) -> None:
+    def _traverse_directory(
+        self,
+        current_dir: Path,
+        root_node: DirectoryNode,
+        included: list[Path],
+        redacted: list[tuple[Path, str]],
+    ) -> None:
         if current_dir.is_symlink():
             self.telemetry.pruned_paths += 1
             return
@@ -346,7 +476,11 @@ class RepoScanner:
             print(f"[warning] Permission denied: {current_dir}", file=sys.stderr)
             return
 
-        rel_current = current_dir.relative_to(self.root_dir).as_posix() if current_dir != self.root_dir else "."
+        rel_current = (
+            current_dir.relative_to(self.root_dir).as_posix()
+            if current_dir != self.root_dir
+            else "."
+        )
 
         if rel_current != ".":
             vis, _ = self.matcher.get_visibility(rel_current)
@@ -369,7 +503,13 @@ class RepoScanner:
         for f in files:
             self._process_file(f, root_node, included, redacted)
 
-    def _process_file(self, file_path: Path, root_node: DirectoryNode, included: List[Path], redacted: List[Tuple[Path, str]]) -> None:
+    def _process_file(
+        self,
+        file_path: Path,
+        root_node: DirectoryNode,
+        included: list[Path],
+        redacted: list[tuple[Path, str]],
+    ) -> None:
         # Prevent self-referential scanning of the output destination.
         if self.output_file and file_path.resolve() == self.output_file:
             self.telemetry.pruned_paths += 1
@@ -387,7 +527,7 @@ class RepoScanner:
             rel_f = Path(os.path.relpath(file_path, self.root_dir)).as_posix()
 
         vis, reason = self.matcher.get_visibility(rel_f)
-        is_explicit_override = (reason == "EXPLICIT_INCLUDE")
+        is_explicit_override = reason == "EXPLICIT_INCLUDE"
 
         if vis == Visibility.PRUNED:
             self.telemetry.pruned_paths += 1
@@ -407,7 +547,11 @@ class RepoScanner:
             return
 
         if vis == Visibility.INCLUDED:
-            if self.file_types and file_path.suffix not in self.file_types and not is_explicit_override:
+            if (
+                self.file_types
+                and file_path.suffix not in self.file_types
+                and not is_explicit_override
+            ):
                 self.telemetry.pruned_paths += 1
                 return
 
@@ -417,7 +561,9 @@ class RepoScanner:
                     self.telemetry.redacted_files += 1
                     self._insert_into_tree(root_node, rel_f, is_file=True)
                     mb_size = f_size / (1024 * 1024)
-                    redacted.append((file_path, f"EXCEEDS_FILE_SIZE_LIMIT (> {mb_size:.1f} MB)"))
+                    redacted.append(
+                        (file_path, f"EXCEEDS_FILE_SIZE_LIMIT (> {mb_size:.1f} MB)")
+                    )
                     return
             except OSError:
                 pass
@@ -426,7 +572,9 @@ class RepoScanner:
             self._insert_into_tree(root_node, rel_f, is_file=True)
             included.append(file_path)
 
-    def _insert_into_tree(self, root: DirectoryNode, rel_path: str, is_file: bool) -> None:
+    def _insert_into_tree(
+        self, root: DirectoryNode, rel_path: str, is_file: bool
+    ) -> None:
         parts = [p for p in rel_path.split("/") if p]
         node = root
         for i, part in enumerate(parts):
@@ -440,26 +588,30 @@ class RepoScanner:
 
 class LimitReachedError(Exception):
     """Raised when the output byte stream exceeds configured limits."""
+
     pass
 
 
 class XMLRepoRenderer:
     """Manages the generation of structured XML payload."""
 
-    def __init__(self, root_dir: Path, telemetry: Telemetry, max_bytes: Optional[int]):
+    def __init__(self, root_dir: Path, telemetry: Telemetry, max_bytes: int | None):
         self.root_dir = root_dir
         self.telemetry = telemetry
         self.max_bytes = max_bytes
-        self.stream: Optional[TextIO] = None
+        self.stream: TextIO | None = None
 
     def _write(self, text: str) -> None:
         """Writes text payload while enforcing global size limits transactionally."""
         if self.telemetry.limit_reached:
             raise LimitReachedError()
 
-        chunk_size = len(text.encode('utf-8'))
+        chunk_size = len(text.encode("utf-8"))
 
-        if self.max_bytes and self.telemetry.bytes_written + chunk_size > self.max_bytes:
+        if (
+            self.max_bytes
+            and self.telemetry.bytes_written + chunk_size > self.max_bytes
+        ):
             self.telemetry.limit_reached = True
             warning = "\n  <warning>Extraction halted: Global size limit reached. Context is incomplete.</warning>\n  </files>\n</repository>\n"
             if self.stream:
@@ -470,13 +622,29 @@ class XMLRepoRenderer:
             self.stream.write(text)
         self.telemetry.bytes_written += chunk_size
 
-    def render(self, tree_root: DirectoryNode, included: List[Path], redacted: List[Tuple[Path, str]], target_paths: List[Path], out_stream: TextIO) -> None:
+    def render(
+        self,
+        tree_root: DirectoryNode,
+        included: list[Path],
+        redacted: list[tuple[Path, str]],
+        target_paths: list[Path],
+        out_stream: TextIO,
+    ) -> None:
         self.stream = out_stream
-        norm_paths = ", ".join(sorted(p.relative_to(self.root_dir).as_posix() if self.root_dir in p.parents else p.as_posix() for p in target_paths))
+        norm_paths = ", ".join(
+            sorted(
+                p.relative_to(self.root_dir).as_posix()
+                if self.root_dir in p.parents
+                else p.as_posix()
+                for p in target_paths
+            )
+        )
 
         try:
             self._write("<repository>\n")
-            self._write("  <system_note>\n    This is a read-only repository snapshot. Some files are GHOSTED (in tree only) or REDACTED (content hidden). Do not hallucinate missing content.\n  </system_note>\n\n")
+            self._write(
+                "  <system_note>\n    This is a read-only repository snapshot. Some files are GHOSTED (in tree only) or REDACTED (content hidden). Do not hallucinate missing content.\n  </system_note>\n\n"
+            )
 
             self._write("  <metadata>\n")
             self._write(f"    <root>{self.root_dir.resolve()}</root>\n")
@@ -485,7 +653,7 @@ class XMLRepoRenderer:
             self._write("  </metadata>\n\n")
 
             self._write("  <directory_tree>\n")
-            lines: List[str] = ["/"]
+            lines: list[str] = ["/"]
             self._render_tree_nodes(tree_root, lines)
             self._write("\n".join("    " + line for line in lines) + "\n")
             self._write("  </directory_tree>\n\n")
@@ -505,17 +673,23 @@ class XMLRepoRenderer:
         except LimitReachedError:
             pass
 
-    def _render_tree_nodes(self, node: DirectoryNode, lines: List[str], prefix: str = "") -> None:
+    def _render_tree_nodes(
+        self, node: DirectoryNode, lines: list[str], prefix: str = ""
+    ) -> None:
         dirs = sorted(node.directories.keys(), key=str.lower)
         files = sorted(list(node.files), key=str.lower)
         entries = [(d, True) for d in dirs] + [(f, False) for f in files]
 
         for idx, (name, is_dir) in enumerate(entries):
-            is_last = (idx == len(entries) - 1)
+            is_last = idx == len(entries) - 1
             connector = "└── " if is_last else "├── "
             if is_dir:
                 lines.append(f"{prefix}{connector}{name}/")
-                self._render_tree_nodes(node.directories[name], lines, prefix + ("    " if is_last else "│   "))
+                self._render_tree_nodes(
+                    node.directories[name],
+                    lines,
+                    prefix + ("    " if is_last else "│   "),
+                )
             else:
                 lines.append(f"{prefix}{connector}{name}")
 
@@ -529,18 +703,20 @@ class XMLRepoRenderer:
         if "SECURITY" in reason:
             summary = "File content redacted to prevent credential exposure."
         elif "LIMIT" in reason:
-            summary = "File content omitted due to exceeding maximum per-file size policy."
+            summary = (
+                "File content omitted due to exceeding maximum per-file size policy."
+            )
 
         return (
             f'    <file path="{rel_path}">\n'
-            f'      <metadata>\n'
-            f'        <status>REDACTED: {reason}</status>\n'
-            f'        <summary>{summary}</summary>\n'
-            f'      </metadata>\n'
-            f'    </file>\n'
+            f"      <metadata>\n"
+            f"        <status>REDACTED: {reason}</status>\n"
+            f"        <summary>{summary}</summary>\n"
+            f"      </metadata>\n"
+            f"    </file>\n"
         )
 
-    def _build_included_xml(self, file_path: Path) -> Optional[str]:
+    def _build_included_xml(self, file_path: Path) -> str | None:
         try:
             rel_path = file_path.relative_to(self.root_dir).as_posix()
         except ValueError:
@@ -560,12 +736,12 @@ class XMLRepoRenderer:
 
         return (
             f'    <file path="{rel_path}">\n'
-            f'      <metadata>\n'
-            f'        <language>{lang}</language>\n'
-            f'        <size_lines>{line_count}</size_lines>\n'
-            f'      </metadata>\n'
-            f'      <content><![CDATA[\n{escaped_cdata}\n]]></content>\n'
-            f'    </file>\n'
+            f"      <metadata>\n"
+            f"        <language>{lang}</language>\n"
+            f"        <size_lines>{line_count}</size_lines>\n"
+            f"      </metadata>\n"
+            f"      <content><![CDATA[\n{escaped_cdata}\n]]></content>\n"
+            f"    </file>\n"
         )
 
 
@@ -573,11 +749,12 @@ class XMLRepoRenderer:
 # CLI ASSEMBLY & EXECUTION
 # ==============================================================================
 
-def build_rules(args: argparse.Namespace) -> List[Rule]:
-    """Compiles operational rules adhering to strict precedence hierarchy."""
-    rules: List[Rule] = []
 
-    def append(patterns: List[str], vis: Visibility, reason: Optional[str] = None) -> None:
+def build_rules(args: argparse.Namespace) -> list[Rule]:
+    """Compiles operational rules adhering to strict precedence hierarchy."""
+    rules: list[Rule] = []
+
+    def append(patterns: list[str], vis: Visibility, reason: str | None = None) -> None:
         for p in patterns:
             rules.append(VisibilityMatcher.compile_pattern(p, vis, reason))
 
@@ -587,10 +764,14 @@ def build_rules(args: argparse.Namespace) -> List[Rule]:
     append(DEFAULT_GHOST_MEDIA, Visibility.GHOSTED, "MEDIA_BINARY")
     append(DEFAULT_GHOST_COMPILED, Visibility.GHOSTED, "COMPILED_BINARY")
 
-    if not args.include_deps: append(DEFAULT_GHOST_DEPS, Visibility.GHOSTED, "DEPENDENCY")
-    if not args.include_build: append(DEFAULT_GHOST_BUILD, Visibility.GHOSTED, "BUILD_ARTIFACT")
-    if not args.include_lockfiles: append(DEFAULT_GHOST_LOCKFILES, Visibility.GHOSTED, "LOCKFILE")
-    if not args.allow_secrets: append(DEFAULT_REDACT_SECRETS, Visibility.REDACTED, "SECURITY_RISK")
+    if not args.include_deps:
+        append(DEFAULT_GHOST_DEPS, Visibility.GHOSTED, "DEPENDENCY")
+    if not args.include_build:
+        append(DEFAULT_GHOST_BUILD, Visibility.GHOSTED, "BUILD_ARTIFACT")
+    if not args.include_lockfiles:
+        append(DEFAULT_GHOST_LOCKFILES, Visibility.GHOSTED, "LOCKFILE")
+    if not args.allow_secrets:
+        append(DEFAULT_REDACT_SECRETS, Visibility.REDACTED, "SECURITY_RISK")
 
     # 2. Local Project Configuration (.gitignore)
     p_git = Path(".gitignore")
@@ -598,7 +779,11 @@ def build_rules(args: argparse.Namespace) -> List[Rule]:
         try:
             for line in p_git.read_text("utf-8").splitlines():
                 if line.strip() and not line.startswith("#"):
-                    rules.append(VisibilityMatcher.compile_pattern(line.strip(), Visibility.GHOSTED, ".gitignore"))
+                    rules.append(
+                        VisibilityMatcher.compile_pattern(
+                            line.strip(), Visibility.GHOSTED, ".gitignore"
+                        )
+                    )
         except Exception:
             pass
 
@@ -612,44 +797,114 @@ def build_rules(args: argparse.Namespace) -> List[Rule]:
             try:
                 for line in p_ex.read_text("utf-8").splitlines():
                     if line.strip() and not line.startswith("#"):
-                        rules.append(VisibilityMatcher.compile_pattern(line.strip(), Visibility.PRUNED, p_ex.name))
+                        rules.append(
+                            VisibilityMatcher.compile_pattern(
+                                line.strip(), Visibility.PRUNED, p_ex.name
+                            )
+                        )
             except Exception:
                 pass
 
     # 4. Command Line Overrides
-    if args.prune: append(args.prune, Visibility.PRUNED, "EXPLICIT_PRUNE")
-    if args.ghost: append(args.ghost, Visibility.GHOSTED, "EXPLICIT_GHOST")
-    if args.redact: append(args.redact, Visibility.REDACTED, "EXPLICIT_REDACT")
+    if args.prune:
+        append(args.prune, Visibility.PRUNED, "EXPLICIT_PRUNE")
+    if args.ghost:
+        append(args.ghost, Visibility.GHOSTED, "EXPLICIT_GHOST")
+    if args.redact:
+        append(args.redact, Visibility.REDACTED, "EXPLICIT_REDACT")
 
     # 5. Absolute Overrides
-    if args.include: append(args.include, Visibility.INCLUDED, "EXPLICIT_INCLUDE")
+    if args.include:
+        append(args.include, Visibility.INCLUDED, "EXPLICIT_INCLUDE")
 
     return rules
 
 
 def main() -> None:
     """Primary execution entrypoint."""
-    parser = argparse.ArgumentParser(description="Extracts repository structures into LLM-optimized XML.")
+    parser = argparse.ArgumentParser(
+        description="Extracts repository structures into LLM-optimized XML."
+    )
     parser.add_argument("paths", nargs="+", help="Target paths to include in the scan.")
-    parser.add_argument("-o", "--output", type=str, help="Destination file path (defaults to standard output).")
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        help="Destination file path (defaults to standard output).",
+    )
 
-    parser.add_argument("--dry-run", action="store_true", help="Calculate metrics without generating physical output.")
-    parser.add_argument("--force", action="store_true", help="Bypass interactive terminal confirmation prompts.")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Calculate metrics without generating physical output.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass interactive terminal confirmation prompts.",
+    )
 
-    parser.add_argument("--max-size", type=str, help="Enforce a global output byte limit (e.g., '2MB', '500KB').")
-    parser.add_argument("--max-file-size", type=str, default="2MB", help="Enforce a per-file byte limit. Exceeding files are REDACTED.")
-    parser.add_argument("-t", "--file-types", type=str, nargs="*", help="Restrict inclusion to specific file extensions.")
-    parser.add_argument("-e", "--exclusion-file", type=str, nargs="*", help="Provide custom exclusion rulesets (appended to .llmignore).")
+    parser.add_argument(
+        "--max-size",
+        type=str,
+        help="Enforce a global output byte limit (e.g., '2MB', '500KB').",
+    )
+    parser.add_argument(
+        "--max-file-size",
+        type=str,
+        default="2MB",
+        help="Enforce a per-file byte limit. Exceeding files are REDACTED.",
+    )
+    parser.add_argument(
+        "-t",
+        "--file-types",
+        type=str,
+        nargs="*",
+        help="Restrict inclusion to specific file extensions.",
+    )
+    parser.add_argument(
+        "-e",
+        "--exclusion-file",
+        type=str,
+        nargs="*",
+        help="Provide custom exclusion rulesets (appended to .llmignore).",
+    )
 
-    parser.add_argument("-i", "--include", type=str, nargs="*", help="Explicitly force inclusion of paths, overriding all other rules.")
-    parser.add_argument("--prune", type=str, nargs="*", help="Explicitly force paths to be PRUNED.")
-    parser.add_argument("--ghost", type=str, nargs="*", help="Explicitly force paths to be GHOSTED.")
-    parser.add_argument("--redact", type=str, nargs="*", help="Explicitly force paths to be REDACTED.")
+    parser.add_argument(
+        "-i",
+        "--include",
+        type=str,
+        nargs="*",
+        help="Explicitly force inclusion of paths, overriding all other rules.",
+    )
+    parser.add_argument(
+        "--prune", type=str, nargs="*", help="Explicitly force paths to be PRUNED."
+    )
+    parser.add_argument(
+        "--ghost", type=str, nargs="*", help="Explicitly force paths to be GHOSTED."
+    )
+    parser.add_argument(
+        "--redact", type=str, nargs="*", help="Explicitly force paths to be REDACTED."
+    )
 
-    parser.add_argument("--include-deps", action="store_true", help="Include dependencies (e.g., node_modules, venv).")
-    parser.add_argument("--include-build", action="store_true", help="Include build artifacts (e.g., dist, build).")
-    parser.add_argument("--include-lockfiles", action="store_true", help="Include package lockfiles.")
-    parser.add_argument("--allow-secrets", action="store_true", help="Disable secret redaction. WARNING: May leak credentials.")
+    parser.add_argument(
+        "--include-deps",
+        action="store_true",
+        help="Include dependencies (e.g., node_modules, venv).",
+    )
+    parser.add_argument(
+        "--include-build",
+        action="store_true",
+        help="Include build artifacts (e.g., dist, build).",
+    )
+    parser.add_argument(
+        "--include-lockfiles", action="store_true", help="Include package lockfiles."
+    )
+    parser.add_argument(
+        "--allow-secrets",
+        action="store_true",
+        help="Disable secret redaction. WARNING: May leak credentials.",
+    )
 
     args = parser.parse_args()
 
@@ -657,9 +912,12 @@ def main() -> None:
     if not args.output and sys.stdout.isatty() and not args.force and not args.dry_run:
         print(file=sys.stderr)
         print("[!] WARNING: Output destination not specified.", file=sys.stderr)
-        print("    You are about to stream the repository context to the interactive terminal.", file=sys.stderr)
+        print(
+            "    You are about to stream the repository context to the interactive terminal.",
+            file=sys.stderr,
+        )
         resp = input("    Proceed? [y/N]: ")
-        if resp.strip().lower() != 'y':
+        if resp.strip().lower() != "y":
             print("Operation aborted.", file=sys.stderr)
             sys.exit(0)
 
@@ -678,18 +936,25 @@ def main() -> None:
     rules = build_rules(args)
     matcher = VisibilityMatcher(rules)
 
-    scanner = RepoScanner(root_dir, matcher, telemetry, args.file_types, max_file_bytes, output_path)
+    scanner = RepoScanner(
+        root_dir, matcher, telemetry, args.file_types, max_file_bytes, output_path
+    )
     tree_root, included_files, redacted_files = scanner.scan(target_paths)
 
     if not args.dry_run:
         renderer = XMLRepoRenderer(root_dir, telemetry, max_bytes)
         if args.output:
             with open(args.output, "w", encoding="utf-8") as out_stream:
-                renderer.render(tree_root, included_files, redacted_files, target_paths, out_stream)
+                renderer.render(
+                    tree_root, included_files, redacted_files, target_paths, out_stream
+                )
         else:
-            renderer.render(tree_root, included_files, redacted_files, target_paths, sys.stdout)
+            renderer.render(
+                tree_root, included_files, redacted_files, target_paths, sys.stdout
+            )
 
     telemetry.print_summary()
+
 
 if __name__ == "__main__":
     main()

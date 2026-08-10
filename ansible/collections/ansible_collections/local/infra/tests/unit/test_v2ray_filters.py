@@ -1,13 +1,13 @@
 """Unit tests for the V2Ray Ansible filter plugins."""
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ansible_collections.local.infra.plugins.filter import v2ray
 
 
 def test_build_vmess_inbound() -> None:
     """Verify that build_vmess_inbound constructs a correct VMess inbound block."""
-    inbound_spec: Dict[str, Any] = {
+    inbound_spec: dict[str, Any] = {
         "vmess": 10086,
         "clients": [{"id": "uuid-placeholder", "alterId": 0}],
         "tag": "vmess-in",
@@ -22,7 +22,7 @@ def test_build_vmess_inbound() -> None:
 
 def test_build_vless_inbound() -> None:
     """Verify that build_vless_inbound constructs a correct VLESS inbound block."""
-    inbound_spec: Dict[str, Any] = {
+    inbound_spec: dict[str, Any] = {
         "vless": 10087,
         "clients": [{"id": "uuid-placeholder"}],
         "tag": "vless-in",
@@ -38,7 +38,7 @@ def test_build_vless_inbound() -> None:
 
 def test_build_shadowsocks_inbound() -> None:
     """Verify Shadowsocks inbound creation."""
-    inbound_spec: Dict[str, Any] = {
+    inbound_spec: dict[str, Any] = {
         "ss": 10088,
         "password": "shadowsocks-password",
         "method": "chacha20-ietf-poly1305",
@@ -55,7 +55,7 @@ def test_build_shadowsocks_inbound() -> None:
 
 def test_build_socks_inbound() -> None:
     """Verify standard Socks inbound block configuration."""
-    inbound_spec: Dict[str, Any] = {"socks": 1080, "tag": "socks-in"}
+    inbound_spec: dict[str, Any] = {"socks": 1080, "tag": "socks-in"}
     block = v2ray.build_socks_inbound(inbound_spec)
     assert block["protocol"] == "socks"
     assert block["port"] == 1080
@@ -66,7 +66,7 @@ def test_build_socks_inbound() -> None:
 
 def test_build_http_inbound() -> None:
     """Verify HTTP inbound block configuration."""
-    inbound_spec: Dict[str, Any] = {"http": 8080, "tag": "http-in"}
+    inbound_spec: dict[str, Any] = {"http": 8080, "tag": "http-in"}
     block = v2ray.build_http_inbound(inbound_spec)
     assert block["protocol"] == "http"
     assert block["port"] == 8080
@@ -90,7 +90,7 @@ def test_build_tcp_relay_inbound() -> None:
 def test_build_telegram_inbound() -> None:
     """Verify SOCKS inbound optimized for Telegram routing."""
     # No auth case
-    inbound_spec: Dict[str, Any] = {"tg": 1088}
+    inbound_spec: dict[str, Any] = {"tg": 1088}
     block = v2ray.build_telegram_inbound(inbound_spec)
     assert block["protocol"] == "socks"
     assert block["port"] == 1088
@@ -99,7 +99,7 @@ def test_build_telegram_inbound() -> None:
     assert block["settings"]["auth"] == "noauth"
 
     # User/Pass auth case
-    inbound_spec_auth: Dict[str, Any] = {
+    inbound_spec_auth: dict[str, Any] = {
         "tg": 1088,
         "accounts": [{"user": "tg-user", "pass": "tg-pass"}],
     }
@@ -115,28 +115,28 @@ def test_v2ray_config_filter_integration() -> None:
     """Verify integration of the complete config filter."""
     filter_module = v2ray.FilterModule()
 
-    inbounds: List[Dict[str, Any]] = [
+    inbounds: list[dict[str, Any]] = [
         {"socks": 1080, "tag": "socks-in"},
         {"tcp": {1234: "1.1.1.1:1234", 5678: "2.2.2.2:5678"}},
         {"tg": 1089},
     ]
-    outbounds_default: List[Dict[str, Any]] = [
+    outbounds_default: list[dict[str, Any]] = [
         {"protocol": "freedom", "tag": "direct"},
         {"protocol": "blackhole", "tag": "blocked"},
     ]
-    outbounds_custom: List[Dict[str, Any]] = [
+    outbounds_custom: list[dict[str, Any]] = [
         {
             "protocol": "vmess",
             "tag": "proxy",
             "settings": {"vnext": [{"address": "proxy.server", "port": 443}]},
         }
     ]
-    rules_default: List[Dict[str, Any]] = [
+    rules_default: list[dict[str, Any]] = [
         {"ip": ["geoip:private"], "outboundTag": "blocked"}
     ]
-    ads_domains: List[str] = ["vungle.com", "ironsrc.mob"]
-    telegram_ips: List[str] = ["91.108.4.0/22", "149.154.160.0/20"]
-    rules_custom: List[Dict[str, Any]] = [
+    ads_domains: list[str] = ["vungle.com", "ironsrc.mob"]
+    telegram_ips: list[str] = ["91.108.4.0/22", "149.154.160.0/20"]
+    rules_custom: list[dict[str, Any]] = [
         {"domain": ["geosite:cn"], "outboundTag": "direct"}
     ]
 
@@ -194,7 +194,7 @@ def test_v2ray_config_filter_integration() -> None:
 
 def test_build_dokodemo_inbound() -> None:
     """Verify that build_dokodemo_inbound constructs a correct dokodemo inbound block."""
-    inbound_spec: Dict[str, Any] = {
+    inbound_spec: dict[str, Any] = {
         "dokodemo": 12345,
         "listen": "127.0.0.1",
         "tag": "transparent-in",
@@ -214,7 +214,7 @@ def test_build_dokodemo_inbound() -> None:
 
 def test_build_vless_outbound() -> None:
     """Verify that build_vless_outbound constructs a correct VLESS outbound block."""
-    outbound_spec: Dict[str, Any] = {
+    outbound_spec: dict[str, Any] = {
         "vless": "vless.server.com",
         "port": 443,
         "tag": "out1004",
@@ -238,7 +238,7 @@ def test_build_vless_outbound() -> None:
 
 def test_build_vmess_outbound() -> None:
     """Verify that build_vmess_outbound constructs a correct VMess outbound block."""
-    outbound_spec: Dict[str, Any] = {
+    outbound_spec: dict[str, Any] = {
         "vmess": "proxy.server.com",
         "port": 443,
         "tag": "vmess-out",
@@ -262,7 +262,7 @@ def test_build_vmess_outbound() -> None:
 
 def test_build_shadowsocks_outbound() -> None:
     """Verify that build_shadowsocks_outbound constructs a correct Shadowsocks outbound block."""
-    outbound_spec: Dict[str, Any] = {
+    outbound_spec: dict[str, Any] = {
         "ss": "ss.server.com",
         "port": 8388,
         "tag": "ss-out",
@@ -280,7 +280,7 @@ def test_build_shadowsocks_outbound() -> None:
 
 def test_build_trojan_outbound() -> None:
     """Verify that build_trojan_outbound constructs a correct Trojan outbound block."""
-    outbound_spec: Dict[str, Any] = {
+    outbound_spec: dict[str, Any] = {
         "trojan": "trojan.server.com",
         "port": 443,
         "tag": "trojan-out",
@@ -296,7 +296,7 @@ def test_build_trojan_outbound() -> None:
 
 def test_build_socks_outbound() -> None:
     """Verify that build_socks_outbound constructs a correct SOCKS outbound block."""
-    outbound_spec: Dict[str, Any] = {
+    outbound_spec: dict[str, Any] = {
         "socks": "socks.server.com",
         "port": 1080,
         "tag": "socks-out",
@@ -314,7 +314,7 @@ def test_build_socks_outbound() -> None:
 
 def test_build_http_outbound() -> None:
     """Verify that build_http_outbound constructs a correct HTTP outbound block."""
-    outbound_spec: Dict[str, Any] = {
+    outbound_spec: dict[str, Any] = {
         "http": "http.server.com",
         "port": 8080,
         "tag": "http-out",
@@ -334,14 +334,14 @@ def test_v2ray_config_filter_integration_extended() -> None:
     """Verify the integration of the complete config filter with new optional parameters."""
     filter_module = v2ray.FilterModule()
 
-    inbounds: List[Dict[str, Any]] = [
+    inbounds: list[dict[str, Any]] = [
         {"socks": 1080, "tag": "socks-in"},
         {"dokodemo": 12345, "tag": "transparent-in", "follow_redirect": True},
     ]
-    outbounds_default: List[Dict[str, Any]] = [
+    outbounds_default: list[dict[str, Any]] = [
         {"protocol": "freedom", "tag": "direct"},
     ]
-    outbounds_custom: List[Dict[str, Any]] = [
+    outbounds_custom: list[dict[str, Any]] = [
         {
             "vless": "vless.server.com",
             "port": 443,
@@ -353,10 +353,10 @@ def test_v2ray_config_filter_integration_extended() -> None:
             "path": "/vlesspath",
         }
     ]
-    rules_default: List[Dict[str, Any]] = []
-    ads_domains: List[str] = []
-    telegram_ips: List[str] = []
-    rules_custom: List[Dict[str, Any]] = [
+    rules_default: list[dict[str, Any]] = []
+    ads_domains: list[str] = []
+    telegram_ips: list[str] = []
+    rules_custom: list[dict[str, Any]] = [
         {
             "inboundTag": ["socks-in", "transparent-in"],
             "outboundTag": "out1004",

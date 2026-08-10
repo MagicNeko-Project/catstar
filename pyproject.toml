@@ -1,0 +1,9 @@
+[project]
+name = "catstar"
+version = "0.1.0"
+description = "Infrastructure management and automation tools"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 88

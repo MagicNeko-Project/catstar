@@ -7,14 +7,14 @@ repository structure unless explicitly enabled via command-line options.
 """
 
 import argparse
-from dataclasses import dataclass
 import json
 import os
 import subprocess
 import sys
-from typing import Any, Dict, Final, List, NoReturn, Optional, Tuple
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
+from typing import Any, Final, NoReturn, Optional
 
 # --- Magic Values Extracted to Constants ---
 GITHUB_API_URL: Final[str] = "https://api.github.com/user/repos"
@@ -40,7 +40,7 @@ def exit_with_fatal_error(message: str) -> NoReturn:
     sys.exit(1)
 
 
-def retrieve_secret_token(token_name: str) -> Optional[str]:
+def retrieve_secret_token(token_name: str) -> str | None:
     """Retrieve a credential token from environment variables or secure keyrings."""
     env_token = os.getenv(token_name)
     if env_token:
@@ -75,9 +75,9 @@ def retrieve_secret_token(token_name: str) -> Optional[str]:
 
 def execute_http_post_request(
     target_url: str,
-    payload: Dict[str, Any],
-    request_headers: Dict[str, str],
-) -> Dict[str, Any]:
+    payload: dict[str, Any],
+    request_headers: dict[str, str],
+) -> dict[str, Any]:
     serialized_data = json.dumps(payload).encode(TEXT_ENCODING)
     http_request = urllib.request.Request(
         target_url,
@@ -138,7 +138,7 @@ def create_github_repository(configuration: GitHubConfiguration) -> None:
         )
 
     # Ensure the Git repository is created without default initial commits
-    request_payload: Dict[str, Any] = {
+    request_payload: dict[str, Any] = {
         "name": configuration.repository_name,
         "description": configuration.repository_description,
         "private": not configuration.is_public,
@@ -150,14 +150,16 @@ def create_github_repository(configuration: GitHubConfiguration) -> None:
         "has_downloads": configuration.enable_downloads,
     }
 
-    request_headers: Dict[str, str] = {
+    request_headers: dict[str, str] = {
         "Authorization": f"Bearer {api_token}",
         "Accept": GITHUB_ACCEPT_HEADER,
         "X-GitHub-Api-Version": GITHUB_API_VERSION,
         "Content-Type": CONTENT_TYPE_JSON,
     }
 
-    print(f"🚀 Creating pristine GitHub repository '{configuration.repository_name}'...")
+    print(
+        f"🚀 Creating pristine GitHub repository '{configuration.repository_name}'..."
+    )
     response_data = execute_http_post_request(
         GITHUB_API_URL, request_payload, request_headers
     )
@@ -166,7 +168,7 @@ def create_github_repository(configuration: GitHubConfiguration) -> None:
     print(f"\n✅ Success! Repository created at: {repository_url}")
     print("\nFeature Status:")
 
-    github_features: List[Tuple[str, str]] = [
+    github_features: list[tuple[str, str]] = [
         ("has_issues", "Issues"),
         ("has_projects", "Projects"),
         ("has_wiki", "Wiki"),
@@ -193,17 +195,13 @@ def create_gitlab_project(configuration: GitLabConfiguration) -> None:
     target_endpoint = f"{configured_base_url}{GITLAB_PROJECTS_API_PATH}"
 
     # Lock down all built-in GitLab modules by default to maintain pristine state
-    request_payload: Dict[str, Any] = {
+    request_payload: dict[str, Any] = {
         "name": configuration.project_name,
         "description": configuration.project_description,
         "visibility": "public" if configuration.is_public else "private",
         "repository_access_level": GITLAB_FEATURE_ENABLED,
-        "issues_access_level": resolve_gitlab_access_level(
-            configuration.enable_issues
-        ),
-        "wiki_access_level": resolve_gitlab_access_level(
-            configuration.enable_wiki
-        ),
+        "issues_access_level": resolve_gitlab_access_level(configuration.enable_issues),
+        "wiki_access_level": resolve_gitlab_access_level(configuration.enable_wiki),
         "snippets_access_level": resolve_gitlab_access_level(
             configuration.enable_snippets
         ),
@@ -229,7 +227,7 @@ def create_gitlab_project(configuration: GitLabConfiguration) -> None:
         "security_and_compliance_access_level": GITLAB_FEATURE_DISABLED,
     }
 
-    request_headers: Dict[str, str] = {
+    request_headers: dict[str, str] = {
         "Authorization": f"Bearer {api_token}",
         "Content-Type": CONTENT_TYPE_JSON,
     }
@@ -243,7 +241,7 @@ def create_gitlab_project(configuration: GitLabConfiguration) -> None:
     print(f"\n✅ Success! Project created at: {project_url}")
     print("\nFeature Status:")
 
-    gitlab_features: List[Tuple[str, str]] = [
+    gitlab_features: list[tuple[str, str]] = [
         ("Issues", "issues_access_level"),
         ("Wiki", "wiki_access_level"),
         ("Snippets", "snippets_access_level"),
@@ -294,9 +292,7 @@ def main() -> None:
     github_opt_in_group.add_argument(
         "--projects", action="store_true", help="Enable Projects"
     )
-    github_opt_in_group.add_argument(
-        "--wiki", action="store_true", help="Enable Wiki"
-    )
+    github_opt_in_group.add_argument("--wiki", action="store_true", help="Enable Wiki")
     github_opt_in_group.add_argument(
         "--discussions", action="store_true", help="Enable Discussions"
     )
@@ -305,9 +301,7 @@ def main() -> None:
     )
 
     # --- GitLab Subparser ---
-    gitlab_parser = subparsers.add_parser(
-        "gitlab", help="Create a pure GitLab project"
-    )
+    gitlab_parser = subparsers.add_parser("gitlab", help="Create a pure GitLab project")
     gitlab_parser.add_argument("name", help="Project name")
     gitlab_parser.add_argument(
         "-d", "--description", default="", help="Project description"
@@ -322,9 +316,7 @@ def main() -> None:
     gitlab_opt_in_group.add_argument(
         "--issues", action="store_true", help="Enable Issues"
     )
-    gitlab_opt_in_group.add_argument(
-        "--wiki", action="store_true", help="Enable Wiki"
-    )
+    gitlab_opt_in_group.add_argument("--wiki", action="store_true", help="Enable Wiki")
     gitlab_opt_in_group.add_argument(
         "--snippets", action="store_true", help="Enable Snippets"
     )

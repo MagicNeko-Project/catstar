@@ -1,16 +1,16 @@
 """V2Ray configuration generator filter plugin."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
-def force_list(item: Any) -> List[Any]:
+def force_list(item: Any) -> list[Any]:
     """Ensure the item is returned as a list."""
     if item is None:
         return []
     return item if isinstance(item, list) else [item]
 
 
-def build_vmess_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
+def build_vmess_inbound(inbound_spec: dict[str, Any]) -> dict[str, Any]:
     """Build a VMess inbound configuration block."""
     return {
         "protocol": "vmess",
@@ -22,7 +22,7 @@ def build_vmess_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_vless_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
+def build_vless_inbound(inbound_spec: dict[str, Any]) -> dict[str, Any]:
     """Build a VLESS inbound configuration block."""
     return {
         "protocol": "vless",
@@ -37,7 +37,7 @@ def build_vless_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_shadowsocks_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
+def build_shadowsocks_inbound(inbound_spec: dict[str, Any]) -> dict[str, Any]:
     """Build a Shadowsocks inbound configuration block."""
     return {
         "protocol": "shadowsocks",
@@ -52,7 +52,7 @@ def build_shadowsocks_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_socks_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
+def build_socks_inbound(inbound_spec: dict[str, Any]) -> dict[str, Any]:
     """Build a standard SOCKS inbound configuration block."""
     return {
         "protocol": "socks",
@@ -64,7 +64,7 @@ def build_socks_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_http_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
+def build_http_inbound(inbound_spec: dict[str, Any]) -> dict[str, Any]:
     """Build a standard HTTP inbound configuration block."""
     return {
         "protocol": "http",
@@ -76,7 +76,7 @@ def build_http_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_tcp_relay_inbound(port: int, destination: str) -> Dict[str, Any]:
+def build_tcp_relay_inbound(port: int, destination: str) -> dict[str, Any]:
     """Build a dokodemo-door inbound configuration block for TCP relay."""
     parts = destination.rsplit(":", 1)
     address = parts[0]
@@ -95,10 +95,10 @@ def build_tcp_relay_inbound(port: int, destination: str) -> Dict[str, Any]:
     }
 
 
-def build_telegram_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
+def build_telegram_inbound(inbound_spec: dict[str, Any]) -> dict[str, Any]:
     """Build a SOCKS inbound block configured for Telegram routing."""
     accounts = inbound_spec.get("accounts")
-    settings: Dict[str, Any] = {}
+    settings: dict[str, Any] = {}
     if accounts is not None:
         settings["auth"] = "password"
         settings["accounts"] = accounts
@@ -116,9 +116,9 @@ def build_telegram_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_dokodemo_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
+def build_dokodemo_inbound(inbound_spec: dict[str, Any]) -> dict[str, Any]:
     """Build a general dokodemo-door inbound configuration block."""
-    settings: Dict[str, Any] = {}
+    settings: dict[str, Any] = {}
     if "address" in inbound_spec:
         settings["address"] = inbound_spec["address"]
     if "port_dest" in inbound_spec:
@@ -143,9 +143,9 @@ def build_dokodemo_inbound(inbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_vless_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
+def build_vless_outbound(outbound_spec: dict[str, Any]) -> dict[str, Any]:
     """Build a VLESS outbound configuration block."""
-    user: Dict[str, Any] = {
+    user: dict[str, Any] = {
         "id": outbound_spec.get("uuid") or outbound_spec.get("id"),
         "encryption": outbound_spec.get("encryption", "none"),
     }
@@ -162,7 +162,7 @@ def build_vless_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         "vnext": [vnext_item],
     }
 
-    outbound: Dict[str, Any] = {
+    outbound: dict[str, Any] = {
         "protocol": "vless",
         "tag": outbound_spec.get("tag")
         or f"outbound-vless-{outbound_spec['vless']}-{outbound_spec.get('port', 443)}",
@@ -175,7 +175,7 @@ def build_vless_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         outbound["streamSettings"] = stream_settings
     else:
         # Construct streamSettings dynamically from top-level keys if present
-        dynamic_stream_settings: Dict[str, Any] = {}
+        dynamic_stream_settings: dict[str, Any] = {}
         network = outbound_spec.get("network")
         if network:
             dynamic_stream_settings["network"] = network
@@ -183,7 +183,7 @@ def build_vless_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         if security:
             dynamic_stream_settings["security"] = security
 
-        ws_settings: Dict[str, Any] = {}
+        ws_settings: dict[str, Any] = {}
         if "path" in outbound_spec:
             ws_settings["path"] = outbound_spec["path"]
         if "headers" in outbound_spec:
@@ -191,7 +191,7 @@ def build_vless_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         if ws_settings:
             dynamic_stream_settings["wsSettings"] = ws_settings
 
-        tls_settings: Dict[str, Any] = {}
+        tls_settings: dict[str, Any] = {}
         if "sni" in outbound_spec:
             tls_settings["serverName"] = outbound_spec["sni"]
         if "fingerprint" in outbound_spec:
@@ -205,9 +205,9 @@ def build_vless_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     return outbound
 
 
-def build_vmess_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
+def build_vmess_outbound(outbound_spec: dict[str, Any]) -> dict[str, Any]:
     """Build a VMess outbound configuration block."""
-    user: Dict[str, Any] = {
+    user: dict[str, Any] = {
         "id": outbound_spec.get("uuid") or outbound_spec.get("id"),
         "alterId": outbound_spec.get("alter_id", outbound_spec.get("alterId", 0)),
     }
@@ -224,7 +224,7 @@ def build_vmess_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         "vnext": [vnext_item],
     }
 
-    outbound: Dict[str, Any] = {
+    outbound: dict[str, Any] = {
         "protocol": "vmess",
         "tag": outbound_spec.get("tag")
         or f"outbound-vmess-{outbound_spec['vmess']}-{outbound_spec.get('port', 443)}",
@@ -237,7 +237,7 @@ def build_vmess_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         outbound["streamSettings"] = stream_settings
     else:
         # Construct streamSettings dynamically from top-level keys if present
-        dynamic_stream_settings: Dict[str, Any] = {}
+        dynamic_stream_settings: dict[str, Any] = {}
         network = outbound_spec.get("network")
         if network:
             dynamic_stream_settings["network"] = network
@@ -247,7 +247,7 @@ def build_vmess_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         if security:
             dynamic_stream_settings["security"] = security
 
-        ws_settings: Dict[str, Any] = {}
+        ws_settings: dict[str, Any] = {}
         if "path" in outbound_spec:
             ws_settings["path"] = outbound_spec["path"]
         if "headers" in outbound_spec:
@@ -255,7 +255,7 @@ def build_vmess_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
         if ws_settings:
             dynamic_stream_settings["wsSettings"] = ws_settings
 
-        tls_settings: Dict[str, Any] = {}
+        tls_settings: dict[str, Any] = {}
         if "sni" in outbound_spec:
             tls_settings["serverName"] = outbound_spec["sni"]
         if tls_settings:
@@ -267,7 +267,7 @@ def build_vmess_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     return outbound
 
 
-def build_shadowsocks_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
+def build_shadowsocks_outbound(outbound_spec: dict[str, Any]) -> dict[str, Any]:
     """Build a Shadowsocks outbound configuration block."""
     server = {
         "address": outbound_spec["ss"],
@@ -284,7 +284,7 @@ def build_shadowsocks_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_trojan_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
+def build_trojan_outbound(outbound_spec: dict[str, Any]) -> dict[str, Any]:
     """Build a Trojan outbound configuration block."""
     server = {
         "address": outbound_spec["trojan"],
@@ -300,9 +300,9 @@ def build_trojan_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_socks_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
+def build_socks_outbound(outbound_spec: dict[str, Any]) -> dict[str, Any]:
     """Build a SOCKS outbound configuration block."""
-    server: Dict[str, Any] = {
+    server: dict[str, Any] = {
         "address": outbound_spec["socks"],
         "port": outbound_spec.get("port"),
     }
@@ -325,9 +325,9 @@ def build_socks_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_http_outbound(outbound_spec: Dict[str, Any]) -> Dict[str, Any]:
+def build_http_outbound(outbound_spec: dict[str, Any]) -> dict[str, Any]:
     """Build an HTTP outbound configuration block."""
-    server: Dict[str, Any] = {
+    server: dict[str, Any] = {
         "address": outbound_spec["http"],
         "port": outbound_spec.get("port"),
     }
@@ -355,17 +355,17 @@ class V2RayConfigBuilder:
 
     def __init__(
         self,
-        inbounds: List[Dict[str, Any]],
-        outbounds_default: List[Dict[str, Any]],
-        outbounds_custom: List[Dict[str, Any]],
-        rules_default: List[Dict[str, Any]],
-        ads_domains: List[str],
-        telegram_ips: List[str],
-        rules_custom: List[Dict[str, Any]],
+        inbounds: list[dict[str, Any]],
+        outbounds_default: list[dict[str, Any]],
+        outbounds_custom: list[dict[str, Any]],
+        rules_default: list[dict[str, Any]],
+        ads_domains: list[str],
+        telegram_ips: list[str],
+        rules_custom: list[dict[str, Any]],
         routing_strategy: str = "",
-        dns_servers: Optional[List[str]] = None,
-        policy: Optional[Dict[str, Any]] = None,
-        extra_config: Optional[Dict[str, Any]] = None,
+        dns_servers: list[str] | None = None,
+        policy: dict[str, Any] | None = None,
+        extra_config: dict[str, Any] | None = None,
     ) -> None:
         self._inbound_specs = force_list(inbounds)
         self._outbounds_default_specs = force_list(outbounds_default)
@@ -380,16 +380,16 @@ class V2RayConfigBuilder:
         self._extra_config = extra_config or {}
 
         # Shared builder state accumulated during construction
-        self._tcp_relay_tags: List[str] = []
+        self._tcp_relay_tags: list[str] = []
         self._telegram_tag = "inbound-tg"
 
-    def build(self) -> Dict[str, Any]:
+    def build(self) -> dict[str, Any]:
         """Orchestrate configuration segments to generate a final dictionary."""
         inbounds = self._build_inbounds()
         outbounds = self._build_outbounds()
         routing = self._build_routing()
 
-        config: Dict[str, Any] = {
+        config: dict[str, Any] = {
             "log": {"loglevel": "info"},
             "inbounds": inbounds,
             "outbounds": outbounds,
@@ -410,13 +410,15 @@ class V2RayConfigBuilder:
 
         return config
 
-    def _build_inbounds(self) -> List[Dict[str, Any]]:
+    def _build_inbounds(self) -> list[dict[str, Any]]:
         blocks = []
         for spec in self._inbound_specs:
             blocks.extend(self._process_single_inbound(spec))
         return blocks
 
-    def _process_single_inbound(self, inbound_spec: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _process_single_inbound(
+        self, inbound_spec: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         if "vmess" in inbound_spec:
             return [build_vmess_inbound(inbound_spec)]
         if "vless" in inbound_spec:
@@ -435,7 +437,7 @@ class V2RayConfigBuilder:
             return [build_dokodemo_inbound(inbound_spec)]
 
         if "tcp" in inbound_spec:
-            blocks: List[Dict[str, Any]] = []
+            blocks: list[dict[str, Any]] = []
             tcp_mapping = inbound_spec["tcp"]
             if isinstance(tcp_mapping, dict):
                 for port_str, dest_str in tcp_mapping.items():
@@ -452,13 +454,15 @@ class V2RayConfigBuilder:
             inbound_spec["tag"] = f"inbound-{protocol}-{port}"
         return [inbound_spec]
 
-    def _build_outbounds(self) -> List[Dict[str, Any]]:
+    def _build_outbounds(self) -> list[dict[str, Any]]:
         blocks = []
         for spec in self._outbounds_default_specs + self._outbounds_custom_specs:
             blocks.extend(self._process_single_outbound(spec))
         return blocks
 
-    def _process_single_outbound(self, outbound_spec: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _process_single_outbound(
+        self, outbound_spec: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         if "vless" in outbound_spec:
             return [build_vless_outbound(outbound_spec)]
         if "vmess" in outbound_spec:
@@ -479,7 +483,7 @@ class V2RayConfigBuilder:
             outbound_spec["tag"] = f"outbound-{protocol}"
         return [outbound_spec]
 
-    def _build_routing(self) -> Dict[str, Any]:
+    def _build_routing(self) -> dict[str, Any]:
         rules = []
 
         # 1. TCP Relay routing rule
@@ -533,12 +537,12 @@ class V2RayConfigBuilder:
             rule.update(rule_spec)
             rules.append(rule)
 
-        routing: Dict[str, Any] = {"rules": rules}
+        routing: dict[str, Any] = {"rules": rules}
         if self._routing_strategy:
             routing["domainStrategy"] = self._routing_strategy
         return routing
 
-    def _merge_extra_config(self, config: Dict[str, Any]) -> None:
+    def _merge_extra_config(self, config: dict[str, Any]) -> None:
         for key, value in self._extra_config.items():
             if key == "routing" and isinstance(value, dict) and "routing" in config:
                 config["routing"].update(value)
@@ -551,24 +555,24 @@ class V2RayConfigBuilder:
 class FilterModule:
     """Ansible filter plugin for building V2Ray configurations."""
 
-    def filters(self) -> Dict[str, Any]:
+    def filters(self) -> dict[str, Any]:
         """Return the dictionary of filters defined by this module."""
         return {"v2ray_config": self.v2ray_config}
 
     def v2ray_config(
         self,
-        inbounds: List[Dict[str, Any]],
-        outbounds_default: List[Dict[str, Any]],
-        outbounds_custom: List[Dict[str, Any]],
-        rules_default: List[Dict[str, Any]],
-        ads_domains: List[str],
-        telegram_ips: List[str],
-        rules_custom: List[Dict[str, Any]],
+        inbounds: list[dict[str, Any]],
+        outbounds_default: list[dict[str, Any]],
+        outbounds_custom: list[dict[str, Any]],
+        rules_default: list[dict[str, Any]],
+        ads_domains: list[str],
+        telegram_ips: list[str],
+        rules_custom: list[dict[str, Any]],
         routing_strategy: str = "",
-        dns_servers: Optional[List[str]] = None,
-        policy: Optional[Dict[str, Any]] = None,
-        extra_config: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        dns_servers: list[str] | None = None,
+        policy: dict[str, Any] | None = None,
+        extra_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Generate a complete V2Ray configuration dictionary."""
         builder = V2RayConfigBuilder(
             inbounds=inbounds,

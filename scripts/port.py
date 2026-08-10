@@ -9,7 +9,7 @@ By default, the script generates one ephemeral port if no options are provided.
 import argparse
 import bisect
 import random
-from typing import List
+from collections.abc import Iterable
 
 # Predefined port ranges
 PORT_RANGES = {
@@ -19,7 +19,7 @@ PORT_RANGES = {
 }
 
 
-def choose_random_ports(ranges: List[str], count: int) -> List[int]:
+def choose_random_ports(ranges: Iterable[str], count: int) -> list[int]:
     all_ranges = [PORT_RANGES[name] for name in ranges]
     cumulative = [0]
     for r in all_ranges:
@@ -42,26 +42,29 @@ def main():
         description="Generate random port numbers from predefined ranges."
     )
     parser.add_argument(
-        "-p", "--privileged",
+        "-p",
+        "--privileged",
         action="store_true",
-        help="Include privileged ports (1-1023)."
+        help="Include privileged ports (1-1023).",
     )
     parser.add_argument(
-        "-g", "--registered",
+        "-g",
+        "--registered",
         action="store_true",
-        help="Include registered ports (1024-49151)."
+        help="Include registered ports (1024-49151).",
     )
     parser.add_argument(
-        "-e", "--ephemeral",
+        "-e",
+        "--ephemeral",
         action="store_true",
-        help="Include ephemeral ports (49152-65535). Default if no range is specified."
+        help="Include ephemeral ports (49152-65535). Default if no range is specified.",
     )
     parser.add_argument(
         "number",
         nargs="?",
         type=int,
         default=1,
-        help="Number of random ports to generate (default: 1)."
+        help="Number of random ports to generate (default: 1).",
     )
 
     args = parser.parse_args()

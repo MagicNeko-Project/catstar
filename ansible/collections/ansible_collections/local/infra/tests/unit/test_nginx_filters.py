@@ -1,6 +1,6 @@
 """Unit tests for the Nginx Ansible filter plugins."""
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ansible_collections.local.infra.plugins.filter import nginx
 
@@ -14,7 +14,7 @@ def test_force_list_behavior() -> None:
 
 def test_parse_listen_ports() -> None:
     """Verify that listen port strings are correctly parsed into ListenPort objects."""
-    ports: List[nginx.ListenPort] = list(nginx.parse_listen_ports("80 443"))
+    ports: list[nginx.ListenPort] = list(nginx.parse_listen_ports("80 443"))
 
     assert len(ports) == 4
 
@@ -42,9 +42,9 @@ def test_parse_listen_ports() -> None:
 def test_nginx_location_block_filter() -> None:
     """Verify that the nginx_location_block filter correctly builds location blocks."""
     filter_module = nginx.FilterModule()
-    configs: List[Dict[str, Any]] = [{"location": "/app", "proxy": "http://backend"}]
+    configs: list[dict[str, Any]] = [{"location": "/app", "proxy": "http://backend"}]
 
-    result: List[nginx.NginxLocationBlock] = filter_module.nginx_location_block(configs)
+    result: list[nginx.NginxLocationBlock] = filter_module.nginx_location_block(configs)
 
     assert len(result) == 1
     location_block = result[0]
@@ -56,14 +56,14 @@ def test_nginx_location_block_filter() -> None:
 def test_nginx_server_block_filter() -> None:
     """Verify that the nginx_server_block filter correctly instantiates server blocks."""
     filter_module = nginx.FilterModule()
-    configs: List[Dict[str, Any]] = [
+    configs: list[dict[str, Any]] = [
         {
             "server_name": "example.com",
             "locations": [{"location": "/", "proxy": "http://frontend"}],
         }
     ]
 
-    result: List[nginx.NginxServerBlock] = filter_module.nginx_server_block(
+    result: list[nginx.NginxServerBlock] = filter_module.nginx_server_block(
         configs, "default_name"
     )
 
@@ -84,13 +84,13 @@ def test_nginx_server_block_filter() -> None:
 def test_gather_ssl_hosts_filter() -> None:
     """Verify that gather_ssl_hosts extracts correct domains for SSL certifications."""
     filter_module = nginx.FilterModule()
-    sites: Dict[str, Dict[str, Any]] = {
+    sites: dict[str, dict[str, Any]] = {
         "default": {},
         "c5.example.com": {},
         "c6.example.com": {"server_name": "c6.example.com"},
     }
 
-    ssl_hosts: List[str] = filter_module.gather_ssl_hosts(sites)
+    ssl_hosts: list[str] = filter_module.gather_ssl_hosts(sites)
 
     assert ssl_hosts == ["default", "example.com", "example.com"]
 
@@ -99,13 +99,13 @@ def test_nginx_options_formatting() -> None:
     """Verify that nginx_options returns correctly formatted Nginx directives."""
     filter_module = nginx.FilterModule()
 
-    options: Dict[str, Any] = {
+    options: dict[str, Any] = {
         "gzip": True,
         "client_max_body_size": "50m",
         "if": "($host = example.com)",
     }
 
-    formatted: List[str] = filter_module.nginx_options(options)
+    formatted: list[str] = filter_module.nginx_options(options)
 
     assert "gzip on;" in formatted
     assert "client_max_body_size 50m;" in formatted

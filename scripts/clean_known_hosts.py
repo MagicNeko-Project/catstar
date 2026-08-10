@@ -4,11 +4,12 @@
 import argparse
 import os
 import sys
-from typing import List, Set
+
 
 class HostMatcher:
     """Matches host patterns against lines of a known_hosts file."""
-    def __init__(self, patterns: List[str]):
+
+    def __init__(self, patterns: list[str]):
         self.patterns = patterns
 
     def line_matches(self, line: str) -> bool:
@@ -25,25 +26,27 @@ class HostMatcher:
                 return True
         return False
 
-    def _normalize_host(self, raw: str) -> Set[str]:
+    def _normalize_host(self, raw: str) -> set[str]:
         """
         Normalizes a host token from a known_hosts file.
         e.g., [host]:port -> host
         """
         if raw.startswith("[") and "]:" in raw:
-            raw = raw[1:raw.find("]:")]
-        return set(raw.split('.'))
+            raw = raw[1 : raw.find("]:")]
+        return set(raw.split("."))
 
-    def _host_matches(self, host: Set[str]) -> bool:
+    def _host_matches(self, host: set[str]) -> bool:
         """Checks if the set of a pattern's components is a subset of the host's."""
         for p in self.patterns:
-            sub = set(p.split('.'))
+            sub = set(p.split("."))
             if not (sub - host):
                 return True
         return False
 
+
 class KnownHostsFile:
     """Manages reading, cleaning, and writing a known_hosts file."""
+
     def __init__(self, path: str, matcher: HostMatcher):
         self.path = path
         self.matcher = matcher
@@ -75,12 +78,12 @@ class KnownHostsFile:
         else:
             sys.stdout.writelines(output_lines)
 
-    def _read_lines(self) -> List[str]:
+    def _read_lines(self) -> list[str]:
         """Reads all lines from the file."""
-        with open(self.path, "r", encoding="utf-8") as f:
+        with open(self.path, encoding="utf-8") as f:
             return f.readlines()
 
-    def _write_lines(self, lines: List[str]):
+    def _write_lines(self, lines: list[str]):
         """Writes lines to the file."""
         with open(self.path, "w", encoding="utf-8") as f:
             f.writelines(lines)
@@ -90,29 +93,36 @@ class KnownHostsFile:
         backup_path = self.path + ".bak"
         os.rename(self.path, backup_path)
 
+
 def main():
     """Parses CLI arguments and runs the cleaning process."""
     parser = argparse.ArgumentParser(
         description="Clean entries from ~/.ssh/known_hosts by suffix/domain/IP match."
     )
-    parser.add_argument("patterns", nargs="+", help="Domain(s) or IP fragment(s) to remove")
     parser.add_argument(
-        "--file", default=os.path.expanduser("~/.ssh/known_hosts"),
-        help="Path to known_hosts file (default: ~/.ssh/known_hosts)"
+        "patterns", nargs="+", help="Domain(s) or IP fragment(s) to remove"
     )
     parser.add_argument(
-        "--inplace", action="store_true",
-        help="Replace the known_hosts file (a backup is created)."
+        "--file",
+        default=os.path.expanduser("~/.ssh/known_hosts"),
+        help="Path to known_hosts file (default: ~/.ssh/known_hosts)",
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
-        help="Show which lines would be removed without modifying the file."
+        "--inplace",
+        action="store_true",
+        help="Replace the known_hosts file (a backup is created).",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show which lines would be removed without modifying the file.",
     )
     args = parser.parse_args()
 
     matcher = HostMatcher(args.patterns)
     known_hosts = KnownHostsFile(args.file, matcher)
     known_hosts.clean(args.inplace, args.dry_run)
+
 
 if __name__ == "__main__":
     main()

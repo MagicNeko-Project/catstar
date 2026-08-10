@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field, fields
+
 from jinja2.runtime import Undefined
 
 

@@ -15,7 +15,7 @@ import random
 import subprocess
 import sys
 import time
-from typing import Any, Dict, NamedTuple, Optional, Set
+from typing import Any, NamedTuple
 from urllib.parse import ParseResult, urlparse
 
 # Standard Network and Protocol Constants
@@ -32,10 +32,10 @@ MAX_RANDOM_PORT: int = 65535
 DEFAULT_GRPC_SERVICE_NAME: str = "TunnelService"
 DEFAULT_PATH: str = "/"
 
-SUPPORTED_TLS_SCHEMES: Set[str] = {"wss", "https", "tls", "grpc", "h2"}
-SUPPORTED_WS_SCHEMES: Set[str] = {"ws", "wss"}
-SUPPORTED_GRPC_SCHEMES: Set[str] = {"grpc"}
-SUPPORTED_H2_SCHEMES: Set[str] = {"h2"}
+SUPPORTED_TLS_SCHEMES: set[str] = {"wss", "https", "tls", "grpc", "h2"}
+SUPPORTED_WS_SCHEMES: set[str] = {"ws", "wss"}
+SUPPORTED_GRPC_SCHEMES: set[str] = {"grpc"}
+SUPPORTED_H2_SCHEMES: set[str] = {"h2"}
 
 # Proxy Configuration Constants
 DEFAULT_SOCKS_PROXY_PORT: int = 1080
@@ -44,16 +44,17 @@ DEFAULT_HTTP_PROXY_PORT: int = 8080
 SOCKS_PROTOCOL_NAME: str = "socks"
 HTTP_PROTOCOL_NAME: str = "http"
 
-SUPPORTED_SOCKS_SCHEMES: Set[str] = {"socks", "socks4", "socks4a", "socks5", "socks5h"}
-SUPPORTED_HTTP_SCHEMES: Set[str] = {"http", "https"}
+SUPPORTED_SOCKS_SCHEMES: set[str] = {"socks", "socks4", "socks4a", "socks5", "socks5h"}
+SUPPORTED_HTTP_SCHEMES: set[str] = {"http", "https"}
 
 
 class EndpointConfiguration(NamedTuple):
     """
     Immutable representation of an inbound or outbound tunnel endpoint.
     """
+
     transport_protocol: str
-    address: Optional[str]
+    address: str | None
     port: int
     path: str
     tls_enabled: bool
@@ -63,11 +64,12 @@ class ProxyConfiguration(NamedTuple):
     """
     Immutable representation of an upstream proxy configuration.
     """
+
     protocol: str  # Must be SOCKS_PROTOCOL_NAME or HTTP_PROTOCOL_NAME
     address: str
     port: int
-    username: Optional[str] = None
-    password: Optional[str] = None
+    username: str | None = None
+    password: str | None = None
 
 
 def generate_random_port() -> int:
@@ -217,7 +219,9 @@ def parse_proxy_endpoint_url(proxy_url_string: str) -> ProxyConfiguration:
     elif scheme in SUPPORTED_HTTP_SCHEMES:
         protocol = HTTP_PROTOCOL_NAME
     else:
-        supported_schemes_list = sorted(list(SUPPORTED_SOCKS_SCHEMES | SUPPORTED_HTTP_SCHEMES))
+        supported_schemes_list = sorted(
+            list(SUPPORTED_SOCKS_SCHEMES | SUPPORTED_HTTP_SCHEMES)
+        )
         raise ValueError(
             f"Unsupported proxy scheme: '{scheme}'. Supported schemes are: {', '.join(supported_schemes_list)}"
         )
@@ -230,7 +234,11 @@ def parse_proxy_endpoint_url(proxy_url_string: str) -> ProxyConfiguration:
     if parsed_url.port is not None:
         port = validate_port_number(parsed_url.port)
     else:
-        port = DEFAULT_SOCKS_PROXY_PORT if protocol == SOCKS_PROTOCOL_NAME else DEFAULT_HTTP_PROXY_PORT
+        port = (
+            DEFAULT_SOCKS_PROXY_PORT
+            if protocol == SOCKS_PROTOCOL_NAME
+            else DEFAULT_HTTP_PROXY_PORT
+        )
 
     return ProxyConfiguration(
         protocol=protocol,
@@ -245,9 +253,9 @@ def generate_endpoint_stream_settings(
     endpoint: EndpointConfiguration,
     is_inbound: bool,
     sni_override: str,
-    certificate_file: Optional[str],
-    key_file: Optional[str],
-) -> Optional[Dict[str, Any]]:
+    certificate_file: str | None,
+    key_file: str | None,
+) -> dict[str, Any] | None:
     """
     Generates the V2Ray streamSettings block for an inbound or outbound endpoint.
 
@@ -264,14 +272,16 @@ def generate_endpoint_stream_settings(
     if endpoint.transport_protocol == "tcp" and not endpoint.tls_enabled:
         return None
 
-    stream_settings: Dict[str, Any] = {"network": endpoint.transport_protocol}
+    stream_settings: dict[str, Any] = {"network": endpoint.transport_protocol}
 
     if endpoint.transport_protocol == "ws":
         ws_path = endpoint.path if endpoint.path else DEFAULT_PATH
         stream_settings["wsSettings"] = {"path": ws_path}
 
     elif endpoint.transport_protocol == "grpc":
-        service_name = endpoint.path.strip("/") if endpoint.path else DEFAULT_GRPC_SERVICE_NAME
+        service_name = (
+            endpoint.path.strip("/") if endpoint.path else DEFAULT_GRPC_SERVICE_NAME
+        )
         stream_settings["grpcSettings"] = {
             "serviceName": service_name,
             "host": endpoint.address,
@@ -287,7 +297,7 @@ def generate_endpoint_stream_settings(
     if endpoint.tls_enabled:
         stream_settings["security"] = "tls"
         if not is_inbound:
-            tls_settings: Dict[str, Any] = {
+            tls_settings: dict[str, Any] = {
                 "allowInsecure": False,
             }
             if sni_override:
@@ -308,16 +318,16 @@ def generate_endpoint_stream_settings(
 
 def generate_inbound_configuration(
     listen_port: int,
-    listen_address: Optional[str],
+    listen_address: str | None,
     address: str,
     target_port: int,
-    stream_settings: Optional[Dict[str, Any]],
-    tag: Optional[str],
-) -> Dict[str, Any]:
+    stream_settings: dict[str, Any] | None,
+    tag: str | None,
+) -> dict[str, Any]:
     """
     Generates the V2Ray inbound configuration object.
     """
-    inbound: Dict[str, Any] = {
+    inbound: dict[str, Any] = {
         "port": listen_port,
         "protocol": "dokodemo-door",
         "settings": {
@@ -340,15 +350,15 @@ def generate_inbound_configuration(
 
 
 def generate_outbound_configuration(
-    stream_settings: Optional[Dict[str, Any]],
-    tag: Optional[str],
-    proxy_tag: Optional[str] = None,
-    domain_strategy: Optional[str] = None,
-) -> Dict[str, Any]:
+    stream_settings: dict[str, Any] | None,
+    tag: str | None,
+    proxy_tag: str | None = None,
+    domain_strategy: str | None = None,
+) -> dict[str, Any]:
     """
     Generates the V2Ray outbound configuration object.
     """
-    outbound: Dict[str, Any] = {
+    outbound: dict[str, Any] = {
         "protocol": "freedom",
     }
 
@@ -374,16 +384,16 @@ def generate_outbound_configuration(
 def generate_proxy_outbound_configuration(
     proxy_config: ProxyConfiguration,
     proxy_tag: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Generates the V2Ray outbound configuration object for an upstream proxy server.
     """
-    outbound: Dict[str, Any] = {
+    outbound: dict[str, Any] = {
         "protocol": proxy_config.protocol,
         "tag": proxy_tag,
     }
 
-    server_entry: Dict[str, Any] = {
+    server_entry: dict[str, Any] = {
         "address": proxy_config.address,
         "port": proxy_config.port,
     }
@@ -391,38 +401,38 @@ def generate_proxy_outbound_configuration(
     if proxy_config.protocol == SOCKS_PROTOCOL_NAME:
         users_list = []
         if proxy_config.username and proxy_config.password:
-            users_list.append({
-                "user": proxy_config.username,
-                "pass": proxy_config.password,
-                "level": 0,
-            })
+            users_list.append(
+                {
+                    "user": proxy_config.username,
+                    "pass": proxy_config.password,
+                    "level": 0,
+                }
+            )
         server_entry["users"] = users_list
-        outbound["settings"] = {
-            "servers": [server_entry]
-        }
+        outbound["settings"] = {"servers": [server_entry]}
 
     elif proxy_config.protocol == HTTP_PROTOCOL_NAME:
         user_list = []
         if proxy_config.username and proxy_config.password:
-            user_list.append({
-                "user": proxy_config.username,
-                "pass": proxy_config.password,
-            })
+            user_list.append(
+                {
+                    "user": proxy_config.username,
+                    "pass": proxy_config.password,
+                }
+            )
         server_entry["users"] = user_list
-        outbound["settings"] = {
-            "servers": [server_entry]
-        }
+        outbound["settings"] = {"servers": [server_entry]}
 
     return outbound
 
 
 def assemble_complete_configuration(
-    inbound: Dict[str, Any],
-    outbound: Dict[str, Any],
-    tag: Optional[str],
-    proxy_outbound: Optional[Dict[str, Any]] = None,
-    dns_servers: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    inbound: dict[str, Any],
+    outbound: dict[str, Any],
+    tag: str | None,
+    proxy_outbound: dict[str, Any] | None = None,
+    dns_servers: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Assembles the complete V2Ray configuration object including basic logging,
     routing isolation rules, and optional upstream proxy outbound.
@@ -431,7 +441,7 @@ def assemble_complete_configuration(
     if proxy_outbound:
         outbounds.append(proxy_outbound)
 
-    config: Dict[str, Any] = {
+    config: dict[str, Any] = {
         "log": {"loglevel": "info"},
         "inbounds": [inbound],
         "outbounds": outbounds,
@@ -592,11 +602,13 @@ def main() -> None:
 
         # Validate SSH mode constraints (SSH only works with plain TCP listeners)
         if args.ssh is not None:
-            if inbound_endpoint.tls_enabled or inbound_endpoint.transport_protocol != "tcp":
+            if (
+                inbound_endpoint.tls_enabled
+                or inbound_endpoint.transport_protocol != "tcp"
+            ):
                 raise ValueError(
                     "The --ssh option cannot be used when the local listening port expects secure decorated traffic (TLS/WS/gRPC/H2)."
                 )
-
 
         # Resolve proxy if specified
         proxy_tag = None

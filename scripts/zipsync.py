@@ -48,7 +48,7 @@ class ZipSyncer:
         destination = (target_dir / relative_path).resolve()
         target_dir_resolved = target_dir.resolve()
 
-        if not str(destination).startswith(str(target_dir_resolved)):
+        if not destination.is_relative_to(target_dir_resolved):
             raise ValueError(f"Malicious path detected in zip file: {relative_path}")
 
         return destination
@@ -61,7 +61,7 @@ class ZipSyncer:
             zip_file: Path to the zip file.
             extract_dir: Path to the directory for extraction.
         """
-        with zipfile.ZipFile(zip_file, 'r') as zf:
+        with zipfile.ZipFile(zip_file, "r") as zf:
             for member in zf.namelist():
                 try:
                     # Security check for paths
@@ -112,7 +112,9 @@ class ZipSyncer:
             dest_root: The destination directory.
         """
         if not src_root.exists():
-            print(f"Error: Source directory {src_root} does not exist.", file=sys.stderr)
+            print(
+                f"Error: Source directory {src_root} does not exist.", file=sys.stderr
+            )
             return
 
         # Create destination if it doesn't exist

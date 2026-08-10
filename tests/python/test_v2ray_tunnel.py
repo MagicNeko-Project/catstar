@@ -190,7 +190,9 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         self.assertEqual(settings["security"], "tls")
         self.assertEqual(settings["tlsSettings"]["serverName"], "custom.com")
 
-    def test_generate_endpoint_stream_settings_ws_outbound_secure_no_sni_if_empty(self) -> None:
+    def test_generate_endpoint_stream_settings_ws_outbound_secure_no_sni_if_empty(
+        self,
+    ) -> None:
         """Verifies that if sni_override is empty, serverName is omitted from tlsSettings."""
         endpoint = parse_endpoint("wss://1.2.3.4/tunnel", is_inbound=False)
         settings = generate_endpoint_stream_settings(
@@ -303,31 +305,53 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         self.assertTrue(10000 <= port <= 65535)
 
     @unittest.mock.patch("subprocess.run")
-    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "1234", "--remote", "wss://example.com/ws", "--run"])
+    @unittest.mock.patch(
+        "sys.argv",
+        [
+            "v2ray_tunnel.py",
+            "--listen",
+            "1234",
+            "--remote",
+            "wss://example.com/ws",
+            "--run",
+        ],
+    )
     @unittest.mock.patch("builtins.print")
     def test_main_client_flow(self, mock_print: Any, mock_run: Any) -> None:
         """Verifies integrated execution for a secure client forwarding tunnel."""
         from scripts.v2ray_tunnel import main
+
         main()
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
         config = json.loads(kwargs["input"].decode("utf-8"))
-        
+
         # Inbound must be plain TCP and have no listen key (defaults to all interfaces)
         self.assertNotIn("streamSettings", config["inbounds"][0])
         self.assertNotIn("listen", config["inbounds"][0])
         self.assertEqual(config["inbounds"][0]["port"], 1234)
-        
+
         # Outbound must be secure WebSocket
         self.assertEqual(config["outbounds"][0]["streamSettings"]["network"], "ws")
         self.assertEqual(config["outbounds"][0]["streamSettings"]["security"], "tls")
 
     @unittest.mock.patch("subprocess.run")
-    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "wss://:443/tunnel", "--remote", "tcp://127.0.0.1:22", "--run"])
+    @unittest.mock.patch(
+        "sys.argv",
+        [
+            "v2ray_tunnel.py",
+            "--listen",
+            "wss://:443/tunnel",
+            "--remote",
+            "tcp://127.0.0.1:22",
+            "--run",
+        ],
+    )
     @unittest.mock.patch("builtins.print")
     def test_main_server_flow(self, mock_print: Any, mock_run: Any) -> None:
         """Verifies integrated execution for a secure server decryption tunnel."""
         from scripts.v2ray_tunnel import main
+
         main()
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
@@ -337,16 +361,29 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         self.assertEqual(config["inbounds"][0]["streamSettings"]["network"], "ws")
         self.assertEqual(config["inbounds"][0]["streamSettings"]["security"], "tls")
         self.assertNotIn("listen", config["inbounds"][0])
-        
+
         # Outbound must be plain TCP
         self.assertNotIn("streamSettings", config["outbounds"][0])
 
     @unittest.mock.patch("subprocess.run")
-    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "127.0.0.1:1234", "--remote", "wss://example.com/ws", "--run"])
+    @unittest.mock.patch(
+        "sys.argv",
+        [
+            "v2ray_tunnel.py",
+            "--listen",
+            "127.0.0.1:1234",
+            "--remote",
+            "wss://example.com/ws",
+            "--run",
+        ],
+    )
     @unittest.mock.patch("builtins.print")
-    def test_main_with_explicit_listen_address(self, mock_print: Any, mock_run: Any) -> None:
+    def test_main_with_explicit_listen_address(
+        self, mock_print: Any, mock_run: Any
+    ) -> None:
         """Verifies that an explicit listen IP is preserved in the V2Ray config."""
         from scripts.v2ray_tunnel import main
+
         main()
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
@@ -354,11 +391,14 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         self.assertEqual(config["inbounds"][0]["listen"], "127.0.0.1")
 
     @unittest.mock.patch("subprocess.run")
-    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--remote", "tcp://example.com:22", "--run"])
+    @unittest.mock.patch(
+        "sys.argv", ["v2ray_tunnel.py", "--remote", "tcp://example.com:22", "--run"]
+    )
     @unittest.mock.patch("builtins.print")
     def test_main_dynamic_port_allocation(self, mock_print: Any, mock_run: Any) -> None:
         """Verifies that dynamic port allocation generates a valid random port and binds securely to localhost."""
         from scripts.v2ray_tunnel import main
+
         main()
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
@@ -369,11 +409,16 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
 
     @unittest.mock.patch("subprocess.run")
     @unittest.mock.patch("subprocess.Popen")
-    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--remote", "tcp://example.com:22", "--ssh"])
+    @unittest.mock.patch(
+        "sys.argv", ["v2ray_tunnel.py", "--remote", "tcp://example.com:22", "--ssh"]
+    )
     @unittest.mock.patch("builtins.print")
-    def test_main_ssh_success(self, mock_print: Any, mock_popen: Any, mock_run: Any) -> None:
+    def test_main_ssh_success(
+        self, mock_print: Any, mock_popen: Any, mock_run: Any
+    ) -> None:
         """Verifies that --ssh launches V2Ray in background and SSH in foreground."""
         from scripts.v2ray_tunnel import main
+
         mock_process = unittest.mock.MagicMock()
         mock_process.poll.return_value = None
         mock_popen.return_value = mock_process
@@ -384,24 +429,39 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         mock_run.assert_called_once()
         self.assertEqual(mock_run.call_args[0][0][0], "ssh")
 
-    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--listen", "wss://:443", "--remote", "tcp://127.0.0.1:22", "--ssh"])
+    @unittest.mock.patch(
+        "sys.argv",
+        [
+            "v2ray_tunnel.py",
+            "--listen",
+            "wss://:443",
+            "--remote",
+            "tcp://127.0.0.1:22",
+            "--ssh",
+        ],
+    )
     @unittest.mock.patch("builtins.print")
     def test_main_ssh_failure_on_secure_listener(self, mock_print: Any) -> None:
         """Verifies that --ssh is rejected when the inbound listener is secure."""
         from scripts.v2ray_tunnel import main
+
         with self.assertRaises(SystemExit) as context:
             main()
         self.assertEqual(context.exception.code, 1)
 
     @unittest.mock.patch("subprocess.run")
-    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--remote", "ws://example.com", "--run", "--inbound"])
+    @unittest.mock.patch(
+        "sys.argv",
+        ["v2ray_tunnel.py", "--remote", "ws://example.com", "--run", "--inbound"],
+    )
     @unittest.mock.patch("builtins.print")
     def test_main_config_filter_with_run(self, mock_print: Any, mock_run: Any) -> None:
         """Verifies that --run with --inbound filter prints only inbound but runs full config."""
         from scripts.v2ray_tunnel import main
+
         main()
         mock_run.assert_called_once()
-        
+
         # Verify run gets full config
         args, kwargs = mock_run.call_args
         config = json.loads(kwargs["input"].decode("utf-8"))
@@ -422,18 +482,29 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         self.assertTrue(inbound_printed)
 
     @unittest.mock.patch("subprocess.run")
-    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--remote", "tcp://example.com:22", "--dns", "1.1.1.1,8.8.8.8", "--run"])
+    @unittest.mock.patch(
+        "sys.argv",
+        [
+            "v2ray_tunnel.py",
+            "--remote",
+            "tcp://example.com:22",
+            "--dns",
+            "1.1.1.1,8.8.8.8",
+            "--run",
+        ],
+    )
     @unittest.mock.patch("builtins.print")
     def test_main_with_dns_configuration(self, mock_print: Any, mock_run: Any) -> None:
         """Verifies that passing --dns generates the root-level dns block and defaults domainStrategy to UseIP."""
         from scripts.v2ray_tunnel import main
+
         main()
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
         config = json.loads(kwargs["input"].decode("utf-8"))
-        
+
         # DNS block must be present
         self.assertEqual(config["dns"]["servers"], ["1.1.1.1", "8.8.8.8"])
-        
+
         # Outbound must have domainStrategy UseIP
         self.assertEqual(config["outbounds"][0]["settings"]["domainStrategy"], "UseIP")

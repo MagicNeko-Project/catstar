@@ -17,16 +17,15 @@ Usage:
     eval $(keychain.py --eval id_rsa)
 """
 
-import os
-import sys
 import argparse
-import subprocess
-import socket
-import signal
 import logging
+import os
 import re
+import signal
+import socket
+import subprocess
+import sys
 from pathlib import Path
-from typing import Optional, Set, Tuple, List, Dict
 
 # --- Logging Configuration ---
 # We route all user-facing messages to stderr so that stdout remains reserved
@@ -40,6 +39,7 @@ logger.setLevel(logging.INFO)
 
 class AgentError(Exception):
     """Base exception for keychain agent operations."""
+
     pass
 
 
@@ -53,13 +53,15 @@ class SSHAgent:
         source (str): A description of how this agent was discovered (e.g., 'env', 'pidfile').
     """
 
-    def __init__(self, auth_sock: Path, pid: Optional[int] = None, source: str = "unknown"):
+    def __init__(
+        self, auth_sock: Path, pid: int | None = None, source: str = "unknown"
+    ):
         self.auth_sock = auth_sock
         self.pid = pid
         self.source = source
 
     @property
-    def env(self) -> Dict[str, str]:
+    def env(self) -> dict[str, str]:
         """
         Constructs the environment variables needed for subprocesses to talk to this agent.
 
@@ -93,7 +95,7 @@ class SSHAgent:
                 env=self.env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=2  # Don't hang if the socket is stale
+                timeout=2,  # Don't hang if the socket is stale
             )
             return res.returncode in (0, 1)
         except (subprocess.SubprocessError, FileNotFoundError):
@@ -129,13 +131,13 @@ class SSHAgent:
                 env=self.env,
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
             logger.info("All identities removed from agent.")
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to clear identities: {e.stderr.strip()}")
 
-    def get_loaded_fingerprints(self) -> Set[str]:
+    def get_loaded_fingerprints(self) -> set[str]:
         """
         Retrieves the fingerprints of all keys currently loaded in the agent.
 
@@ -144,10 +146,7 @@ class SSHAgent:
         """
         try:
             res = subprocess.run(
-                ["ssh-add", "-l"],
-                env=self.env,
-                capture_output=True,
-                text=True
+                ["ssh-add", "-l"], env=self.env, capture_output=True, text=True
             )
             # 1 means the agent is alive but empty
             if res.returncode == 1:
@@ -164,7 +163,7 @@ class SSHAgent:
         except subprocess.SubprocessError:
             return set()
 
-    def add_keys(self, key_paths: List[Path]) -> None:
+    def add_keys(self, key_paths: list[Path]) -> None:
         """
         Adds multiple private keys to the agent.
 
@@ -180,7 +179,9 @@ class SSHAgent:
             cmd = ["ssh-add"] + [str(p) for p in key_paths]
             subprocess.run(cmd, env=self.env, check=True)
         except subprocess.CalledProcessError:
-            logger.error("Failed to add one or more keys. You might need to enter a passphrase.")
+            logger.error(
+                "Failed to add one or more keys. You might need to enter a passphrase."
+            )
 
     @classmethod
     def spawn_new(cls, agent_bin: str = "ssh-agent") -> "SSHAgent":
@@ -199,13 +200,15 @@ class SSHAgent:
         """
         try:
             # -s forces Bourne shell syntax which is easiest to parse.
-            res = subprocess.run([agent_bin, "-s"], capture_output=True, text=True, check=True)
+            res = subprocess.run(
+                [agent_bin, "-s"], capture_output=True, text=True, check=True
+            )
 
             # We expect output like:
             # SSH_AUTH_SOCK=/tmp/ssh-XXXXXX/agent.123; export SSH_AUTH_SOCK;
             # SSH_AGENT_PID=124; export SSH_AGENT_PID;
-            sock_match = re.search(r'SSH_AUTH_SOCK=([^;]+);', res.stdout)
-            pid_match = re.search(r'SSH_AGENT_PID=(\d+);', res.stdout)
+            sock_match = re.search(r"SSH_AUTH_SOCK=([^;]+);", res.stdout)
+            pid_match = re.search(r"SSH_AGENT_PID=(\d+);", res.stdout)
 
             if not sock_match or not pid_match:
                 raise RuntimeError(f"Could not parse ssh-agent output: {res.stdout}")
@@ -213,14 +216,13 @@ class SSHAgent:
             return cls(
                 auth_sock=Path(sock_match.group(1)),
                 pid=int(pid_match.group(1)),
-                source="spawned"
+                source="spawned",
             )
         except FileNotFoundError:
             logger.error(f"Executable '{agent_bin}' not found in PATH.")
             sys.exit(1)
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"'{agent_bin}' failed to start: {e.stderr}")
-
 
 
 class KeychainEnvironment:
@@ -237,11 +239,11 @@ class KeychainEnvironment:
         self.keydir = Path.home() / ".keychain"
 
         # We generate different files for different shell families.
-        self.sh_file = self.keydir / f"{self.hostname}-sh"      # Bourne: bash, zsh, dash
-        self.csh_file = self.keydir / f"{self.hostname}-csh"    # C-Shell: csh, tcsh
+        self.sh_file = self.keydir / f"{self.hostname}-sh"  # Bourne: bash, zsh, dash
+        self.csh_file = self.keydir / f"{self.hostname}-csh"  # C-Shell: csh, tcsh
         self.fish_file = self.keydir / f"{self.hostname}-fish"  # Fish
 
-    def get_agent_from_pidfile(self) -> Optional[SSHAgent]:
+    def get_agent_from_pidfile(self) -> SSHAgent | None:
         """
         Attempts to reconstruct an agent instance from the existing Bourne sh pidfile.
 
@@ -255,16 +257,16 @@ class KeychainEnvironment:
             content = self.sh_file.read_text()
             # We look for the export lines we wrote previously.
             sock_match = re.search(r'SSH_AUTH_SOCK="([^"]+)"', content)
-            pid_match = re.search(r'SSH_AGENT_PID=(\d+)', content)
+            pid_match = re.search(r"SSH_AGENT_PID=(\d+)", content)
 
             if sock_match:
                 pid = int(pid_match.group(1)) if pid_match else None
                 return SSHAgent(Path(sock_match.group(1)), pid, source="pidfile")
-        except (IOError, ValueError):
+        except (OSError, ValueError):
             pass
         return None
 
-    def get_agent_from_env(self) -> Optional[SSHAgent]:
+    def get_agent_from_env(self) -> SSHAgent | None:
         """
         Detects if an ssh-agent is already provided by the current environment variables.
 
@@ -286,7 +288,7 @@ class KeychainEnvironment:
             agent (SSHAgent): The agent instance to persist.
         """
         self.keydir.mkdir(parents=True, exist_ok=True)
-        self.keydir.chmod(0o700) # Strict directory permissions
+        self.keydir.chmod(0o700)  # Strict directory permissions
 
         sock_str = str(agent.auth_sock)
         pid = agent.pid
@@ -294,24 +296,24 @@ class KeychainEnvironment:
         # 1. Bourne Shell (sh, bash, zsh)
         sh_content = f'SSH_AUTH_SOCK="{sock_str}"; export SSH_AUTH_SOCK;\n'
         if pid:
-            sh_content += f'SSH_AGENT_PID={pid}; export SSH_AGENT_PID;\n'
+            sh_content += f"SSH_AGENT_PID={pid}; export SSH_AGENT_PID;\n"
 
         # 2. C-Shell (csh, tcsh)
         csh_content = f'setenv SSH_AUTH_SOCK "{sock_str}";\n'
         if pid:
-            csh_content += f'setenv SSH_AGENT_PID {pid};\n'
+            csh_content += f"setenv SSH_AGENT_PID {pid};\n"
 
         # 3. Fish Shell
         # We use Universal variables (-U) and export (-x) so they persist across sessions.
         fish_content = f'set -e SSH_AUTH_SOCK; set -x -U SSH_AUTH_SOCK "{sock_str}";\n'
         if pid:
-            fish_content += f'set -e SSH_AGENT_PID; set -x -U SSH_AGENT_PID {pid};\n'
+            fish_content += f"set -e SSH_AGENT_PID; set -x -U SSH_AGENT_PID {pid};\n"
 
         # Write all files with strict permissions
         targets = [
             (self.sh_file, sh_content),
             (self.csh_file, csh_content),
-            (self.fish_file, fish_content)
+            (self.fish_file, fish_content),
         ]
         for path, content in targets:
             path.write_text(content)
@@ -343,7 +345,7 @@ class KeychainEnvironment:
         return target.read_text() if target.exists() else ""
 
 
-def resolve_key_path(key_name: str) -> Optional[Path]:
+def resolve_key_path(key_name: str) -> Path | None:
     """
     Attempts to find a private key file based on a name or path.
 
@@ -371,7 +373,8 @@ def resolve_key_path(key_name: str) -> Optional[Path]:
 
     return None
 
-def get_key_fingerprint(key_path: Path) -> Optional[str]:
+
+def get_key_fingerprint(key_path: Path) -> str | None:
     """
     Computes the SHA256 fingerprint of a private key.
 
@@ -387,11 +390,11 @@ def get_key_fingerprint(key_path: Path) -> Optional[str]:
             ["ssh-keygen", "-l", "-f", str(key_path)],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         # Output format: "4096 SHA256:xyz... comment (RSA)"
         return res.stdout.split()[1]
-    except (subprocess.CalledProcessError, IndexError, IOError):
+    except (OSError, subprocess.CalledProcessError, IndexError):
         return None
 
 
@@ -406,28 +409,36 @@ def main() -> None:
         description="Modern Python Keychain: Manage your OpenSSH agent and keys with ease."
     )
     parser.add_argument(
-        "keys", nargs="*",
-        help="Names or paths of SSH keys to load (e.g., 'id_rsa' or '~/.ssh/my_key')"
+        "keys",
+        nargs="*",
+        help="Names or paths of SSH keys to load (e.g., 'id_rsa' or '~/.ssh/my_key')",
     )
     parser.add_argument(
-        "--eval", action="store_true",
-        help="Output the shell commands to set environment variables (intended for 'eval')"
+        "--eval",
+        action="store_true",
+        help="Output the shell commands to set environment variables (intended for 'eval')",
     )
     parser.add_argument(
-        "--stop", action="store_true",
-        help="Stop the currently managed ssh-agent and clean up pidfiles"
+        "--stop",
+        action="store_true",
+        help="Stop the currently managed ssh-agent and clean up pidfiles",
     )
     parser.add_argument(
-        "--clear", action="store_true",
-        help="Remove all identities currently loaded in the agent"
+        "--clear",
+        action="store_true",
+        help="Remove all identities currently loaded in the agent",
     )
     parser.add_argument(
-        "--agent", type=str, default="ssh-agent",
-        help="Path to the ssh-agent binary to use (default: ssh-agent)"
+        "--agent",
+        type=str,
+        default="ssh-agent",
+        help="Path to the ssh-agent binary to use (default: ssh-agent)",
     )
     parser.add_argument(
-        "-q", "--quiet", action="store_true",
-        help="Suppress all informational logs (errors will still be shown)"
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress all informational logs (errors will still be shown)",
     )
 
     args = parser.parse_args()
@@ -477,7 +488,7 @@ def main() -> None:
     # Load requested keys if they aren't already in the agent.
     if args.keys:
         loaded_fps = agent.get_loaded_fingerprints()
-        keys_to_add: List[Path] = []
+        keys_to_add: list[Path] = []
 
         for key_name in args.keys:
             key_path = resolve_key_path(key_name)
@@ -509,7 +520,6 @@ def main() -> None:
             sys.stdout.write(eval_str)
         else:
             logger.error("No eval string available. Was the agent started correctly?")
-
 
 
 if __name__ == "__main__":
