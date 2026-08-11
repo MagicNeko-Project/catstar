@@ -272,8 +272,7 @@ class VisibilityMatcher:
     @staticmethod
     def _norm_posix(p: str) -> str:
         p = p.replace("\\", "/")
-        if p.startswith("./"):
-            p = p[2:]
+        p = p.removeprefix("./")
         while "//" in p:
             p = p.replace("//", "/")
         return p.strip("/")
@@ -589,8 +588,6 @@ class RepoScanner:
 class LimitReachedError(Exception):
     """Raised when the output byte stream exceeds configured limits."""
 
-    pass
-
 
 class XMLRepoRenderer:
     """Manages the generation of structured XML payload."""
@@ -677,7 +674,7 @@ class XMLRepoRenderer:
         self, node: DirectoryNode, lines: list[str], prefix: str = ""
     ) -> None:
         dirs = sorted(node.directories.keys(), key=str.lower)
-        files = sorted(list(node.files), key=str.lower)
+        files = sorted(node.files, key=str.lower)
         entries = [(d, True) for d in dirs] + [(f, False) for f in files]
 
         for idx, (name, is_dir) in enumerate(entries):
@@ -784,8 +781,9 @@ def build_rules(args: argparse.Namespace) -> list[Rule]:
                             line.strip(), Visibility.GHOSTED, ".gitignore"
                         )
                     )
-        except Exception:
-            pass
+        except (OSError, UnicodeDecodeError) as err:
+            if args.verbose:
+                print(f"Warning: Failed to read .gitignore: {err}", file=sys.stderr)
 
     # 3. Explicit LLM Exclusion Configurations
     ex_files = [Path(".llmignore")]
@@ -802,8 +800,9 @@ def build_rules(args: argparse.Namespace) -> list[Rule]:
                                 line.strip(), Visibility.PRUNED, p_ex.name
                             )
                         )
-            except Exception:
-                pass
+            except (OSError, UnicodeDecodeError) as err:
+                if args.verbose:
+                    print(f"Warning: Failed to read {p_ex}: {err}", file=sys.stderr)
 
     # 4. Command Line Overrides
     if args.prune:
@@ -824,6 +823,12 @@ def main() -> None:
     """Primary execution entrypoint."""
     parser = argparse.ArgumentParser(
         description="Extracts repository structures into LLM-optimized XML."
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output and warning messages.",
     )
     parser.add_argument("paths", nargs="+", help="Target paths to include in the scan.")
     parser.add_argument(

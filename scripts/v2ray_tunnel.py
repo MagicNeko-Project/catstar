@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 from typing import Any, NamedTuple
-from urllib.parse import ParseResult, urlparse
+from urllib.parse import urlparse
 
 # Standard Network and Protocol Constants
 DEFAULT_TLS_PORT: int = 443
@@ -220,7 +220,7 @@ def parse_proxy_endpoint_url(proxy_url_string: str) -> ProxyConfiguration:
         protocol = HTTP_PROTOCOL_NAME
     else:
         supported_schemes_list = sorted(
-            list(SUPPORTED_SOCKS_SCHEMES | SUPPORTED_HTTP_SCHEMES)
+            SUPPORTED_SOCKS_SCHEMES | SUPPORTED_HTTP_SCHEMES
         )
         raise ValueError(
             f"Unsupported proxy scheme: '{scheme}'. Supported schemes are: {', '.join(supported_schemes_list)}"
@@ -601,14 +601,12 @@ def main() -> None:
             )
 
         # Validate SSH mode constraints (SSH only works with plain TCP listeners)
-        if args.ssh is not None:
-            if (
-                inbound_endpoint.tls_enabled
-                or inbound_endpoint.transport_protocol != "tcp"
-            ):
-                raise ValueError(
-                    "The --ssh option cannot be used when the local listening port expects secure decorated traffic (TLS/WS/gRPC/H2)."
-                )
+        if args.ssh is not None and (
+            inbound_endpoint.tls_enabled or inbound_endpoint.transport_protocol != "tcp"
+        ):
+            raise ValueError(
+                "The --ssh option cannot be used when the local listening port expects secure decorated traffic (TLS/WS/gRPC/H2)."
+            )
 
         # Resolve proxy if specified
         proxy_tag = None

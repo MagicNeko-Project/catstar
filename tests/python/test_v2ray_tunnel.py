@@ -323,7 +323,7 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
 
         main()
         mock_run.assert_called_once()
-        args, kwargs = mock_run.call_args
+        _, kwargs = mock_run.call_args
         config = json.loads(kwargs["input"].decode("utf-8"))
 
         # Inbound must be plain TCP and have no listen key (defaults to all interfaces)
@@ -354,7 +354,7 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
 
         main()
         mock_run.assert_called_once()
-        args, kwargs = mock_run.call_args
+        _, kwargs = mock_run.call_args
         config = json.loads(kwargs["input"].decode("utf-8"))
 
         # Inbound must be secure WebSocket and have no listen key (defaults to all interfaces)
@@ -386,7 +386,7 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
 
         main()
         mock_run.assert_called_once()
-        args, kwargs = mock_run.call_args
+        _, kwargs = mock_run.call_args
         config = json.loads(kwargs["input"].decode("utf-8"))
         self.assertEqual(config["inbounds"][0]["listen"], "127.0.0.1")
 
@@ -401,7 +401,7 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
 
         main()
         mock_run.assert_called_once()
-        args, kwargs = mock_run.call_args
+        _, kwargs = mock_run.call_args
         config = json.loads(kwargs["input"].decode("utf-8"))
         inbound_port = config["inbounds"][0]["port"]
         self.assertTrue(10000 <= inbound_port <= 65535)
@@ -463,7 +463,7 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
         mock_run.assert_called_once()
 
         # Verify run gets full config
-        args, kwargs = mock_run.call_args
+        _, kwargs = mock_run.call_args
         config = json.loads(kwargs["input"].decode("utf-8"))
         self.assertIn("inbounds", config)
         self.assertIn("outbounds", config)
@@ -500,7 +500,7 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
 
         main()
         mock_run.assert_called_once()
-        args, kwargs = mock_run.call_args
+        _, kwargs = mock_run.call_args
         config = json.loads(kwargs["input"].decode("utf-8"))
 
         # DNS block must be present

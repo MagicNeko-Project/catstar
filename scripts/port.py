@@ -75,7 +75,8 @@ def main():
         selected_ranges.add("privileged")
     if args.registered:
         selected_ranges.add("registered")
-    selected_ranges.add("ephemeral") if not selected_ranges or args.ephemeral else None
+    if not selected_ranges or args.ephemeral:
+        selected_ranges.add("ephemeral")
 
     for port in choose_random_ports(selected_ranges, args.number):
         print(port)

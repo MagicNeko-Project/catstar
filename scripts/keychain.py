@@ -40,8 +40,6 @@ logger.setLevel(logging.INFO)
 class AgentError(Exception):
     """Base exception for keychain agent operations."""
 
-    pass
-
 
 class SSHAgent:
     """
@@ -96,6 +94,7 @@ class SSHAgent:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=2,  # Don't hang if the socket is stale
+                check=False,
             )
             return res.returncode in (0, 1)
         except (subprocess.SubprocessError, FileNotFoundError):
@@ -146,7 +145,11 @@ class SSHAgent:
         """
         try:
             res = subprocess.run(
-                ["ssh-add", "-l"], env=self.env, capture_output=True, text=True
+                ["ssh-add", "-l"],
+                env=self.env,
+                capture_output=True,
+                text=True,
+                check=False,
             )
             # 1 means the agent is alive but empty
             if res.returncode == 1:

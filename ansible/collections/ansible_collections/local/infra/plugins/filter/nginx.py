@@ -148,11 +148,12 @@ class FilterModule:
 
         server_block.listen = list(parse_listen_ports(server_block.listen or 443))
 
-        if server_block.ssl_host is None:
-            if any(port.has_ssl() for port in server_block.listen):
-                server_block.ssl_host = ".".join(
-                    server_block.server_name.split()[0].split(".")[-2:]
-                )
+        if server_block.ssl_host is None and any(
+            port.has_ssl() for port in server_block.listen
+        ):
+            server_block.ssl_host = ".".join(
+                server_block.server_name.split()[0].split(".")[-2:]
+            )
 
         return server_block
 

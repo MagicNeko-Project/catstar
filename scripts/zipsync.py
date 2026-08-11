@@ -13,7 +13,6 @@ import shutil
 import sys
 import zipfile
 from pathlib import Path
-from typing import Optional
 
 
 class ZipSyncer:
@@ -99,8 +98,11 @@ class ZipSyncer:
 
                         # Add the new directory to dirs so os.walk visits it
                         dirs.append(extract_dir.name)
-                    except Exception as e:
-                        print(f"Error processing nested zip {file_path}: {e}")
+                    except (zipfile.BadZipFile, OSError, ValueError) as e:
+                        print(
+                            f"Error processing nested zip {file_path}: {e}",
+                            file=sys.stderr,
+                        )
 
     def sync(self, src_root: Path, dest_root: Path):
         """
@@ -144,16 +146,16 @@ class ZipSyncer:
 
                         # Post-process the extracted folder to handle nested zips
                         self.recursive_explode_zips(target_extract_path)
-                    except Exception as e:
-                        print(f"Failed to extract {src_file}: {e}")
+                    except (zipfile.BadZipFile, OSError, ValueError) as e:
+                        print(f"Failed to extract {src_file}: {e}", file=sys.stderr)
                 else:
                     # For Regular files: Copy
                     dest_file = current_dest_dir / file
                     self._log(f"Copying: {src_file} -> {dest_file}")
                     try:
                         shutil.copy2(src_file, dest_file)
-                    except Exception as e:
-                        print(f"Failed to copy {src_file}: {e}")
+                    except OSError as e:
+                        print(f"Failed to copy {src_file}: {e}", file=sys.stderr)
 
 
 def main():

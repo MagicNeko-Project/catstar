@@ -14,7 +14,7 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Final, NoReturn, Optional
+from typing import Any, Final, NoReturn
 
 # --- Magic Values Extracted to Constants ---
 GITHUB_API_URL: Final[str] = "https://api.github.com/user/repos"
