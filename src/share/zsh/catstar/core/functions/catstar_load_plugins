@@ -1,0 +1,47 @@
+# Core function: Validates, lists, or sources requested plugin loaders
+# Usage: catstar_load_plugins --dir <dir> [--list] [--loader <name1>] [--loader <name2>] ...
+
+zmodload zsh/zutil
+
+local -a opts_dir opts_list raw_loaders requested_loaders
+
+zparseopts -D -E \
+  -dir:=opts_dir \
+  -list=opts_list \
+  -loader+:=raw_loaders
+
+local loaders_directory="${opts_dir[2]}"
+[[ -z "$loaders_directory" ]] && return 0
+
+if (( ${#opts_list} > 0 )); then
+  print "Available loaders in $loaders_directory:"
+  if [[ -d "$loaders_directory" ]]; then
+    local loader_file
+    for loader_file in "$loaders_directory"/*.zsh(N); do
+      print "  - ${loader_file:t:r}"
+    done
+  fi
+  return 0
+fi
+
+local item
+for item in "${raw_loaders[@]}"; do
+  [[ "$item" == "--loader" ]] && continue
+  requested_loaders+=("$item")
+done
+
+local loader_item
+for loader_item in "${requested_loaders[@]}"; do
+  [[ -z "$loader_item" ]] && continue
+
+  local raw_name="${loader_item:t}"
+  local loader_name="${raw_name%.zsh}.zsh"
+  local loader_path="$loaders_directory/$loader_name"
+
+  if [[ ! -f "$loader_path" ]]; then
+    print -u2 "Catstar Loader Error: Loader '${raw_name%.zsh}' not found at: $loader_path"
+    return 1
+  fi
+
+  source "$loader_path"
+done

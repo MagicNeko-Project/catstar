@@ -1,0 +1,65 @@
+# Core function: Initializes or clones Oh My Zsh framework using self-documenting named flags
+# Usage: catstar_init_omz [--load] [--clone] [--path <dir1>] [--path <dir2>] ...
+
+zmodload zsh/zutil
+
+local -a opts_load opts_clone raw_paths search_paths
+
+zparseopts -D -E \
+  -load=opts_load --load=opts_load \
+  -clone=opts_clone --clone=opts_clone \
+  -path+:=raw_paths --path+:=raw_paths
+
+# If --load flag is not present, exit immediately
+(( ${#opts_load} > 0 )) || return 0
+
+# Extract clean path entries from --path arguments
+local entry
+for entry in "${raw_paths[@]}"; do
+  [[ "$entry" == "--path" ]] && continue
+  search_paths+=("$entry")
+done
+
+local is_found=false
+local candidate_path
+
+for candidate_path in "${search_paths[@]}"; do
+  candidate_path="${candidate_path/#\~/$HOME}"
+  candidate_path="${candidate_path:a}"
+  local bootstrap_script="$candidate_path/oh-my-zsh.sh"
+
+  if [[ -f "$bootstrap_script" ]]; then
+    export ZSH="$candidate_path"
+    source "$bootstrap_script"
+    is_found=true
+    break
+  fi
+done
+
+if [[ "$is_found" == false && ${#opts_clone} -gt 0 ]]; then
+  local primary_target="${search_paths[1]}"
+
+  if [[ -n "$primary_target" ]]; then
+    primary_target="${primary_target/#\~/$HOME}"
+    primary_target="${primary_target:a}"
+
+    print "Catstar Loader: Oh My Zsh not found in search paths. Cloning to: $primary_target"
+
+    if ! command -v git >/dev/null 2>&1; then
+      print -u2 "Catstar Loader Error: 'git' command is not installed. Cannot clone Oh My Zsh."
+      return 1
+    fi
+
+    local parent_dir="${primary_target:h}"
+    mkdir -p "$parent_dir"
+
+    local repo_url="https://github.com/ohmyzsh/ohmyzsh.git"
+    if git clone "$repo_url" "$primary_target"; then
+      export ZSH="$primary_target"
+      source "$primary_target/oh-my-zsh.sh"
+    else
+      print -u2 "Catstar Loader Error: Failed to clone Oh My Zsh repository from $repo_url"
+      return 1
+    fi
+  fi
+fi

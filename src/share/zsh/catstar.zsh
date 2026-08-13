@@ -145,71 +145,36 @@
     esac
   done
 
+  # Register core framework functions in $fpath
+  local core_functions_directory="$catstar_directory/core/functions"
+  if [[ -d "$core_functions_directory" ]]; then
+    typeset -g -U fpath
+    fpath=("$core_functions_directory" $fpath)
+    autoload -Uz "$core_functions_directory"/*(N:t)
+  fi
+
   # ---------------------------------------------------------------------------
   # 4. List Loaders Mode
   # ---------------------------------------------------------------------------
   local loaders_directory="$catstar_directory/loaders"
   if [[ "$should_list_loaders" == true ]]; then
-    print "Available loaders in $loaders_directory:"
-    if [[ -d "$loaders_directory" ]]; then
-      local loader_file
-      for loader_file in "$loaders_directory"/*.zsh(N); do
-        print "  - ${loader_file:t:r}"
-      done
-    fi
+    catstar_load_plugins --dir "$loaders_directory" --list
     return 0
   fi
 
   # ---------------------------------------------------------------------------
-  # 5. Oh My Zsh Integration (Procedural Logic)
+  # 5. Oh My Zsh Integration
   # ---------------------------------------------------------------------------
-  if [[ "$should_load_oh_my_zsh" == true ]]; then
-    local is_oh_my_zsh_framework_found=false
-    local candidate_path
 
-    for candidate_path in "${oh_my_zsh_search_paths[@]}"; do
-      # Expand tilde safely via string replacement and compute lowercase absolute path
-      candidate_path="${candidate_path/#\~/$HOME}"
-      candidate_path="${candidate_path:a}"
-      local bootstrap_script="$candidate_path/oh-my-zsh.sh"
+  local -a omz_flags=()
+  [[ "$should_load_oh_my_zsh" == true ]] && omz_flags+=(--load)
+  [[ "$should_clone_oh_my_zsh_if_missing" == true ]] && omz_flags+=(--clone)
+  local path_entry
+  for path_entry in "${oh_my_zsh_search_paths[@]}"; do
+    omz_flags+=(--path "$path_entry")
+  done
 
-      if [[ -f "$bootstrap_script" ]]; then
-        export ZSH="$candidate_path"
-        source "$bootstrap_script"
-        is_oh_my_zsh_framework_found=true
-        break
-      fi
-    done
-
-    # If missing and cloning is allowed, install the framework automatically
-    if [[ "$is_oh_my_zsh_framework_found" == false && "$should_clone_oh_my_zsh_if_missing" == true ]]; then
-      local primary_target_path="${oh_my_zsh_search_paths[1]}"
-
-      if [[ -n "$primary_target_path" ]]; then
-        # Expand tilde safely via string replacement and resolve lowercase absolute path
-        primary_target_path="${primary_target_path/#\~/$HOME}"
-        primary_target_path="${primary_target_path:a}"
-
-        print "Catstar Loader: Oh My Zsh not found in search paths. Cloning to: $primary_target_path"
-
-        if ! command -v git >/dev/null 2>&1; then
-          print -u2 "Catstar Loader Error: 'git' command is not installed. Cannot clone Oh My Zsh."
-        else
-          local parent_directory="${primary_target_path:h}"
-          mkdir -p "$parent_directory"
-
-          local git_repository_url="https://github.com/ohmyzsh/ohmyzsh.git"
-          if git clone "$git_repository_url" "$primary_target_path"; then
-            export ZSH="$primary_target_path"
-            source "$primary_target_path/oh-my-zsh.sh"
-            is_oh_my_zsh_framework_found=true
-          else
-            print -u2 "Catstar Loader Error: Failed to clone Oh My Zsh repository from $git_repository_url"
-          fi
-        fi
-      fi
-    fi
-  fi
+  catstar_init_omz "${omz_flags[@]}"
 
   # ---------------------------------------------------------------------------
   # 6. Custom Catstar Function Autoloading
@@ -230,23 +195,15 @@
   fi
 
   # ---------------------------------------------------------------------------
-  # 7. Plugin Loaders Execution (Fail Fast on Missing Loader)
+  # 7. Plugin Loaders Execution
   # ---------------------------------------------------------------------------
-  local loader_item
-  for loader_item in "${requested_loaders[@]}"; do
-    [[ -z "$loader_item" ]] && continue
-
-    local raw_name="${loader_item:t}"
-    local loader_name="${raw_name%.zsh}.zsh"
-    local loader_path="$loaders_directory/$loader_name"
-
-    if [[ ! -f "$loader_path" ]]; then
-      print -u2 "Catstar Loader Error: Loader '${raw_name%.zsh}' not found at: $loader_path"
-      return 1
-    fi
-
-    source "$loader_path"
+  local -a loader_flags=(--dir "$loaders_directory")
+  local req
+  for req in "${requested_loaders[@]}"; do
+    loader_flags+=(--loader "$req")
   done
+
+  catstar_load_plugins "${loader_flags[@]}" || return 1
 
   # ---------------------------------------------------------------------------
   # 8. Modular Configuration Loading
