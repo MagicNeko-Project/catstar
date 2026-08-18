@@ -2,27 +2,9 @@
 """
 Arch Linux systemd-based Initramfs & Bootloader Migration Tool
 ==============================================================
-Production-grade, highly defensive migration utility to transition Arch Linux
-systems from legacy BusyBox/udev initramfs hooks to native systemd-based hooks
-and migrate bootloader kernel command-line parameters from 'rw' to canonical 'ro'.
-
-Key Capabilities & Safety Architecture:
-- Intelligent Kernel Resolution: Resolves installed kernels from /usr/lib/modules/
-  supporting post 'pacman -Syu' states where running uname -r is not on disk.
-- ACID Multi-File Transactions: Atomic 2-phase commits with fsync, directory sync,
-  and graceful non-POSIX (FAT32/VFAT ESP) permission handling.
-- Signal Shielding & Crash Recovery: Global SIGINT/SIGTERM masking during critical
-  write sections with guaranteed cleanup and automated rollback handlers.
-- Pre-Flight Safety Guards: Validates /boot mount writeability, probe writes,
-  free space safety margins (2.5x multiplier), and VFAT-aware inode checks.
-- Bootloader Discovery & Transformation: Safely converts 'rw' -> 'ro' across
-  systemd-boot, GRUB (/etc/default/grub), Limine, rEFInd, and UKI cmdline files.
-- Resilient Hook Translation: Strict pipeline ordering, smart Btrfs/ZFS fsck
-  omission, quoted array parsing, and sd-shutdown inclusion.
-- Preset-Aware Empirical Validation: Deep inspection via lsinitcpio for both
-  default and fallback presets (handling -S autodetect correctly).
-- Superior CLI Ergonomics: Colorized unified diffs, structured plan tables,
-  interactive TTY confirmation, and machine-readable JSON output (--json).
+Production-grade migration utility to transition Arch Linux systems from
+legacy BusyBox/udev initramfs hooks to native systemd-based hooks and
+migrate bootloader kernel command-line parameters from 'rw' to canonical 'ro'.
 """
 
 import argparse
@@ -30,6 +12,7 @@ import difflib
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -474,21 +457,46 @@ class HookMigrator:
 
     @staticmethod
     def parse_hooks(conf_content: str) -> list[str]:
-        match = re.search(r"^\s*HOOKS=\(([^)]*)\)", conf_content, re.MULTILINE)
-        if not match:
+        # Match all active (uncommented) HOOKS=(...) definitions
+        matches = list(
+            re.finditer(r"^\s*HOOKS=\(([^)]*)\)", conf_content, re.MULTILINE)
+        )
+        if not matches:
             raise ValueError(
                 "Could not locate active 'HOOKS=(...)' definition in configuration."
             )
-        raw_hooks = match.group(1).split()
-        return [
-            h.strip("'\" \t")
-            for h in raw_hooks
-            if h.strip("'\" \t") and not h.strip().startswith("#")
-        ]
+        # Bash executes top-down and honors the LAST defined variable in scope
+        active_match = matches[-1]
+        raw_content = active_match.group(1)
+
+        try:
+            raw_hooks = shlex.split(raw_content, comments=True)
+        except ValueError:
+            raw_hooks = [
+                h.strip("'\" \t")
+                for h in raw_content.split()
+                if not h.strip().startswith("#")
+            ]
+
+        return [h.strip("'\" \t") for h in raw_hooks if h.strip("'\" \t")]
+
+    @classmethod
+    def update_hooks_in_config(cls, conf_content: str, new_hooks: list[str]) -> str:
+        matches = list(
+            re.finditer(r"^\s*HOOKS=\(([^)]*)\)", conf_content, re.MULTILINE)
+        )
+        if not matches:
+            raise ValueError(
+                "Could not locate active 'HOOKS=(...)' definition in configuration."
+            )
+        last_match = matches[-1]
+        hooks_str = f"HOOKS=({' '.join(new_hooks)})"
+        start, end = last_match.span()
+        return conf_content[:start] + hooks_str + conf_content[end:]
 
     @classmethod
     def translate_hooks(
-        cls, old_hooks: list[str], root_fstype: str, cmdline: str = ""
+        cls, old_hooks: list[str], root_fstype: str = "", cmdline: str = ""
     ) -> HookTranslationPlan:
         old_set = set(old_hooks)
         new_hooks: list[str] = []
@@ -501,18 +509,20 @@ class HookMigrator:
                 new_hooks.append(h)
                 added_set.add(h)
 
-        # 1. systemd replaces base & udev
-        add_h("systemd")
+        # 1. Base emergency shell & systemd PID 1 early userspace
         if "base" in old_set:
+            add_h("base")
             actions.append(
                 HookAction(
                     "base",
-                    None,
-                    "DROPPED",
-                    "Replaced by systemd initrd and systemd-sulogin-shell",
+                    "base",
+                    "PRESERVED",
+                    "Provides emergency BusyBox utilities for systemd-sulogin-shell",
                 )
             )
-            notes.append("Dropped redundant 'base' hook.")
+            notes.append("Retained 'base' hook for emergency rescue shell utilities.")
+
+        add_h("systemd")
         if "udev" in old_set:
             actions.append(
                 HookAction(
@@ -708,29 +718,19 @@ class HookMigrator:
             )
             notes.append("Configured 'sd-shutdown' for clean poweroff/reboot pivot.")
 
-        # 9. Smart FSCK Handling
+        # 9. FSCK Handling (Replaced entirely by systemd-fsck-root on ro root)
         if "fsck" in old_set:
-            if root_fstype in ("btrfs", "zfs"):
-                actions.append(
-                    HookAction(
-                        "fsck",
-                        None,
-                        "DROPPED",
-                        f"Root is {root_fstype} (pre-mount fsck unneeded)",
-                    )
+            actions.append(
+                HookAction(
+                    "fsck",
+                    None,
+                    "DROPPED",
+                    "Replaced by native systemd-fsck-root.service on 'ro' root",
                 )
-                notes.append(f"Omitted 'fsck' hook because root is '{root_fstype}'.")
-            else:
-                add_h("fsck")
-                actions.append(
-                    HookAction(
-                        "fsck",
-                        "fsck",
-                        "PRESERVED",
-                        "systemd-fsck-root checks root in 'ro' mode",
-                    )
-                )
-                notes.append("Retained 'fsck' hook.")
+            )
+            notes.append(
+                "Dropped redundant 'fsck' hook (systemd-fsck handles root checks natively)."
+            )
 
         return HookTranslationPlan(
             current_hooks=old_hooks,
@@ -1034,8 +1034,14 @@ class RobustImageValidator:
         else:
             match = re.search(r"^\s*HOOKS=\(([^)]*)\)", res_cfg.stdout, re.MULTILINE)
             if match:
-                raw = match.group(1).split()
-                embedded_hooks = [h.strip("'\" \t") for h in raw if h.strip("'\" \t")]
+                raw_cfg = match.group(1)
+                try:
+                    raw_tokens = shlex.split(raw_cfg, comments=True)
+                except ValueError:
+                    raw_tokens = raw_cfg.split()
+                embedded_hooks = [
+                    h.strip("'\" \t") for h in raw_tokens if h.strip("'\" \t")
+                ]
                 if "systemd" not in embedded_hooks:
                     errors.append(
                         f"Missing mandatory 'systemd' hook in embedded HOOKS={embedded_hooks}"
@@ -1061,17 +1067,21 @@ class RobustImageValidator:
             if p not in manifest:
                 errors.append(f"Missing required systemd component: '{p}'")
 
-        if "bin/busybox" in manifest or "usr/bin/busybox" in manifest:
-            errors.append(
-                "Detected unexpected legacy BusyBox binary in systemd initramfs."
-            )
-
         if (
             "lvm2" in expected_hooks
             and "usr/lib/udev/rules.d/69-dm-lvm.rules" not in manifest
             and "usr/bin/lvm" not in manifest
         ):
             errors.append("LVM2 hook enabled but missing LVM udev rules/binary.")
+
+        if (
+            "sd-encrypt" in expected_hooks
+            and "usr/lib/systemd/systemd-cryptsetup" not in manifest
+            and "usr/lib/systemd/system/systemd-cryptsetup@.service" not in manifest
+        ):
+            errors.append(
+                "sd-encrypt hook enabled but missing systemd-cryptsetup binary/service."
+            )
 
         if (
             "sd-vconsole" in expected_hooks
@@ -1190,22 +1200,9 @@ def run_dry_run_sandbox(
         test_img = tmpdir_path / "initramfs-test.img"
 
         orig_content = conf_path.read_text(encoding="utf-8")
-        hooks_str = f"HOOKS=({' '.join(new_hooks)})"
-        test_content = re.sub(
-            r"^\s*HOOKS=\([^)]*\)", hooks_str, orig_content, flags=re.MULTILINE
-        )
+        test_content = HookMigrator.update_hooks_in_config(orig_content, new_hooks)
         test_conf.write_text(test_content, encoding="utf-8")
 
-        cmd = [
-            "mkinitcpio",
-            "-c",
-            str(test_conf),
-            "-g",
-            str(test_img),
-            "-k",
-            kernel_info.kver,
-        ]
-        log_info(f"Executing: {' '.join(cmd)}")
         cmd = [
             "mkinitcpio",
             "-c",
@@ -1409,7 +1406,7 @@ all generated initramfs images against mandatory systemd service manifests.
 
     # Phase 2: Hook Translation Plan
     if not args.json:
-        log_step("Phase 2: Hook Translation & Architecture Plan")
+        log_step("Phase 2: Hook Translation Plan")
     if not args.conf.exists():
         log_error(f"Configuration file {args.conf} does not exist.")
         sys.exit(ExitCode.ERROR_USAGE)
@@ -1447,9 +1444,8 @@ all generated initramfs images against mandatory systemd service manifests.
     # Display Diff Previews
     if (args.diff or args.apply) and not args.json:
         log_step("Configuration Diff Previews")
-        hooks_str = f"HOOKS=({' '.join(plan.proposed_hooks)})"
-        new_mk_content = re.sub(
-            r"^\s*HOOKS=\([^)]*\)", hooks_str, conf_content, flags=re.MULTILINE
+        new_mk_content = HookMigrator.update_hooks_in_config(
+            conf_content, plan.proposed_hooks
         )
         print(f"\n{Theme.BOLD}--- {args.conf} ---{Theme.RESET}")
         print(DiffViewer.render_diff(str(args.conf), conf_content, new_mk_content))
@@ -1511,9 +1507,8 @@ all generated initramfs images against mandatory systemd service manifests.
     global_signal_mgr.register_cleanup_handler(txn.cleanup_temp_files)
 
     # Stage mkinitcpio.conf
-    hooks_str = f"HOOKS=({' '.join(plan.proposed_hooks)})"
-    new_mk_content = re.sub(
-        r"^\s*HOOKS=\([^)]*\)", hooks_str, conf_content, flags=re.MULTILINE
+    new_mk_content = HookMigrator.update_hooks_in_config(
+        conf_content, plan.proposed_hooks
     )
     txn.stage_update(args.conf, new_mk_content)
 
