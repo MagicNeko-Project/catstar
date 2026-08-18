@@ -1469,6 +1469,11 @@ all generated initramfs images against mandatory systemd service manifests.
         log_error(f"Dry-run test failed: {e}")
         sys.exit(ExitCode.VALIDATION_FAILED)
 
+    grub_needs_update = (
+        any(t.bootloader_type == "GRUB" and t.needs_update for t in bl_targets)
+        and not args.skip_bootloader
+    )
+
     if args.dry_run:
         if args.json:
             out_data = {
@@ -1478,14 +1483,22 @@ all generated initramfs images against mandatory systemd service manifests.
                 "root_fstype": root_fstype,
                 "plan": asdict(plan),
                 "bootloader_targets": [asdict(t) for t in bl_targets],
+                "grub_update_required": grub_needs_update,
             }
             print(json.dumps(out_data, indent=2, default=str))
         else:
             log_success(
                 "\n[DRY RUN COMPLETE] Validation succeeded. Zero disk changes made."
             )
+            if grub_needs_update:
+                print(
+                    f"\n{Theme.YELLOW}[NOTE]{Theme.RESET} GRUB configuration requires regeneration after applying updates:"
+                )
+                print(
+                    f"  {Theme.BOLD}sudo grub-mkconfig -o /boot/grub/grub.cfg{Theme.RESET}"
+                )
             print(
-                f"Run with '{Theme.BOLD}sudo {sys.argv[0]} --apply{Theme.RESET}' to execute migration."
+                f"\nRun with '{Theme.BOLD}sudo {sys.argv[0]} --apply{Theme.RESET}' to execute migration."
             )
         return
 
@@ -1581,6 +1594,7 @@ all generated initramfs images against mandatory systemd service manifests.
             "mode": "applied",
             "backup_dir": str(session_backup),
             "validation_results": [asdict(r) for r in val_results],
+            "grub_update_required": grub_needs_update,
         }
         print(json.dumps(out_data, indent=2, default=str))
     else:
@@ -1588,7 +1602,15 @@ all generated initramfs images against mandatory systemd service manifests.
             f"\n{Theme.BOLD}{Theme.GREEN}✔ Migration to systemd-based initramfs completed successfully!{Theme.RESET}"
         )
         print(f"Pristine backups securely stored in: {session_backup}")
-        print("You can reboot whenever ready to boot into the new systemd initramfs.")
+        if grub_needs_update:
+            print(
+                f"\n{Theme.YELLOW}[NOTE]{Theme.RESET} GRUB configuration at /etc/default/grub was updated."
+            )
+            print(
+                f"Remember to regenerate your GRUB configuration before rebooting:\n"
+                f"  {Theme.BOLD}sudo grub-mkconfig -o /boot/grub/grub.cfg{Theme.RESET}"
+            )
+        print("\nYou can reboot whenever ready to boot into the new systemd initramfs.")
 
 
 if __name__ == "__main__":
