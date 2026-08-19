@@ -1261,7 +1261,7 @@ def execute_rollback(backup_base_dir: Path) -> None:
     log_success("Rollback completed successfully.")
 
 
-def main():
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="migrate_to_systemd_initramfs.py",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1279,7 +1279,7 @@ all generated initramfs images against mandatory systemd service manifests.
         "--dry-run",
         action="store_true",
         default=False,
-        help="Perform non-destructive diagnostics and sandbox build (default).",
+        help="Perform non-destructive diagnostics and sandbox test build.",
     )
     action_group.add_argument(
         "-a",
@@ -1344,13 +1344,19 @@ all generated initramfs images against mandatory systemd service manifests.
         help="Disable ANSI color formatting.",
     )
 
-    args = parser.parse_args()
+    raw_args = argv if argv is not None else sys.argv[1:]
+    if not raw_args:
+        parser.print_help()
+        return
+
+    args = parser.parse_args(argv)
 
     if args.no_color or args.json:
         Theme.disable()
 
     if not (args.apply or args.dry_run or args.rollback):
-        args.dry_run = True
+        parser.print_help()
+        return
 
     # Handle Rollback
     if args.rollback:
