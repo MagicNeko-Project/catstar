@@ -13,6 +13,7 @@ import getpass
 import math
 import os
 import random
+import signal
 import sys
 import textwrap
 import time
@@ -302,13 +303,19 @@ class TerminalPalette:
             if not curses.has_colors():
                 return False
             curses.start_color()
-            curses.init_pair(cls.PAIR_GREEN, curses.COLOR_GREEN, curses.COLOR_BLACK)
-            curses.init_pair(cls.PAIR_RED, curses.COLOR_RED, curses.COLOR_BLACK)
-            curses.init_pair(cls.PAIR_CYAN, curses.COLOR_CYAN, curses.COLOR_BLACK)
-            curses.init_pair(cls.PAIR_YELLOW, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-            curses.init_pair(cls.PAIR_MAGENTA, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
-            curses.init_pair(cls.PAIR_BLUE, curses.COLOR_BLUE, curses.COLOR_BLACK)
-            curses.init_pair(cls.PAIR_WHITE, curses.COLOR_WHITE, curses.COLOR_BLACK)
+            try:
+                curses.use_default_colors()
+                bg_color: int = -1
+            except curses.error:
+                bg_color = curses.COLOR_BLACK
+
+            curses.init_pair(cls.PAIR_GREEN, curses.COLOR_GREEN, bg_color)
+            curses.init_pair(cls.PAIR_RED, curses.COLOR_RED, bg_color)
+            curses.init_pair(cls.PAIR_CYAN, curses.COLOR_CYAN, bg_color)
+            curses.init_pair(cls.PAIR_YELLOW, curses.COLOR_YELLOW, bg_color)
+            curses.init_pair(cls.PAIR_MAGENTA, curses.COLOR_MAGENTA, bg_color)
+            curses.init_pair(cls.PAIR_BLUE, curses.COLOR_BLUE, bg_color)
+            curses.init_pair(cls.PAIR_WHITE, curses.COLOR_WHITE, bg_color)
             cls._initialized = True
             return True
         except curses.error:
@@ -357,6 +364,15 @@ def safe_curs_set(visibility: int) -> None:
     """Safely set cursor visibility, ignoring curses errors when unsupported."""
     try:
         curses.curs_set(visibility)
+    except curses.error:
+        pass
+
+
+def safe_use_default_colors() -> None:
+    """Safely enable terminal default background colors if supported."""
+    try:
+        if curses.has_colors():
+            curses.use_default_colors()
     except curses.error:
         pass
 
@@ -543,17 +559,41 @@ class SteamLocomotive(EasterEgg):
         accident: bool = "-a" in args
         little: bool = "-l" in args
         flying: bool = "-F" in args
+        allow_interrupt: bool = "-e" in args
 
-        def run(stdscr: curses.window) -> None:
-            self._animate(
-                stdscr=stdscr, accident=accident, little=little, flying=flying
-            )
+        original_sigint_handler = None
+        try:
+            if not allow_interrupt:
+                original_sigint_handler = signal.getsignal(signal.SIGINT)
+                signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-        curses.wrapper(run)
+            def run(stdscr: curses.window) -> None:
+                self._animate(
+                    stdscr=stdscr,
+                    accident=accident,
+                    little=little,
+                    flying=flying,
+                    allow_interrupt=allow_interrupt,
+                )
+
+            curses.wrapper(run)
+        finally:
+            if original_sigint_handler is not None:
+                try:
+                    signal.signal(signal.SIGINT, original_sigint_handler)
+                except (ValueError, TypeError):
+                    pass
+
         return 0
 
     def interactive(self, stdscr: curses.window) -> None:
-        self._animate(stdscr=stdscr, accident=False, little=False, flying=False)
+        self._animate(
+            stdscr=stdscr,
+            accident=False,
+            little=False,
+            flying=False,
+            allow_interrupt=True,
+        )
 
     def _animate(
         self,
@@ -561,8 +601,10 @@ class SteamLocomotive(EasterEgg):
         accident: bool = False,
         little: bool = False,
         flying: bool = False,
+        allow_interrupt: bool = False,
     ) -> None:
         safe_curs_set(0)
+        safe_use_default_colors()
         stdscr.nodelay(True)
 
         try:
@@ -587,10 +629,10 @@ class SteamLocomotive(EasterEgg):
             frame_toggle: bool = False
 
             while start_x > -train_width:
-                stdscr.clear()
+                stdscr.erase()
 
                 key: int = stdscr.getch()
-                if key in (ord("q"), ord("Q"), 27):
+                if allow_interrupt and key in (ord("q"), ord("Q"), 27):
                     break
 
                 current_frame: list[str] = frames[0] if frame_toggle else frames[1]

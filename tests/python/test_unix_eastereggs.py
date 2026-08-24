@@ -476,6 +476,36 @@ class TestVisualEasterEggs(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         mock_curses_wrapper.assert_called_once()
 
+    @patch("signal.signal")
+    @patch("curses.wrapper")
+    def test_steam_locomotive_blocks_sigint_by_default(
+        self, mock_curses_wrapper: MagicMock, mock_signal: MagicMock
+    ) -> None:
+        """Verifies SteamLocomotive ignores SIGINT (Ctrl+C) by default during execution."""
+        import signal
+
+        sl = SteamLocomotive()
+        exit_code = sl.execute(["sl"])
+        self.assertEqual(exit_code, 0)
+        # Verify signal.signal was called to ignore SIGINT
+        mock_signal.assert_any_call(signal.SIGINT, signal.SIG_IGN)
+
+    @patch("signal.signal")
+    @patch("curses.wrapper")
+    def test_steam_locomotive_allows_interrupt_with_e_flag(
+        self, mock_curses_wrapper: MagicMock, mock_signal: MagicMock
+    ) -> None:
+        """Verifies SteamLocomotive with -e flag does not ignore SIGINT."""
+        import signal
+
+        sl = SteamLocomotive()
+        exit_code = sl.execute(["sl", "-e"])
+        self.assertEqual(exit_code, 0)
+        # Should not set SIGINT to SIG_IGN
+        for call_args in mock_signal.call_args_list:
+            if call_args[0][0] == signal.SIGINT:
+                self.assertNotEqual(call_args[0][1], signal.SIG_IGN)
+
     def test_steam_locomotive_animation_frames(self) -> None:
         """Verifies SteamLocomotive animation loop with mock stdscr."""
         sl = SteamLocomotive()
@@ -483,8 +513,14 @@ class TestVisualEasterEggs(unittest.TestCase):
         mock_stdscr.getmaxyx.return_value = (24, 80)
         mock_stdscr.getch.side_effect = [-1, ord("q")]
 
-        sl._animate(mock_stdscr, accident=True, little=False, flying=True)
-        mock_stdscr.clear.assert_called()
+        sl._animate(
+            mock_stdscr,
+            accident=True,
+            little=False,
+            flying=True,
+            allow_interrupt=True,
+        )
+        mock_stdscr.erase.assert_called()
         mock_stdscr.refresh.assert_called()
 
     def test_steam_locomotive_constrained_screen_safety(self) -> None:
@@ -494,8 +530,14 @@ class TestVisualEasterEggs(unittest.TestCase):
         mock_stdscr.getmaxyx.return_value = (5, 10)
         mock_stdscr.getch.side_effect = [-1, ord("q")]
 
-        sl._animate(mock_stdscr, accident=False, little=False, flying=True)
-        mock_stdscr.clear.assert_called()
+        sl._animate(
+            mock_stdscr,
+            accident=False,
+            little=False,
+            flying=True,
+            allow_interrupt=True,
+        )
+        mock_stdscr.erase.assert_called()
 
     def test_steam_locomotive_little_train(self) -> None:
         """Verifies SteamLocomotive with -l option."""
@@ -504,8 +546,14 @@ class TestVisualEasterEggs(unittest.TestCase):
         mock_stdscr.getmaxyx.return_value = (24, 80)
         mock_stdscr.getch.side_effect = [-1, ord("q")]
 
-        sl._animate(mock_stdscr, accident=False, little=True, flying=False)
-        mock_stdscr.clear.assert_called()
+        sl._animate(
+            mock_stdscr,
+            accident=False,
+            little=True,
+            flying=False,
+            allow_interrupt=True,
+        )
+        mock_stdscr.erase.assert_called()
 
     @patch("curses.wrapper")
     def test_cmatrix_execute_delegates_to_curses(
