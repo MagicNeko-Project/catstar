@@ -18,20 +18,67 @@ from scripts.unix_eastereggs import (
     MakeLove,
     MatrixDigitalRain,
     NyanCat,
+    ParticleSystem,
     PlumbingPipes,
     PythonEggs,
     SecretFireworks,
     SteamLocomotive,
     SudoInsults,
+    TerminalPalette,
     TriviaQuiz,
     UnixFortune,
     VimHelp,
     build_default_registry,
     display_scrollable_text,
     main,
+    read_terminal_line,
     run_tui_menu,
     safe_addstr,
+    safe_cbreak,
+    safe_curs_set,
+    safe_echo,
 )
+
+
+class TestTerminalPalette(unittest.TestCase):
+    """Unit tests for the centralized TerminalPalette color manager."""
+
+    @patch("curses.has_colors", return_value=True)
+    @patch("curses.start_color")
+    @patch("curses.init_pair")
+    def test_palette_initialization_with_colors(
+        self,
+        mock_init_pair: MagicMock,
+        mock_start_color: MagicMock,
+        mock_has_colors: MagicMock,
+    ) -> None:
+        """Verifies proper initialization of curses color pairs."""
+        success = TerminalPalette.initialize()
+        self.assertTrue(success)
+        mock_start_color.assert_called_once()
+        self.assertEqual(mock_init_pair.call_count, 7)
+
+    @patch("curses.has_colors", return_value=False)
+    def test_palette_initialization_without_colors(
+        self, mock_has_colors: MagicMock
+    ) -> None:
+        """Verifies graceful handling when terminal does not support colors."""
+        success = TerminalPalette.initialize()
+        self.assertFalse(success)
+
+    @patch("curses.has_colors", return_value=True)
+    @patch("curses.color_pair", side_effect=lambda idx: idx * 256)
+    def test_palette_color_accessors(
+        self, mock_color_pair: MagicMock, mock_has_colors: MagicMock
+    ) -> None:
+        """Verifies semantic color accessor functions return valid attributes."""
+        self.assertEqual(TerminalPalette.green(), 1 * 256)
+        self.assertEqual(TerminalPalette.red(), 2 * 256)
+        self.assertEqual(TerminalPalette.cyan(), 3 * 256)
+        self.assertEqual(TerminalPalette.yellow(), 4 * 256)
+        self.assertEqual(TerminalPalette.magenta(), 5 * 256)
+        self.assertEqual(TerminalPalette.blue(), 6 * 256)
+        self.assertEqual(TerminalPalette.white(), 7 * 256)
 
 
 class TestEasterEggRegistry(unittest.TestCase):
@@ -153,6 +200,22 @@ class TestAptMoo(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertEqual(mock_stdout.getvalue(), APT_BUILD_COW_ART)
 
+    def test_strict_aptitude_verbosity_parsing(self) -> None:
+        """Verifies strict aptitude verbosity parsing without false positives."""
+        # Standard -v, -vv, -vvv
+        self.assertEqual(AptMoo._parse_aptitude_verbosity(["-v"]), 1)
+        self.assertEqual(AptMoo._parse_aptitude_verbosity(["-vv"]), 2)
+        self.assertEqual(AptMoo._parse_aptitude_verbosity(["-vvv"]), 3)
+        self.assertEqual(AptMoo._parse_aptitude_verbosity(["-v", "-v"]), 2)
+
+        # --verbose and --verbose=N
+        self.assertEqual(AptMoo._parse_aptitude_verbosity(["--verbose", "moo"]), 1)
+        self.assertEqual(AptMoo._parse_aptitude_verbosity(["--verbose=4"]), 4)
+
+        # Ensure false positives are ignored (e.g. -version, -q, --dry-run)
+        self.assertEqual(AptMoo._parse_aptitude_verbosity(["-version", "moo"]), 0)
+        self.assertEqual(AptMoo._parse_aptitude_verbosity(["-q", "-y", "moo"]), 0)
+
     def test_aptitude_verbosity_levels(self) -> None:
         """Verifies aptitude moo output for various -v verbosity levels."""
         # Level 0 (no -v)
@@ -239,7 +302,8 @@ class TestMakeLove(unittest.TestCase):
             exit_code = self.make_egg.execute(["make", "war"])
             self.assertEqual(exit_code, 2)
             self.assertIn(
-                "make: *** No rule to make target 'war'.  Stop.", mock_stderr.getvalue()
+                "make: *** No rule to make target 'war'.  Stop.",
+                mock_stderr.getvalue(),
             )
 
     def test_make_interactive(self) -> None:
@@ -423,6 +487,16 @@ class TestVisualEasterEggs(unittest.TestCase):
         mock_stdscr.clear.assert_called()
         mock_stdscr.refresh.assert_called()
 
+    def test_steam_locomotive_constrained_screen_safety(self) -> None:
+        """Verifies SteamLocomotive runs safely on extremely small terminal dimensions."""
+        sl = SteamLocomotive()
+        mock_stdscr = MagicMock()
+        mock_stdscr.getmaxyx.return_value = (5, 10)
+        mock_stdscr.getch.side_effect = [-1, ord("q")]
+
+        sl._animate(mock_stdscr, accident=False, little=False, flying=True)
+        mock_stdscr.clear.assert_called()
+
     def test_steam_locomotive_little_train(self) -> None:
         """Verifies SteamLocomotive with -l option."""
         sl = SteamLocomotive()
@@ -514,6 +588,46 @@ class TestVisualEasterEggs(unittest.TestCase):
         mock_stdscr.refresh.assert_called()
 
 
+class TestParticleSystem(unittest.TestCase):
+    """Unit tests for ParticleSystem physics and boundary safety."""
+
+    def test_particle_spawn_standard_dimensions(self) -> None:
+        """Verifies particle system spawns particles within bounds."""
+        ps = ParticleSystem()
+        ps.spawn_burst(80, 24)
+        self.assertGreater(len(ps.particles), 0)
+        for p in ps.particles:
+            self.assertTrue(0 <= p.x < 80)
+            self.assertTrue(0 <= p.y < 24)
+
+    def test_particle_spawn_constrained_dimensions(self) -> None:
+        """Verifies particle system spawns safely on tiny terminal sizes without crashing."""
+        ps = ParticleSystem()
+        ps.spawn_burst(8, 4)
+        self.assertGreater(len(ps.particles), 0)
+        for p in ps.particles:
+            self.assertTrue(0 <= p.x <= 8)
+            self.assertTrue(0 <= p.y <= 4)
+
+    def test_particle_capacity_capping(self) -> None:
+        """Verifies particle system caps active particle count to MAX_PARTICLES."""
+        ps = ParticleSystem()
+        for _ in range(20):
+            ps.spawn_burst(80, 24)
+        self.assertLessEqual(len(ps.particles), ParticleSystem.MAX_PARTICLES)
+
+    def test_particle_update_and_render(self) -> None:
+        """Verifies particle update moves particles and prunes expired ones."""
+        ps = ParticleSystem()
+        ps.spawn_burst(80, 24)
+        mock_stdscr = MagicMock()
+        mock_stdscr.getmaxyx.return_value = (24, 80)
+
+        # Advance physics multiple frames
+        for _ in range(25):
+            ps.update_and_render(mock_stdscr)
+
+
 class TestDoctorAndVimHelp(unittest.TestCase):
     """Unit tests for Emacs Doctor and Vim documentation easter eggs."""
 
@@ -530,15 +644,16 @@ class TestDoctorAndVimHelp(unittest.TestCase):
             self.assertIn("Emacs Doctor (ELIZA Psychotherapist)", output)
             self.assertIn("Doctor: Farewell.", output)
 
-    def test_doctor_eliza_interactive_curses(self) -> None:
-        """Verifies DoctorEliza curses interactive interface."""
+    @patch("scripts.unix_eastereggs.read_terminal_line", return_value="quit")
+    def test_doctor_eliza_interactive_curses(self, mock_read_line: MagicMock) -> None:
+        """Verifies DoctorEliza curses interactive interface using read_terminal_line."""
         doctor = DoctorEliza()
         mock_stdscr = MagicMock()
         mock_stdscr.getmaxyx.return_value = (24, 80)
-        mock_stdscr.getstr.return_value = b"quit"
 
         doctor.interactive(mock_stdscr)
         mock_stdscr.refresh.assert_called()
+        mock_read_line.assert_called_once()
 
     def test_vim_help_42(self) -> None:
         """Verifies vim :help 42 output."""
@@ -596,7 +711,8 @@ class TestTriviaQuiz(unittest.TestCase):
             self.assertIsInstance(options, list)
             self.assertIsInstance(answer, int)
             self.assertTrue(
-                0 <= answer < len(options), f"Invalid answer index in question {idx}"
+                0 <= answer < len(options),
+                f"Invalid answer index in question {idx}",
             )
 
     def test_trivia_quiz_interactive_exit(self) -> None:
@@ -610,8 +726,8 @@ class TestTriviaQuiz(unittest.TestCase):
         mock_stdscr.refresh.assert_called()
 
 
-class TestCursesHelpers(unittest.TestCase):
-    """Unit tests for curses drawing and navigation helpers."""
+class TestCursesHelpersAndLineEditor(unittest.TestCase):
+    """Unit tests for curses drawing, line editing, and navigation helpers."""
 
     def test_safe_addstr_within_bounds(self) -> None:
         """Verifies safe_addstr draws text when coordinates are valid."""
@@ -628,6 +744,54 @@ class TestCursesHelpers(unittest.TestCase):
 
         safe_addstr(mock_stdscr, 25, 90, "Out of bounds")
         mock_stdscr.addstr.assert_not_called()
+
+    def test_safe_curses_toggles_no_crash(self) -> None:
+        """Verifies safe_cbreak, safe_echo, and safe_curs_set do not raise uncaught curses.error."""
+        safe_cbreak(True)
+        safe_cbreak(False)
+        safe_echo(True)
+        safe_echo(False)
+        safe_curs_set(0)
+        safe_curs_set(1)
+
+    def test_read_terminal_line_basic_typing(self) -> None:
+        """Verifies read_terminal_line captures characters and finishes on Enter."""
+        mock_stdscr = MagicMock()
+        mock_stdscr.getmaxyx.return_value = (20, 80)
+        # Type "hello" followed by Enter (10)
+        mock_stdscr.getch.side_effect = [ord(c) for c in "hello"] + [10]
+
+        result = read_terminal_line(mock_stdscr, 5, 0, max_len=40, prompt="Prompt: ")
+        self.assertEqual(result, "hello")
+
+    def test_read_terminal_line_backspace_and_delete(self) -> None:
+        """Verifies read_terminal_line handles backspace and delete key codes."""
+        mock_stdscr = MagicMock()
+        mock_stdscr.getmaxyx.return_value = (20, 80)
+        # Type "helx", Backspace (127), "lo", Enter (10)
+        mock_stdscr.getch.side_effect = [
+            ord("h"),
+            ord("e"),
+            ord("l"),
+            ord("x"),
+            127,
+            ord("l"),
+            ord("o"),
+            10,
+        ]
+
+        result = read_terminal_line(mock_stdscr, 5, 0, max_len=40)
+        self.assertEqual(result, "hello")
+
+    def test_read_terminal_line_escape_clears(self) -> None:
+        """Verifies read_terminal_line clears buffer and returns empty string on Escape."""
+        mock_stdscr = MagicMock()
+        mock_stdscr.getmaxyx.return_value = (20, 80)
+        # Type "hello" then Escape (27)
+        mock_stdscr.getch.side_effect = [ord("h"), ord("e"), 27]
+
+        result = read_terminal_line(mock_stdscr, 5, 0, max_len=40)
+        self.assertEqual(result, "")
 
     def test_display_scrollable_text(self) -> None:
         """Verifies display_scrollable_text renders and exits cleanly."""

@@ -278,14 +278,96 @@ TRIVIA_QUESTIONS: list[dict[str, object]] = [
 
 
 # -----------------------------------------------------------------------------
-# 2. Terminal & Curses Helpers
+# 2. Terminal Palette & Curses Helpers
 # -----------------------------------------------------------------------------
+
+
+class TerminalPalette:
+    """Centralized manager for terminal curses color pairs."""
+
+    PAIR_GREEN: ClassVar[int] = 1
+    PAIR_RED: ClassVar[int] = 2
+    PAIR_CYAN: ClassVar[int] = 3
+    PAIR_YELLOW: ClassVar[int] = 4
+    PAIR_MAGENTA: ClassVar[int] = 5
+    PAIR_BLUE: ClassVar[int] = 6
+    PAIR_WHITE: ClassVar[int] = 7
+
+    _initialized: ClassVar[bool] = False
+
+    @classmethod
+    def initialize(cls) -> bool:
+        """Initialize curses color pairs with standard foreground mappings."""
+        try:
+            if not curses.has_colors():
+                return False
+            curses.start_color()
+            curses.init_pair(cls.PAIR_GREEN, curses.COLOR_GREEN, curses.COLOR_BLACK)
+            curses.init_pair(cls.PAIR_RED, curses.COLOR_RED, curses.COLOR_BLACK)
+            curses.init_pair(cls.PAIR_CYAN, curses.COLOR_CYAN, curses.COLOR_BLACK)
+            curses.init_pair(cls.PAIR_YELLOW, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+            curses.init_pair(cls.PAIR_MAGENTA, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
+            curses.init_pair(cls.PAIR_BLUE, curses.COLOR_BLUE, curses.COLOR_BLACK)
+            curses.init_pair(cls.PAIR_WHITE, curses.COLOR_WHITE, curses.COLOR_BLACK)
+            cls._initialized = True
+            return True
+        except curses.error:
+            return False
+
+    @classmethod
+    def get_attr(cls, pair_id: int, fallback_attr: int = curses.A_NORMAL) -> int:
+        """Return curses color pair attribute or fallback."""
+        try:
+            if curses.has_colors():
+                return curses.color_pair(pair_id)
+        except curses.error:
+            pass
+        return fallback_attr
+
+    @classmethod
+    def green(cls, fallback_attr: int = curses.A_BOLD) -> int:
+        return cls.get_attr(cls.PAIR_GREEN, fallback_attr)
+
+    @classmethod
+    def red(cls, fallback_attr: int = curses.A_BOLD) -> int:
+        return cls.get_attr(cls.PAIR_RED, fallback_attr)
+
+    @classmethod
+    def cyan(cls, fallback_attr: int = curses.A_BOLD) -> int:
+        return cls.get_attr(cls.PAIR_CYAN, fallback_attr)
+
+    @classmethod
+    def yellow(cls, fallback_attr: int = curses.A_BOLD) -> int:
+        return cls.get_attr(cls.PAIR_YELLOW, fallback_attr)
+
+    @classmethod
+    def magenta(cls, fallback_attr: int = curses.A_BOLD) -> int:
+        return cls.get_attr(cls.PAIR_MAGENTA, fallback_attr)
+
+    @classmethod
+    def blue(cls, fallback_attr: int = curses.A_BOLD) -> int:
+        return cls.get_attr(cls.PAIR_BLUE, fallback_attr)
+
+    @classmethod
+    def white(cls, fallback_attr: int = curses.A_BOLD) -> int:
+        return cls.get_attr(cls.PAIR_WHITE, fallback_attr)
 
 
 def safe_curs_set(visibility: int) -> None:
     """Safely set cursor visibility, ignoring curses errors when unsupported."""
     try:
         curses.curs_set(visibility)
+    except curses.error:
+        pass
+
+
+def safe_cbreak(enable: bool) -> None:
+    """Safely toggle cbreak mode."""
+    try:
+        if enable:
+            curses.cbreak()
+        else:
+            curses.nocbreak()
     except curses.error:
         pass
 
@@ -301,32 +383,6 @@ def safe_echo(enable: bool) -> None:
         pass
 
 
-def safe_init_colors(count: int = 7) -> bool:
-    """Safely initialize curses color pairs if supported."""
-    try:
-        if curses.has_colors():
-            curses.start_color()
-            for idx in range(1, count):
-                try:
-                    curses.init_pair(idx, idx, curses.COLOR_BLACK)
-                except curses.error:
-                    pass
-            return True
-    except curses.error:
-        pass
-    return False
-
-
-def safe_color_pair(pair_number: int, fallback_attr: int = curses.A_NORMAL) -> int:
-    """Safely get a curses color pair attribute or return fallback."""
-    try:
-        if curses.has_colors():
-            return curses.color_pair(pair_number)
-    except curses.error:
-        pass
-    return fallback_attr
-
-
 def safe_addstr(
     stdscr: curses.window, y: int, x: int, text: str, attr: int = 0
 ) -> None:
@@ -339,6 +395,68 @@ def safe_addstr(
                 stdscr.addstr(y, x, text[:max_len], attr)
     except curses.error:
         pass
+
+
+def read_terminal_line(
+    stdscr: curses.window,
+    y: int,
+    x: int,
+    max_len: int,
+    prompt: str = "",
+) -> str:
+    """Read a line of text in cbreak mode handling backspace, delete, and control codes."""
+    safe_cbreak(True)
+    safe_echo(False)
+    safe_curs_set(1)
+
+    buffer: list[str] = []
+    cursor_offset: int = 0
+
+    if prompt:
+        safe_addstr(stdscr, y, x, prompt)
+        x += len(prompt)
+
+    while True:
+        rendered_text: str = "".join(buffer)
+        safe_addstr(stdscr, y, x, rendered_text.ljust(max_len))
+        try:
+            stdscr.move(y, min(x + cursor_offset, x + max_len - 1))
+        except curses.error:
+            pass
+        stdscr.refresh()
+
+        key: int = stdscr.getch()
+
+        # Enter / Return
+        if key in (10, 13, curses.KEY_ENTER):
+            break
+
+        # Escape
+        if key == 27:
+            buffer.clear()
+            break
+
+        # Backspace / Delete
+        if key in (8, 127, curses.KEY_BACKSPACE, ord("\b")):
+            if cursor_offset > 0:
+                buffer.pop(cursor_offset - 1)
+                cursor_offset -= 1
+        elif key == curses.KEY_DC:
+            if cursor_offset < len(buffer):
+                buffer.pop(cursor_offset)
+        # Left / Right Arrow navigation
+        elif key == curses.KEY_LEFT:
+            if cursor_offset > 0:
+                cursor_offset -= 1
+        elif key == curses.KEY_RIGHT:
+            if cursor_offset < len(buffer):
+                cursor_offset += 1
+        # Printable ASCII characters
+        elif 32 <= key <= 126 and len(buffer) < max_len:
+            buffer.insert(cursor_offset, chr(key))
+            cursor_offset += 1
+
+    return "".join(buffer).strip()
 
 
 def display_scrollable_text(
@@ -480,12 +598,14 @@ class SteamLocomotive(EasterEgg):
 
                 cur_y: int = start_y
                 if flying:
-                    cur_y = max(
-                        0,
-                        int(
-                            start_y * ((start_x + train_width) / (width + train_width))
+                    progress_ratio: float = max(
+                        0.0,
+                        min(
+                            1.0,
+                            (start_x + train_width) / max(1, width + train_width),
                         ),
                     )
+                    cur_y = max(0, int(start_y * progress_ratio))
 
                 for row_idx, line in enumerate(current_frame):
                     target_y: int = cur_y + row_idx
@@ -536,7 +656,7 @@ class MatrixDigitalRain(EasterEgg):
         stdscr.nodelay(True)
 
         try:
-            safe_init_colors(3)
+            TerminalPalette.initialize()
 
             height, width = stdscr.getmaxyx()
             columns: list[int] = [random.randint(-height, 0) for _ in range(width)]
@@ -567,7 +687,7 @@ class MatrixDigitalRain(EasterEgg):
                     y_pos: int = columns[col]
                     if 0 <= y_pos < height:
                         char: str = random.choice(characters)
-                        attr = safe_color_pair(2, fallback_attr=curses.A_BOLD)
+                        attr = TerminalPalette.white(fallback_attr=curses.A_BOLD)
                         try:
                             stdscr.addch(y_pos, col, char, attr)
                         except curses.error:
@@ -576,7 +696,7 @@ class MatrixDigitalRain(EasterEgg):
                     trail_y: int = y_pos - 1
                     if 0 <= trail_y < height:
                         char = random.choice(characters)
-                        attr = safe_color_pair(1, fallback_attr=curses.A_NORMAL)
+                        attr = TerminalPalette.green(fallback_attr=curses.A_NORMAL)
                         try:
                             stdscr.addch(trail_y, col, char, attr)
                         except curses.error:
@@ -636,7 +756,7 @@ class PlumbingPipes(EasterEgg):
         stdscr.nodelay(True)
 
         try:
-            safe_init_colors(7)
+            TerminalPalette.initialize()
 
             height, width = stdscr.getmaxyx()
             x_pos: int = width // 2
@@ -659,7 +779,9 @@ class PlumbingPipes(EasterEgg):
                 char: str = self.PIPE_CHARS.get((direction, new_dir), "╬")
                 direction = new_dir
 
-                attr = safe_color_pair(color_idx, fallback_attr=curses.A_NORMAL)
+                attr = TerminalPalette.get_attr(
+                    color_idx, fallback_attr=curses.A_NORMAL
+                )
                 try:
                     stdscr.addch(y_pos, x_pos, char, attr)
                 except curses.error:
@@ -789,20 +911,32 @@ class AptMoo(EasterEgg):
             return 0
 
         if is_aptitude:
-            v_count: int = 0
-            for token in cmd_tokens:
-                if token.startswith("-v"):
-                    v_count += token.count("v")
-                elif token == "-v":
-                    v_count += 1
-
-            level_idx: int = min(v_count, len(APTITUDE_COW_LEVELS) - 1)
+            verbosity: int = self._parse_aptitude_verbosity(args)
+            level_idx: int = min(verbosity, len(APTITUDE_COW_LEVELS) - 1)
             print(APTITUDE_COW_LEVELS[level_idx])
             return 0
 
         # Standard apt / apt-get / moo
         print(APT_COW_ART, end="")
         return 0
+
+    @staticmethod
+    def _parse_aptitude_verbosity(args: list[str]) -> int:
+        """Strictly extract aptitude verbosity level from arguments."""
+        v_count: int = 0
+        for token in args:
+            lower_token: str = token.lower()
+            if lower_token == "--verbose":
+                v_count += 1
+            elif lower_token.startswith("--verbose="):
+                val: str = lower_token.split("=", 1)[1]
+                if val.isdigit():
+                    v_count += int(val)
+            elif lower_token.startswith("-") and not lower_token.startswith("--"):
+                flags: str = lower_token[1:]
+                if flags and all(ch == "v" for ch in flags):
+                    v_count += len(flags)
+        return v_count
 
     def interactive(self, stdscr: curses.window) -> None:
         safe_curs_set(1)
@@ -1028,10 +1162,6 @@ class DoctorEliza(EasterEgg):
         return 0
 
     def interactive(self, stdscr: curses.window) -> None:
-        safe_curs_set(1)
-        stdscr.nodelay(False)
-        safe_echo(True)
-
         height, width = stdscr.getmaxyx()
         history: list[str] = [
             "Emacs Doctor (ELIZA Psychotherapist)",
@@ -1046,15 +1176,16 @@ class DoctorEliza(EasterEgg):
             for idx, line in enumerate(history[start_row:]):
                 safe_addstr(stdscr, idx, 0, line)
 
-            safe_addstr(stdscr, max(0, height - 2), 0, "You: ")
             stdscr.refresh()
 
             input_y: int = max(0, height - 2)
-            input_x: int = 5
-            input_len: int = max(1, width - 10)
-
-            user_input_bytes: bytes = stdscr.getstr(input_y, input_x, input_len)
-            user_input: str = user_input_bytes.decode("utf-8", errors="ignore").strip()
+            user_input: str = read_terminal_line(
+                stdscr,
+                input_y,
+                0,
+                max_len=max(10, width - 4),
+                prompt="You: ",
+            )
 
             if not user_input or user_input.lower() in ("q", "quit", "exit"):
                 break
@@ -1063,8 +1194,6 @@ class DoctorEliza(EasterEgg):
             bot_response: str = random.choice(self.DOCTOR_RESPONSES)
             history.append(f"Doctor: {bot_response}")
             history.append("")
-
-        safe_echo(False)
 
 
 class VimHelp(EasterEgg):
@@ -1197,6 +1326,85 @@ class UnixFortune(EasterEgg):
         display_scrollable_text(stdscr, "Unix Fortune Cookie", lines)
 
 
+@dataclass
+class Particle:
+    """Represents an active firework particle."""
+
+    x: float
+    y: float
+    vx: float
+    vy: float
+    life: int
+    color_pair_id: int
+    char: str
+
+
+class ParticleSystem:
+    """Bounded, screen-aware particle physics simulation."""
+
+    MAX_PARTICLES: ClassVar[int] = 120
+
+    def __init__(self) -> None:
+        self.particles: list[Particle] = []
+
+    def spawn_burst(self, width: int, height: int) -> None:
+        """Spawn a firework burst within safe dynamic bounds."""
+        if len(self.particles) >= self.MAX_PARTICLES:
+            return
+
+        margin_x: int = max(1, min(10, width // 4))
+        margin_y: int = max(1, min(4, height // 4))
+
+        min_x: int = margin_x
+        max_x: int = max(min_x, width - margin_x - 1)
+        min_y: int = margin_y
+        max_y: int = max(min_y, height - margin_y - 1)
+
+        burst_x: float = float(random.randint(min_x, max_x))
+        burst_y: float = float(random.randint(min_y, max_y))
+        color_pair: int = random.randint(1, 6)
+
+        burst_count: int = min(24, self.MAX_PARTICLES - len(self.particles))
+        for _ in range(burst_count):
+            angle: float = random.uniform(0, 2 * math.pi)
+            speed: float = random.uniform(0.5, 2.5)
+            self.particles.append(
+                Particle(
+                    x=burst_x,
+                    y=burst_y,
+                    vx=math.cos(angle) * speed,
+                    vy=math.sin(angle) * (speed * 0.5),
+                    life=random.randint(8, 20),
+                    color_pair_id=color_pair,
+                    char=random.choice(["*", "+", ".", "o", "O", "@"]),
+                )
+            )
+
+    def update_and_render(self, stdscr: curses.window) -> None:
+        """Advance particle physics and draw surviving particles."""
+        height, width = stdscr.getmaxyx()
+        surviving: list[Particle] = []
+
+        for p in self.particles:
+            px: int = int(p.x)
+            py: int = int(p.y)
+
+            if 0 <= py < height and 0 <= px < width:
+                attr = TerminalPalette.get_attr(
+                    p.color_pair_id, fallback_attr=curses.A_BOLD
+                )
+                safe_addstr(stdscr, py, px, p.char, attr)
+
+            p.x += p.vx
+            p.y += p.vy + 0.1  # Gravity
+            p.life -= 1
+
+            if p.life > 0:
+                surviving.append(p)
+
+        self.particles = surviving
+
+
 class SecretFireworks(EasterEgg):
     """Ancient Unix Magic & Fireworks animation."""
 
@@ -1219,8 +1427,8 @@ class SecretFireworks(EasterEgg):
         stdscr.nodelay(True)
 
         try:
-            safe_init_colors(7)
-            particles: list[dict[str, float]] = []
+            TerminalPalette.initialize()
+            particle_system = ParticleSystem()
 
             while True:
                 key: int = stdscr.getch()
@@ -1230,47 +1438,11 @@ class SecretFireworks(EasterEgg):
                 stdscr.clear()
                 height, width = stdscr.getmaxyx()
 
-                # Spawn firework bursts
+                # Spawn firework bursts safely
                 if random.random() < 0.3:
-                    burst_x: float = float(random.randint(10, max(10, width - 10)))
-                    burst_y: float = float(random.randint(4, max(4, height - 8)))
-                    color: int = random.randint(1, 6)
+                    particle_system.spawn_burst(width, height)
 
-                    for _ in range(24):
-                        angle: float = random.uniform(0, 6.28)
-                        speed: float = random.uniform(0.5, 2.5)
-                        particles.append(
-                            {
-                                "x": burst_x,
-                                "y": burst_y,
-                                "vx": math.cos(angle) * speed,
-                                "vy": math.sin(angle) * (speed * 0.5),
-                                "life": float(random.randint(8, 20)),
-                                "color": float(color),
-                                "char": ord(
-                                    random.choice(["*", "+", ".", "o", "O", "@"])
-                                ),
-                            }
-                        )
-
-                # Update particles
-                surviving: list[dict[str, float]] = []
-                for p in particles:
-                    px: int = int(p["x"])
-                    py: int = int(p["y"])
-                    attr = safe_color_pair(int(p["color"]), fallback_attr=curses.A_BOLD)
-
-                    if 0 <= py < height and 0 <= px < width:
-                        safe_addstr(stdscr, py, px, chr(int(p["char"])), attr)
-
-                    p["x"] += p["vx"]
-                    p["y"] += p["vy"] + 0.1  # Gravity
-                    p["life"] -= 1
-
-                    if p["life"] > 0:
-                        surviving.append(p)
-
-                particles = surviving
+                particle_system.update_and_render(stdscr)
 
                 safe_addstr(
                     stdscr,
@@ -1320,7 +1492,7 @@ class TriviaQuiz(EasterEgg):
         safe_curs_set(0)
         stdscr.nodelay(False)
 
-        safe_init_colors(4)
+        TerminalPalette.initialize()
 
         score: int = 0
         total_questions: int = len(TRIVIA_QUESTIONS)
@@ -1402,22 +1574,14 @@ class TriviaQuiz(EasterEgg):
 
                     if selected_option == correct_answer:
                         score += 1
-                        green_attr = (
-                            safe_color_pair(1, fallback_attr=curses.A_BOLD)
-                            | curses.A_BOLD
-                        )
-                        safe_addstr(stdscr, 3, 2, "CORRECT!", green_attr)
+                        safe_addstr(stdscr, 3, 2, "CORRECT!", TerminalPalette.green())
                     else:
-                        red_attr = (
-                            safe_color_pair(2, fallback_attr=curses.A_BOLD)
-                            | curses.A_BOLD
-                        )
                         safe_addstr(
                             stdscr,
                             3,
                             2,
                             f"INCORRECT! Correct answer was: {options[correct_answer]}",
-                            red_attr,
+                            TerminalPalette.red(),
                         )
 
                     safe_addstr(stdscr, 5, 2, f"Explanation: {explanation_text}")
@@ -1453,8 +1617,7 @@ class TriviaQuiz(EasterEgg):
             f"Final Score: {score} out of {total_questions} ({percentage:.0f}%)",
             curses.A_BOLD,
         )
-        cyan_attr = safe_color_pair(3, fallback_attr=curses.A_BOLD) | curses.A_BOLD
-        safe_addstr(stdscr, 5, 2, f"Awarded Rank: {rank}", cyan_attr)
+        safe_addstr(stdscr, 5, 2, f"Awarded Rank: {rank}", TerminalPalette.cyan())
 
         safe_addstr(stdscr, 8, 2, "Press any key to return to main menu...")
         stdscr.refresh()
@@ -1638,7 +1801,13 @@ def main(custom_argv: list[str] | None = None) -> int:
 
     # Multi-call binary detection (if invoked as `sl`, `cmatrix`, etc.)
     prog_name: str = os.path.basename(sys.argv[0])
-    if prog_name not in ("unix_eastereggs.py", "egg.py", "python", "python3", "pytest"):
+    if prog_name not in (
+        "unix_eastereggs.py",
+        "egg.py",
+        "python",
+        "python3",
+        "pytest",
+    ):
         egg, _ = registry.resolve([prog_name] + argv)
         if egg is not None:
             return egg.execute([prog_name] + argv)
