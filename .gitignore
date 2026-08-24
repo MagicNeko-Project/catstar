@@ -4,3 +4,10 @@
 /*.txt
 /.vscode/
 *.tar.xz
+
+# Ansible Galaxy collections & artifacts
+/ansible/collections/ansible_collections/*
+!/ansible/collections/ansible_collections/local/
+/ansible/collections/ansible_collections/local/*/tests/output/
+/ansible/roles/*
+*.retry
