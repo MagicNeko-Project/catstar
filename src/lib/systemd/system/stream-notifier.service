@@ -1,5 +1,7 @@
+# Deprecated: Stream Notifier is unmaintained upstream and no longer supported.
+
 [Unit]
-Description=Cyan's Stream Notifier for Twitch (Cyan/Catstar version)
+Description=Cyan's Stream Notifier for Twitch (deprecated, unmaintained)
 Documentation=https://github.com/CyanNyan-Fans-unofficial/StreamNotifier
 After=network-online.target
 Wants=network-online.target
