@@ -27,7 +27,7 @@
   ansible.builtin.copy:
     dest: "{{ item.key }}"
     content: >
-      {{ item.value | to_nice_json(indent=2) }}
+      {{ item.value | to_nice_json(indent=2, ensure_ascii=False) }}
     mode: "0644"
   loop: "{{ (q('ansible.builtin.vars', *q('ansible.builtin.varnames', '^common_create_json_configs')) | combine) | dict2items }}"
 
