@@ -1,0 +1,36 @@
+[Unit]
+Description=Cyber Neko (dev branch) discord bot %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/opt/CyberNeko-bot-dev/.venv/bin/python main.py /usr/local/etc/CyberNeko/config-%i.yml
+WorkingDirectory=/usr/local/opt/CyberNeko-bot-dev
+Restart=on-failure
+RestartSec=10s
+
+# Process & User Isolation
+DynamicUser=yes
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+
+# Kernel & System Hardening
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=strict
+ProtectHostname=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+
+# Network & Syscall Filtering
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target
