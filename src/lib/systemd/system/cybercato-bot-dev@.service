@@ -1,5 +1,8 @@
+# Deprecated: Cyber Cato (dev branch) has been superseded by Cyber Neko (cyberneko-bot-dev@.service).
+# Please migrate to cyberneko-bot-dev@.service which uses .venv/ and hardened sandboxing.
+
 [Unit]
-Description=Cyber Cato (dev branch) discord bot %i
+Description=Cyber Cato (dev branch) discord bot %i (deprecated, use cyberneko-bot-dev@.service)
 After=network-online.target
 Wants=network-online.target
 
