@@ -17,6 +17,8 @@ Usage:
     eval $(keychain.py --eval id_rsa)
 """
 
+from __future__ import annotations
+
 import argparse
 import logging
 import os
@@ -187,7 +189,7 @@ class SSHAgent:
             )
 
     @classmethod
-    def spawn_new(cls, agent_bin: str = "ssh-agent") -> "SSHAgent":
+    def spawn_new(cls, agent_bin: str = "ssh-agent") -> SSHAgent:
         """
         Starts a fresh ssh-agent process.
 
