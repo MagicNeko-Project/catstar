@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 
 	"github.com/MagicNeko-Project/catstar-backup/internal/config"
 	"github.com/MagicNeko-Project/catstar-backup/internal/notify"
@@ -12,28 +14,41 @@ import (
 // ----------------------------------------------------------------------------
 // Test Engine
 // ----------------------------------------------------------------------------
+
 type TestEngine struct {
-	jobName  string
-	machine  string
-	verbose  bool
-	logger   *slog.Logger
-	notifier *notify.CompositeNotifier
+	jobName     string
+	machineName string
+	verbose     bool
+	logger      *slog.Logger
+	notifier    *notify.CompositeNotifier
 }
 
-func NewTestEngine(jobName, machineName string, verbose bool, logger *slog.Logger, notifier *notify.CompositeNotifier) *TestEngine {
-	return &TestEngine{jobName: jobName, machine: machineName, verbose: verbose, logger: logger.With("job", jobName), notifier: notifier}
+func NewTestEngine(
+	jobName string,
+	machineName string,
+	verbose bool,
+	logger *slog.Logger,
+	notifier *notify.CompositeNotifier,
+) *TestEngine {
+	return &TestEngine{
+		jobName:     jobName,
+		machineName: machineName,
+		verbose:     verbose,
+		logger:      logger.With("job", jobName),
+		notifier:    notifier,
+	}
 }
 
-func (e *TestEngine) Name() string { return e.jobName }
+func (engine *TestEngine) Name() string { return engine.jobName }
 
-func (e *TestEngine) Execute(ctx context.Context) error {
-	e.logger.Info("Executing Test Backup Engine")
-	if e.verbose {
-		e.notifier.Send(ctx, fmt.Sprintf("%s 开始备份 (%s)：测试，只输出消息", e.machine, e.jobName))
+func (engine *TestEngine) Execute(ctx context.Context) error {
+	engine.logger.Info("Executing Test Backup Engine")
+	if engine.verbose {
+		engine.notifier.Send(ctx, fmt.Sprintf("%s 开始备份 (%s)：测试，只输出消息", engine.machineName, engine.jobName))
 	}
 
-	for i := 1; i <= 2; i++ {
-		e.logger.Info(fmt.Sprintf("测试备份消息：123*%d", i))
+	for stepIndex := 1; stepIndex <= 2; stepIndex++ {
+		engine.logger.Info(fmt.Sprintf("测试备份消息：123*%d", stepIndex))
 	}
 
 	return nil
@@ -42,85 +57,124 @@ func (e *TestEngine) Execute(ctx context.Context) error {
 // ----------------------------------------------------------------------------
 // Restic Engine
 // ----------------------------------------------------------------------------
+
 type ResticEngine struct {
-	jobName  string
-	machine  string
-	verbose  bool
-	cfg      *config.ResticConfig
-	logger   *slog.Logger
-	notifier *notify.CompositeNotifier
-	factory  CommandFactory
+	jobName        string
+	machineName    string
+	verbose        bool
+	config         *config.ResticConfig
+	logger         *slog.Logger
+	notifier       *notify.CompositeNotifier
+	commandFactory CommandFactory
 }
 
-func NewResticEngine(jobName, machineName string, verbose bool, cfg *config.ResticConfig, logger *slog.Logger, notifier *notify.CompositeNotifier, factory CommandFactory) *ResticEngine {
-	return &ResticEngine{jobName: jobName, machine: machineName, verbose: verbose, cfg: cfg, logger: logger.With("job", jobName), notifier: notifier, factory: factory}
+func NewResticEngine(
+	jobName string,
+	machineName string,
+	verbose bool,
+	resticConfig *config.ResticConfig,
+	logger *slog.Logger,
+	notifier *notify.CompositeNotifier,
+	commandFactory CommandFactory,
+) *ResticEngine {
+	return &ResticEngine{
+		jobName:        jobName,
+		machineName:    machineName,
+		verbose:        verbose,
+		config:         resticConfig,
+		logger:         logger.With("job", jobName),
+		notifier:       notifier,
+		commandFactory: commandFactory,
+	}
 }
 
-func (e *ResticEngine) Name() string { return e.jobName }
+func (engine *ResticEngine) Name() string { return engine.jobName }
 
-func (e *ResticEngine) Execute(ctx context.Context) error {
-	e.logger.Info("Executing Restic Backup Engine")
-	if e.verbose {
-		e.notifier.Send(ctx, fmt.Sprintf("%s 开始备份 (%s)：restic", e.machine, e.jobName))
+func (engine *ResticEngine) Execute(ctx context.Context) error {
+	engine.logger.Info("Executing Restic Backup Engine")
+	if engine.verbose {
+		engine.notifier.Send(ctx, fmt.Sprintf("%s 开始备份 (%s)：restic", engine.machineName, engine.jobName))
 	}
 
-	if err := runSimpleCommand(ctx, e.factory, e.logger, "restic", "version"); err != nil {
-		return err
+	if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, "restic", "version"); err != nil {
+		return fmt.Errorf("restic version check failed: %w", err)
 	}
 
-	return runSimpleCommand(ctx, e.factory, e.logger, "restic", "backup", "--exclude-caches", "--one-file-system", e.cfg.Root)
+	if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, "restic", "backup", "--exclude-caches", "--one-file-system", engine.config.Root); err != nil {
+		return fmt.Errorf("restic backup failed: %w", err)
+	}
+
+	return nil
 }
 
 // ----------------------------------------------------------------------------
 // BTRFS Restic Engine
 // ----------------------------------------------------------------------------
+
 type BtrfsResticEngine struct {
-	jobName  string
-	machine  string
-	verbose  bool
-	cfg      *config.BtrfsResticConfig
-	logger   *slog.Logger
-	notifier *notify.CompositeNotifier
-	factory  CommandFactory
+	jobName        string
+	machineName    string
+	verbose        bool
+	config         *config.BtrfsResticConfig
+	logger         *slog.Logger
+	notifier       *notify.CompositeNotifier
+	commandFactory CommandFactory
 }
 
-func NewBtrfsResticEngine(jobName, machineName string, verbose bool, cfg *config.BtrfsResticConfig, logger *slog.Logger, notifier *notify.CompositeNotifier, factory CommandFactory) *BtrfsResticEngine {
-	return &BtrfsResticEngine{jobName: jobName, machine: machineName, verbose: verbose, cfg: cfg, logger: logger.With("job", jobName), notifier: notifier, factory: factory}
+func NewBtrfsResticEngine(
+	jobName string,
+	machineName string,
+	verbose bool,
+	btrfsResticConfig *config.BtrfsResticConfig,
+	logger *slog.Logger,
+	notifier *notify.CompositeNotifier,
+	commandFactory CommandFactory,
+) *BtrfsResticEngine {
+	return &BtrfsResticEngine{
+		jobName:        jobName,
+		machineName:    machineName,
+		verbose:        verbose,
+		config:         btrfsResticConfig,
+		logger:         logger.With("job", jobName),
+		notifier:       notifier,
+		commandFactory: commandFactory,
+	}
 }
 
-func (e *BtrfsResticEngine) Name() string { return e.jobName }
+func (engine *BtrfsResticEngine) Name() string { return engine.jobName }
 
-func (e *BtrfsResticEngine) Execute(ctx context.Context) error {
-	e.logger.Info("Executing BTRFS Restic Backup Engine")
-	if e.verbose {
-		e.notifier.Send(ctx, fmt.Sprintf("%s 开始备份 (%s)：btrfs 子卷快照 + restic", e.machine, e.jobName))
+func (engine *BtrfsResticEngine) Execute(ctx context.Context) error {
+	engine.logger.Info("Executing BTRFS Restic Backup Engine")
+	if engine.verbose {
+		engine.notifier.Send(ctx, fmt.Sprintf("%s 开始备份 (%s)：btrfs 子卷快照 + restic", engine.machineName, engine.jobName))
 	}
 
-	deleteCmd := fmt.Sprintf("btrfs subvolume delete %s/* || true", e.cfg.SnapshotsRoot)
+	deleteCommand := fmt.Sprintf("btrfs subvolume delete %s/* || true", engine.config.SnapshotsRoot)
 
-	// 1. Initial cleanup of lingering snapshots
-	_ = runSimpleCommand(ctx, e.factory, e.logger, "bash", "-c", deleteCmd)
+	_ = runSimpleCommand(ctx, engine.commandFactory, engine.logger, "bash", "-c", deleteCommand)
 
-	// ALWAYS attempt cleanup upon exit to prevent leaked btrfs subvolumes on disk
 	defer func() {
-		_ = runSimpleCommand(context.Background(), e.factory, e.logger, "bash", "-c", deleteCmd)
+		_ = runSimpleCommand(context.Background(), engine.commandFactory, engine.logger, "bash", "-c", deleteCommand)
 	}()
 
-	for dest, src := range e.cfg.Subvolumes {
-		destPath := fmt.Sprintf("%s/%s", e.cfg.SnapshotsRoot, dest)
-		if err := runSimpleCommand(ctx, e.factory, e.logger, "btrfs", "subvolume", "snapshot", "-r", src, destPath); err != nil {
-			e.logger.Error("Failed to create btrfs snapshot", "src", src, "dest", destPath, "error", err)
-			return err
+	sortedSubvolumeKeys := slices.Sorted(maps.Keys(engine.config.Subvolumes))
+	for _, destinationSubvolumeKey := range sortedSubvolumeKeys {
+		sourceSubvolumePath := engine.config.Subvolumes[destinationSubvolumeKey]
+		destinationSnapshotPath := fmt.Sprintf("%s/%s", engine.config.SnapshotsRoot, destinationSubvolumeKey)
+
+		if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, "btrfs", "subvolume", "snapshot", "-r", sourceSubvolumePath, destinationSnapshotPath); err != nil {
+			engine.logger.Error("Failed to create btrfs snapshot", "source", sourceSubvolumePath, "destination", destinationSnapshotPath, "error", err)
+			return fmt.Errorf("btrfs snapshot creation failed for %s: %w", destinationSnapshotPath, err)
 		}
 	}
 
-	if err := runSimpleCommand(ctx, e.factory, e.logger, "restic", "version"); err != nil {
-		return err
+	if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, "restic", "version"); err != nil {
+		return fmt.Errorf("restic version check failed: %w", err)
 	}
 
-	if err := runSimpleCommand(ctx, e.factory, e.logger, "restic", "backup", "--exclude-caches", e.cfg.SnapshotsRoot); err != nil {
-		e.logger.Error("Restic backup of btrfs snapshots failed", "error", err)
-		return err
+	if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, "restic", "backup", "--exclude-caches", engine.config.SnapshotsRoot); err != nil {
+		engine.logger.Error("Restic backup of btrfs snapshots failed", "error", err)
+		return fmt.Errorf("restic backup of btrfs snapshots failed: %w", err)
 	}
 
 	return nil

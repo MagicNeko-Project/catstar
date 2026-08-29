@@ -16,8 +16,8 @@ import (
 	"github.com/MagicNeko-Project/catstar-backup/internal/notify"
 )
 
-func createPipelineTestDeps() (*config.Config, *slog.Logger, *notify.CompositeNotifier) {
-	cfg := &config.Config{
+func createPipelineTestDependencies() (*config.Config, *slog.Logger, *notify.CompositeNotifier) {
+	testConfig := &config.Config{
 		App: config.AppConfig{
 			MachineName: "TestHost",
 		},
@@ -25,10 +25,10 @@ func createPipelineTestDeps() (*config.Config, *slog.Logger, *notify.CompositeNo
 			SendVerbose: false,
 		},
 	}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	dummyHTTP := &http.Client{}
-	notifier := notify.NewCompositeNotifier(cfg, logger, dummyHTTP)
-	return cfg, logger, notifier
+	compositeNotifier := notify.NewCompositeNotifier(testConfig, discardLogger, dummyHTTP)
+	return testConfig, discardLogger, compositeNotifier
 }
 
 func getTarSSHJobConfig() *config.TarSSHConfig {
@@ -42,143 +42,136 @@ func getTarSSHJobConfig() *config.TarSSHConfig {
 }
 
 func TestTarSSHPipeline_DataFlow(t *testing.T) {
-	cfg, logger, notifier := createPipelineTestDeps()
+	testConfig, logger, notifier := createPipelineTestDependencies()
 	mockFactory := NewMockCommandFactory()
 
-	// Set up custom pipeline mock handlers to verify streaming data flow
-	mockFactory.CustomHandlers["tar"] = func(p *MockProcess) error {
-		_, err := p.Stdout.Write([]byte("original-data"))
+	mockFactory.CustomHandlers["tar"] = func(process *MockProcess) error {
+		_, err := process.Stdout.Write([]byte("original-data"))
 		return err
 	}
 
-	mockFactory.CustomHandlers["openssl"] = func(p *MockProcess) error {
-		// Verify password from Env
-		hasPass := false
-		for _, env := range p.Env {
-			if env == "CATSTAR_SSL_PASS=supersecretpassword" {
-				hasPass = true
+	mockFactory.CustomHandlers["openssl"] = func(process *MockProcess) error {
+		hasPassword := false
+		for _, environmentVariable := range process.Environment {
+			if environmentVariable == "CATSTAR_SSL_PASS=supersecretpassword" {
+				hasPassword = true
 			}
 		}
-		if !hasPass {
+		if !hasPassword {
 			return fmt.Errorf("missing openssl password in env")
 		}
 
-		data, err := io.ReadAll(p.Stdin)
+		data, err := io.ReadAll(process.Stdin)
 		if err != nil {
 			return err
 		}
-		_, err = p.Stdout.Write([]byte(string(data) + "-encrypted"))
+		_, err = process.Stdout.Write([]byte(string(data) + "-encrypted"))
 		return err
 	}
 
-	mockFactory.CustomHandlers["dd"] = func(p *MockProcess) error {
-		data, err := io.ReadAll(p.Stdin)
+	mockFactory.CustomHandlers["dd"] = func(process *MockProcess) error {
+		data, err := io.ReadAll(process.Stdin)
 		if err != nil {
 			return err
 		}
-		_, err = p.Stdout.Write([]byte(string(data) + "-dd"))
+		_, err = process.Stdout.Write([]byte(string(data) + "-dd"))
 		return err
 	}
 
-	var sshInput string
-	var sshInputMu sync.Mutex
-	mockFactory.CustomHandlers["ssh"] = func(p *MockProcess) error {
-		data, err := io.ReadAll(p.Stdin)
+	var sshInputData string
+	var sshInputMutex sync.Mutex
+	mockFactory.CustomHandlers["ssh"] = func(process *MockProcess) error {
+		data, err := io.ReadAll(process.Stdin)
 		if err != nil {
 			return err
 		}
-		sshInputMu.Lock()
-		sshInput = string(data)
-		sshInputMu.Unlock()
+		sshInputMutex.Lock()
+		sshInputData = string(data)
+		sshInputMutex.Unlock()
 		return nil
 	}
 
-	jobCfg := getTarSSHJobConfig()
+	jobConfig := getTarSSHJobConfig()
 	mockClock := clock.NewMockClock(time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC))
 
-	engine := NewTarSSHEngine("tar_job", cfg.App.MachineName, cfg.Notifications.SendVerbose, jobCfg, logger, notifier, mockFactory, mockClock)
+	engine := NewTarSSHEngine("tar_job", testConfig.App.MachineName, testConfig.Notifications.SendVerbose, jobConfig, logger, notifier, mockFactory, mockClock)
 
 	err := engine.Execute(context.Background())
 	if err != nil {
 		t.Fatalf("pipeline execution failed: %v", err)
 	}
 
-	// Verify that exactly 4 processes were created and started
 	if len(mockFactory.Processes) != 4 {
 		t.Fatalf("expected 4 processes, got %d", len(mockFactory.Processes))
 	}
 
-	var opensslProc *MockProcess
-	var sshProc *MockProcess
+	var opensslProcess *MockProcess
+	var sshProcess *MockProcess
 
-	for _, p := range mockFactory.Processes {
-		if !p.started {
-			t.Errorf("expected process %s to be started", p.Name)
+	for _, process := range mockFactory.Processes {
+		if !process.started {
+			t.Errorf("expected process %s to be started", process.Name)
 		}
-		if !p.waited {
-			t.Errorf("expected process %s to be waited", p.Name)
+		if !process.waited {
+			t.Errorf("expected process %s to be waited", process.Name)
 		}
 
-		if p.Name == "openssl" {
-			opensslProc = p
+		if process.Name == "openssl" {
+			opensslProcess = process
 		}
-		if p.Name == "ssh" {
-			sshProc = p
+		if process.Name == "ssh" {
+			sshProcess = process
 		}
 	}
 
-	// Assertion 1: OpenSSL Security Injection
-	if opensslProc == nil {
+	if opensslProcess == nil {
 		t.Fatalf("openssl process was not created")
 	}
-	hasPass := false
-	for _, envVar := range opensslProc.Env {
-		if envVar == "CATSTAR_SSL_PASS=supersecretpassword" {
-			hasPass = true
+	hasPassword := false
+	for _, environmentVariable := range opensslProcess.Environment {
+		if environmentVariable == "CATSTAR_SSL_PASS=supersecretpassword" {
+			hasPassword = true
 			break
 		}
 	}
-	if !hasPass {
-		t.Fatalf("openssl process did not receive securely injected password in its environment map")
+	if !hasPassword {
+		t.Fatalf("openssl process did not receive injected password in environment")
 	}
 
-	// Assertion 2: Streaming Pipeline Data Verification
-	sshInputMu.Lock()
-	finalData := sshInput
-	sshInputMu.Unlock()
+	sshInputMutex.Lock()
+	finalData := sshInputData
+	sshInputMutex.Unlock()
 
 	expectedData := "original-data-encrypted-dd"
 	if finalData != expectedData {
 		t.Errorf("expected final streaming data %q, got %q", expectedData, finalData)
 	}
 
-	// Assertion 3: Time/Clock-based File Name formatting Verification
-	if sshProc == nil {
+	if sshProcess == nil {
 		t.Fatalf("ssh process was not created")
 	}
 	expectedFileName := "test-2026-05-21_120000.tar.zst"
-	expectedSSHCmd := fmt.Sprintf("cat > '%s'", expectedFileName)
-	if !strings.Contains(sshProc.FullCmd, expectedSSHCmd) {
-		t.Errorf("expected ssh target filename to contain %q, got %q", expectedSSHCmd, sshProc.FullCmd)
+	expectedSSHCommand := fmt.Sprintf("cat > '%s'", expectedFileName)
+	if !strings.Contains(sshProcess.FullCommand, expectedSSHCommand) {
+		t.Errorf("expected ssh target filename to contain %q, got %q", expectedSSHCommand, sshProcess.FullCommand)
 	}
 }
 
 func TestTarSSHPipeline_ContextCancellation(t *testing.T) {
-	cfg, logger, notifier := createPipelineTestDeps()
+	testConfig, logger, notifier := createPipelineTestDependencies()
 	mockFactory := NewMockCommandFactory()
 	mockFactory.FailOnCreate = "ssh"
 
-	jobCfg := getTarSSHJobConfig()
+	jobConfig := getTarSSHJobConfig()
 	mockClock := clock.NewMockClock(time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC))
 
-	engine := NewTarSSHEngine("tar_job", cfg.App.MachineName, cfg.Notifications.SendVerbose, jobCfg, logger, notifier, mockFactory, mockClock)
+	engine := NewTarSSHEngine("tar_job", testConfig.App.MachineName, testConfig.Notifications.SendVerbose, jobConfig, logger, notifier, mockFactory, mockClock)
 
 	err := engine.Execute(context.Background())
 	if err == nil {
 		t.Fatalf("expected pipeline to fail when ssh process fails to start")
 	}
 
-	// Verify the error bubbles up correctly, identifying the failure point
 	if !strings.Contains(err.Error(), "ssh") {
 		t.Errorf("expected error to originate from ssh process, got: %v", err)
 	}

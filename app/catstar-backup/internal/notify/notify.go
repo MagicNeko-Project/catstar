@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -13,13 +14,14 @@ import (
 	"github.com/MagicNeko-Project/catstar-backup/internal/config"
 )
 
-// HTTPDoer represents a network transport capability. Abstracting this
-// enables payload construction testing without an actual TCP socket.
+const defaultNotificationTimeout = 10 * time.Second
+
+// HTTPDoer abstracts HTTP client transport for testing.
 type HTTPDoer interface {
-	Do(req *http.Request) (*http.Response, error)
+	Do(request *http.Request) (*http.Response, error)
 }
 
-// Notifier defines the interface for sending backup notifications.
+// Notifier defines the interface for sending notifications.
 type Notifier interface {
 	Send(ctx context.Context, message string) error
 	SendSummary(ctx context.Context, message string) error
@@ -32,31 +34,31 @@ type CompositeNotifier struct {
 	logger    *slog.Logger
 }
 
-// NewCompositeNotifier builds a notifier based on the configuration.
-func NewCompositeNotifier(cfg *config.Config, logger *slog.Logger, httpClient HTTPDoer) *CompositeNotifier {
+// NewCompositeNotifier builds a composite notifier based on configuration.
+func NewCompositeNotifier(configuration *config.Config, logger *slog.Logger, httpClient HTTPDoer) *CompositeNotifier {
 	var notifiers []Notifier
 
-	if cfg.Notifications.Telegram != nil {
+	if configuration.Notifications.Telegram != nil {
 		notifiers = append(notifiers, &TelegramNotifier{
-			Token:       cfg.Notifications.Telegram.BotToken,
-			ChatID:      cfg.Notifications.Telegram.ChatID,
-			SkipSummary: cfg.Notifications.Telegram.SkipSummary,
+			Token:       configuration.Notifications.Telegram.BotToken,
+			ChatID:      configuration.Notifications.Telegram.ChatID,
+			SkipSummary: configuration.Notifications.Telegram.SkipSummary,
 			client:      httpClient,
 		})
 	}
 
-	if cfg.Notifications.Discord != nil {
+	if configuration.Notifications.Discord != nil {
 		notifiers = append(notifiers, &DiscordNotifier{
-			WebhookURL:  cfg.Notifications.Discord.WebhookURL,
-			Username:    cfg.Notifications.Discord.Username,
-			SkipSummary: cfg.Notifications.Discord.SkipSummary,
+			WebhookURL:  configuration.Notifications.Discord.WebhookURL,
+			Username:    configuration.Notifications.Discord.Username,
+			SkipSummary: configuration.Notifications.Discord.SkipSummary,
 			client:      httpClient,
 		})
 	}
 
-	if cfg.Notifications.Debug != nil && cfg.Notifications.Debug.Enabled {
+	if configuration.Notifications.Debug != nil && configuration.Notifications.Debug.Enabled {
 		notifiers = append(notifiers, &DebugNotifier{
-			SkipSummary: cfg.Notifications.Debug.SkipSummary,
+			SkipSummary: configuration.Notifications.Debug.SkipSummary,
 			logger:      logger,
 		})
 	}
@@ -67,107 +69,109 @@ func NewCompositeNotifier(cfg *config.Config, logger *slog.Logger, httpClient HT
 	}
 }
 
-// Send dispatches the message concurrently to all registered notifiers.
-func (c *CompositeNotifier) Send(ctx context.Context, message string) {
-	if len(c.notifiers) == 0 {
+// Send dispatches a message concurrently to all registered notifiers.
+func (composite *CompositeNotifier) Send(ctx context.Context, message string) {
+	if len(composite.notifiers) == 0 {
 		return
 	}
 
-	var wg sync.WaitGroup
-	for _, n := range c.notifiers {
-		wg.Add(1)
+	var waitGroup sync.WaitGroup
+	for _, registeredNotifier := range composite.notifiers {
+		waitGroup.Add(1)
 		go func(notifier Notifier) {
-			defer wg.Done()
+			defer waitGroup.Done()
 
-			// Give each network call a reasonable timeout
-			timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			defer cancel()
+			timeoutContext, cancelTimeout := context.WithTimeout(ctx, defaultNotificationTimeout)
+			defer cancelTimeout()
 
-			if err := notifier.Send(timeoutCtx, message); err != nil {
-				c.logger.Error("Failed to dispatch notification",
+			if err := notifier.Send(timeoutContext, message); err != nil {
+				composite.logger.Error("Failed to dispatch notification",
 					"notifier", notifier.Name(),
 					"error", err,
 				)
 			}
-		}(n)
+		}(registeredNotifier)
 	}
-	wg.Wait()
+	waitGroup.Wait()
 }
 
-// SendSummary dispatches the summary message, respecting individual skip flags.
-func (c *CompositeNotifier) SendSummary(ctx context.Context, message string) {
-	if len(c.notifiers) == 0 {
+// SendSummary dispatches a summary message, respecting individual skip flags.
+func (composite *CompositeNotifier) SendSummary(ctx context.Context, message string) {
+	if len(composite.notifiers) == 0 {
 		return
 	}
 
-	var wg sync.WaitGroup
-	for _, n := range c.notifiers {
-		wg.Add(1)
+	var waitGroup sync.WaitGroup
+	for _, registeredNotifier := range composite.notifiers {
+		waitGroup.Add(1)
 		go func(notifier Notifier) {
-			defer wg.Done()
+			defer waitGroup.Done()
 
-			timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			defer cancel()
+			timeoutContext, cancelTimeout := context.WithTimeout(ctx, defaultNotificationTimeout)
+			defer cancelTimeout()
 
-			if err := notifier.SendSummary(timeoutCtx, message); err != nil {
-				c.logger.Error("Failed to dispatch summary notification",
+			if err := notifier.SendSummary(timeoutContext, message); err != nil {
+				composite.logger.Error("Failed to dispatch summary notification",
 					"notifier", notifier.Name(),
 					"error", err,
 				)
 			}
-		}(n)
+		}(registeredNotifier)
 	}
-	wg.Wait()
+	waitGroup.Wait()
 }
 
-// --- Implementations ---
+// --- Telegram Notifier ---
 
 type TelegramNotifier struct {
 	Token       string
 	ChatID      string
 	SkipSummary bool
-	BaseURL     string // Allows overriding for tests
+	BaseURL     string
 	client      HTTPDoer
 }
 
-func (t *TelegramNotifier) Name() string { return "telegram" }
+func (telegram *TelegramNotifier) Name() string { return "telegram" }
 
-func (t *TelegramNotifier) Send(ctx context.Context, message string) error {
-	url := t.BaseURL
-	if url == "" {
-		url = fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", t.Token)
+func (telegram *TelegramNotifier) Send(ctx context.Context, message string) error {
+	endpointURL := telegram.BaseURL
+	if endpointURL == "" {
+		endpointURL = fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", telegram.Token)
 	}
 
-	var b bytes.Buffer
-	w := multipart.NewWriter(&b)
-	_ = w.WriteField("chat_id", t.ChatID)
-	_ = w.WriteField("text", message)
-	w.Close()
+	var payloadBuffer bytes.Buffer
+	multipartWriter := multipart.NewWriter(&payloadBuffer)
+	_ = multipartWriter.WriteField("chat_id", telegram.ChatID)
+	_ = multipartWriter.WriteField("text", message)
+	_ = multipartWriter.Close()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &b)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpointURL, &payloadBuffer)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create telegram request: %w", err)
 	}
-	req.Header.Set("Content-Type", w.FormDataContentType())
+	request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
 
-	resp, err := t.client.Do(req)
+	response, err := telegram.client.Do(request)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to dispatch telegram notification: %w", err)
 	}
-	defer resp.Body.Close()
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, response.Body)
 
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("telegram API returned status: %d", resp.StatusCode)
+	if response.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("telegram API returned status code: %d", response.StatusCode)
 	}
 	return nil
 }
 
-func (t *TelegramNotifier) SendSummary(ctx context.Context, message string) error {
-	if t.SkipSummary {
+func (telegram *TelegramNotifier) SendSummary(ctx context.Context, message string) error {
+	if telegram.SkipSummary {
 		return nil
 	}
-	return t.Send(ctx, message)
+	return telegram.Send(ctx, message)
 }
+
+// --- Discord Notifier ---
 
 type DiscordNotifier struct {
 	WebhookURL  string
@@ -176,55 +180,58 @@ type DiscordNotifier struct {
 	client      HTTPDoer
 }
 
-func (d *DiscordNotifier) Name() string { return "discord" }
+func (discord *DiscordNotifier) Name() string { return "discord" }
 
-func (d *DiscordNotifier) Send(ctx context.Context, message string) error {
-	var b bytes.Buffer
-	w := multipart.NewWriter(&b)
-	_ = w.WriteField("username", d.Username)
-	_ = w.WriteField("content", message)
-	w.Close()
+func (discord *DiscordNotifier) Send(ctx context.Context, message string) error {
+	var payloadBuffer bytes.Buffer
+	multipartWriter := multipart.NewWriter(&payloadBuffer)
+	_ = multipartWriter.WriteField("username", discord.Username)
+	_ = multipartWriter.WriteField("content", message)
+	_ = multipartWriter.Close()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.WebhookURL, &b)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, discord.WebhookURL, &payloadBuffer)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create discord request: %w", err)
 	}
-	req.Header.Set("Content-Type", w.FormDataContentType())
+	request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
 
-	resp, err := d.client.Do(req)
+	response, err := discord.client.Do(request)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to dispatch discord notification: %w", err)
 	}
-	defer resp.Body.Close()
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, response.Body)
 
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("discord API returned status: %d", resp.StatusCode)
+	if response.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("discord API returned status code: %d", response.StatusCode)
 	}
 	return nil
 }
 
-func (d *DiscordNotifier) SendSummary(ctx context.Context, message string) error {
-	if d.SkipSummary {
+func (discord *DiscordNotifier) SendSummary(ctx context.Context, message string) error {
+	if discord.SkipSummary {
 		return nil
 	}
-	return d.Send(ctx, message)
+	return discord.Send(ctx, message)
 }
+
+// --- Debug Notifier ---
 
 type DebugNotifier struct {
 	SkipSummary bool
 	logger      *slog.Logger
 }
 
-func (d *DebugNotifier) Name() string { return "debug" }
+func (debug *DebugNotifier) Name() string { return "debug" }
 
-func (d *DebugNotifier) Send(ctx context.Context, message string) error {
-	d.logger.Debug("Debug Notification", "message", message)
+func (debug *DebugNotifier) Send(ctx context.Context, message string) error {
+	debug.logger.Debug("Debug Notification", "message", message)
 	return nil
 }
 
-func (d *DebugNotifier) SendSummary(ctx context.Context, message string) error {
-	if d.SkipSummary {
+func (debug *DebugNotifier) SendSummary(ctx context.Context, message string) error {
+	if debug.SkipSummary {
 		return nil
 	}
-	return d.Send(ctx, message)
+	return debug.Send(ctx, message)
 }

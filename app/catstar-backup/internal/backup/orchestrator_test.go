@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"net/http"
 	"testing"
+	"time"
 
+	"github.com/MagicNeko-Project/catstar-backup/internal/clock"
 	"github.com/MagicNeko-Project/catstar-backup/internal/config"
 	"github.com/MagicNeko-Project/catstar-backup/internal/notify"
 )
@@ -18,56 +20,57 @@ type MockEngine struct {
 	executed   bool
 }
 
-func (m *MockEngine) Name() string { return m.name }
-func (m *MockEngine) Execute(ctx context.Context) error {
-	m.executed = true
-	if m.shouldFail {
-		return fmt.Errorf("mock engine %s failure", m.name)
+func (mock *MockEngine) Name() string { return mock.name }
+
+func (mock *MockEngine) Execute(ctx context.Context) error {
+	mock.executed = true
+	if mock.shouldFail {
+		return fmt.Errorf("mock engine %s failure", mock.name)
 	}
 	return nil
 }
 
 func TestOrchestrator_Run(t *testing.T) {
-	cfg := &config.Config{
+	testConfig := &config.Config{
 		App: config.AppConfig{
 			MachineName: "TestHost",
 		},
 		Notifications: config.NotificationsConfig{
-			SendVerbose: false,
+			SendVerbose: true,
 		},
 	}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	dummyHTTP := &http.Client{}
-	notifier := notify.NewCompositeNotifier(cfg, logger, dummyHTTP)
+	compositeNotifier := notify.NewCompositeNotifier(testConfig, discardLogger, dummyHTTP)
+	mockClock := clock.NewMockClock(time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC))
 
-	t.Run("All Engines Succeed", func(t *testing.T) {
-		e1 := &MockEngine{name: "Engine1"}
-		e2 := &MockEngine{name: "Engine2"}
+	t.Run("All Engines Succeed", func(subtest *testing.T) {
+		engineA := &MockEngine{name: "EngineA"}
+		engineB := &MockEngine{name: "EngineB"}
 
-		orch := NewOrchestrator(cfg, logger, notifier, []Engine{e1, e2})
+		orchestrator := NewOrchestrator(testConfig, discardLogger, compositeNotifier, []Engine{engineA, engineB}, mockClock)
 
-		if err := orch.Run(context.Background()); err != nil {
-			t.Fatalf("expected success, got %v", err)
+		if err := orchestrator.Run(context.Background()); err != nil {
+			subtest.Fatalf("expected success, got %v", err)
 		}
-		if !e1.executed || !e2.executed {
-			t.Fatalf("not all engines executed")
+		if !engineA.executed || !engineB.executed {
+			subtest.Fatalf("not all engines executed")
 		}
 	})
 
-	t.Run("Engine Fails", func(t *testing.T) {
-		e1 := &MockEngine{name: "Engine1", shouldFail: true}
-		e2 := &MockEngine{name: "Engine2"}
+	t.Run("Engine Fails", func(subtest *testing.T) {
+		engineA := &MockEngine{name: "EngineA", shouldFail: true}
+		engineB := &MockEngine{name: "EngineB"}
 
-		orch := NewOrchestrator(cfg, logger, notifier, []Engine{e1, e2})
+		orchestrator := NewOrchestrator(testConfig, discardLogger, compositeNotifier, []Engine{engineA, engineB}, mockClock)
 
-		err := orch.Run(context.Background())
+		err := orchestrator.Run(context.Background())
 		if err == nil {
-			t.Fatalf("expected error due to engine failure, got nil")
+			subtest.Fatalf("expected error due to engine failure, got nil")
 		}
 
-		// Currently, the orchestrator continues even if one fails. Let's verify both executed.
-		if !e1.executed || !e2.executed {
-			t.Fatalf("expected all engines to execute even if one fails")
+		if !engineA.executed || !engineB.executed {
+			subtest.Fatalf("expected all engines to execute even if one fails")
 		}
 	})
 }

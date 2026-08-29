@@ -14,34 +14,33 @@ import (
 	"github.com/MagicNeko-Project/catstar-backup/internal/runner"
 )
 
+const defaultExecutionTimeout = 12 * time.Hour
+
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	configPath := flag.String("config", "catstar-backup.yaml", "Path to the YAML configuration file")
 	flag.Parse()
 
-	// Load Configuration
-	cfg, err := config.Load(*configPath)
+	loadedConfig, err := config.Load(*configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
-	// Initialize the Application Kernel
-	app, err := runner.NewApp(cfg, os.Stdout, clock.NewRealClock())
+	appInstance, err := runner.NewApp(loadedConfig, os.Stdout, clock.NewRealClock())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize application: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
-	// Global context bound to OS signals for graceful shutdown
-	ctx, cancelSignal := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancelSignal()
+	signalContext, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
 
-	// Wrap the signal context with a safety timeout
-	ctx, cancelTimeout := context.WithTimeout(ctx, 12*time.Hour)
+	timeoutContext, cancelTimeout := context.WithTimeout(signalContext, defaultExecutionTimeout)
 	defer cancelTimeout()
 
-	// Execute the application kernel
-	exitCode := app.Run(ctx)
-
-	os.Exit(exitCode)
+	return appInstance.Run(timeoutContext)
 }

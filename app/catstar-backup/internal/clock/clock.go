@@ -20,28 +20,28 @@ func (RealClock) Now() time.Time {
 }
 
 type MockClock struct {
-	mu        sync.RWMutex
+	mutex     sync.RWMutex
 	fixedTime time.Time
 }
 
-func NewMockClock(t time.Time) *MockClock {
-	return &MockClock{fixedTime: t}
+func NewMockClock(initialTime time.Time) *MockClock {
+	return &MockClock{fixedTime: initialTime}
 }
 
-func (m *MockClock) Now() time.Time {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.fixedTime
+func (clock *MockClock) Now() time.Time {
+	clock.mutex.RLock()
+	defer clock.mutex.RUnlock()
+	return clock.fixedTime
 }
 
-func (m *MockClock) Set(t time.Time) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.fixedTime = t
+func (clock *MockClock) Set(newTime time.Time) {
+	clock.mutex.Lock()
+	defer clock.mutex.Unlock()
+	clock.fixedTime = newTime
 }
 
-func (m *MockClock) Advance(d time.Duration) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.fixedTime = m.fixedTime.Add(d)
+func (clock *MockClock) Advance(duration time.Duration) {
+	clock.mutex.Lock()
+	defer clock.mutex.Unlock()
+	clock.fixedTime = clock.fixedTime.Add(duration)
 }

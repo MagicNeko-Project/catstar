@@ -3,6 +3,7 @@ name: Unit Tests
 on:
   push:
     paths:
+      - "app/**"
       - "tests/**"
       - "src/**"
       - "scripts/**"
@@ -10,6 +11,7 @@ on:
       - ".github/workflows/tests.yml"
   pull_request:
     paths:
+      - "app/**"
       - "tests/**"
       - "src/**"
       - "scripts/**"
@@ -64,3 +66,23 @@ jobs:
 
       - name: Run Node Unit Tests
         run: node --test tests/node/*.test.js
+
+  test-go:
+    name: Go Unit Tests (${{ matrix.go-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ["1.27"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache-dependency-path: app/catstar-backup/go.sum
+
+      - name: Run Go Unit Tests
+        working-directory: app/catstar-backup
+        run: go test -v -race -cover ./...

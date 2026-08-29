@@ -9,195 +9,194 @@ import (
 )
 
 type MockCommandFactory struct {
-	mu             sync.Mutex
+	mutex          sync.Mutex
 	Processes      []*MockProcess
 	FailOnCreate   string
-	CustomHandlers map[string]func(p *MockProcess) error
-	OnCreate       func(p *MockProcess)
+	CustomHandlers map[string]func(process *MockProcess) error
+	OnCreate       func(process *MockProcess)
 }
 
 func NewMockCommandFactory() *MockCommandFactory {
 	return &MockCommandFactory{
-		CustomHandlers: make(map[string]func(p *MockProcess) error),
+		CustomHandlers: make(map[string]func(process *MockProcess) error),
 	}
 }
 
-func (m *MockCommandFactory) Create(ctx context.Context, name string, args ...string) Process {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (factory *MockCommandFactory) Create(ctx context.Context, commandName string, arguments ...string) Process {
+	factory.mutex.Lock()
+	defer factory.mutex.Unlock()
 
-	fullCmd := name
-	if len(args) > 0 {
-		fullCmd = name + " " + strings.Join(args, " ")
+	fullCommand := commandName
+	if len(arguments) > 0 {
+		fullCommand = commandName + " " + strings.Join(arguments, " ")
 	}
 
-	p := &MockProcess{
-		Name:    name,
-		Args:    args,
-		FullCmd: fullCmd,
-		Env:     make([]string, 0),
+	process := &MockProcess{
+		Name:        commandName,
+		Args:        arguments,
+		FullCommand: fullCommand,
+		Environment: make([]string, 0),
 	}
 
-	if m.FailOnCreate != "" && name == m.FailOnCreate {
-		p.FailOnStart = true
+	if factory.FailOnCreate != "" && commandName == factory.FailOnCreate {
+		process.FailOnStart = true
 	}
 
-	if m.CustomHandlers != nil {
-		if handler, exists := m.CustomHandlers[name]; exists {
-			p.RunFunc = handler
+	if factory.CustomHandlers != nil {
+		if customHandler, exists := factory.CustomHandlers[commandName]; exists {
+			process.RunFunc = customHandler
 		}
 	}
 
-	if p.RunFunc == nil {
-		p.RunFunc = func(proc *MockProcess) error {
-			if proc.Stdin != nil {
-				_, _ = io.Copy(io.Discard, proc.Stdin)
+	if process.RunFunc == nil {
+		process.RunFunc = func(mockProcess *MockProcess) error {
+			if mockProcess.Stdin != nil {
+				_, _ = io.Copy(io.Discard, mockProcess.Stdin)
 			}
-			if proc.Name == "tar" {
-				if proc.Stdout != nil {
-					_, _ = proc.Stdout.Write([]byte("mock-tar-data"))
+			if mockProcess.Name == "tar" {
+				if mockProcess.Stdout != nil {
+					_, _ = mockProcess.Stdout.Write([]byte("mock-tar-data"))
 				}
 			}
-			if proc.Name == "openssl" {
-				if proc.Stdout != nil {
-					_, _ = proc.Stdout.Write([]byte("mock-tar-data-encrypted"))
+			if mockProcess.Name == "openssl" {
+				if mockProcess.Stdout != nil {
+					_, _ = mockProcess.Stdout.Write([]byte("mock-tar-data-encrypted"))
 				}
 			}
 			return nil
 		}
 	}
 
-	if m.OnCreate != nil {
-		m.OnCreate(p)
+	if factory.OnCreate != nil {
+		factory.OnCreate(process)
 	}
 
-	m.Processes = append(m.Processes, p)
-	return p
+	factory.Processes = append(factory.Processes, process)
+	return process
 }
 
 type MockProcess struct {
-	mu      sync.Mutex
-	Name    string
-	Args    []string
-	FullCmd string
-	Env     []string
+	mutex       sync.Mutex
+	Name        string
+	Args        []string
+	FullCommand string
+	Environment []string
 
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
 
-	RunFunc func(p *MockProcess) error
+	RunFunc func(process *MockProcess) error
 
 	FailOnStart bool
 	FailOnWait  bool
 
-	errChan chan error
-	started bool
-	waited  bool
+	errorChannel chan error
+	started      bool
+	waited       bool
 }
 
-func (p *MockProcess) Start() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+func (process *MockProcess) Start() error {
+	process.mutex.Lock()
+	defer process.mutex.Unlock()
 
-	if p.started {
-		return fmt.Errorf("mock process %s already started", p.Name)
+	if process.started {
+		return fmt.Errorf("mock process %s already started", process.Name)
 	}
-	p.started = true
+	process.started = true
 
-	if p.FailOnStart {
-		return fmt.Errorf("mock Start() failure for %s", p.Name)
+	if process.FailOnStart {
+		return fmt.Errorf("mock Start() failure for %s", process.Name)
 	}
 
-	p.errChan = make(chan error, 1)
+	process.errorChannel = make(chan error, 1)
 
 	go func() {
 		var err error
-		if p.RunFunc != nil {
-			err = p.RunFunc(p)
+		if process.RunFunc != nil {
+			err = process.RunFunc(process)
 		}
 
-		// Close PipeWriter to propagate EOF
-		if pw, ok := p.Stdout.(*io.PipeWriter); ok {
-			_ = pw.CloseWithError(err)
+		if pipeWriter, ok := process.Stdout.(*io.PipeWriter); ok {
+			_ = pipeWriter.CloseWithError(err)
 		}
 
-		p.errChan <- err
+		process.errorChannel <- err
 	}()
 
 	return nil
 }
 
-func (p *MockProcess) Wait() error {
-	p.mu.Lock()
-	if !p.started {
-		p.mu.Unlock()
-		return fmt.Errorf("mock process %s not started", p.Name)
+func (process *MockProcess) Wait() error {
+	process.mutex.Lock()
+	if !process.started {
+		process.mutex.Unlock()
+		return fmt.Errorf("mock process %s not started", process.Name)
 	}
-	if p.waited {
-		p.mu.Unlock()
-		return fmt.Errorf("mock process %s already waited", p.Name)
+	if process.waited {
+		process.mutex.Unlock()
+		return fmt.Errorf("mock process %s already waited", process.Name)
 	}
-	p.waited = true
-	p.mu.Unlock()
+	process.waited = true
+	process.mutex.Unlock()
 
-	err := <-p.errChan
-	if err == nil && p.FailOnWait {
-		return fmt.Errorf("mock Wait() failure for %s", p.Name)
+	err := <-process.errorChannel
+	if err == nil && process.FailOnWait {
+		return fmt.Errorf("mock Wait() failure for %s", process.Name)
 	}
 	return err
 }
 
-func (p *MockProcess) StdoutPipe() (io.ReadCloser, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+func (process *MockProcess) StdoutPipe() (io.ReadCloser, error) {
+	process.mutex.Lock()
+	defer process.mutex.Unlock()
 
-	if p.started {
-		return nil, fmt.Errorf("StdoutPipe called after process %s started", p.Name)
+	if process.started {
+		return nil, fmt.Errorf("StdoutPipe called after process %s started", process.Name)
 	}
-	if p.Stdout != nil {
-		return nil, fmt.Errorf("stdout already set for process %s", p.Name)
+	if process.Stdout != nil {
+		return nil, fmt.Errorf("stdout already set for process %s", process.Name)
 	}
-	r, w := io.Pipe()
-	p.Stdout = w
-	return r, nil
+	pipeReader, pipeWriter := io.Pipe()
+	process.Stdout = pipeWriter
+	return pipeReader, nil
 }
 
-func (p *MockProcess) StdinPipe() (io.WriteCloser, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+func (process *MockProcess) StdinPipe() (io.WriteCloser, error) {
+	process.mutex.Lock()
+	defer process.mutex.Unlock()
 
-	if p.started {
-		return nil, fmt.Errorf("StdinPipe called after process %s started", p.Name)
+	if process.started {
+		return nil, fmt.Errorf("StdinPipe called after process %s started", process.Name)
 	}
-	if p.Stdin != nil {
-		return nil, fmt.Errorf("stdin already set for process %s", p.Name)
+	if process.Stdin != nil {
+		return nil, fmt.Errorf("stdin already set for process %s", process.Name)
 	}
-	r, w := io.Pipe()
-	p.Stdin = r
-	return w, nil
+	pipeReader, pipeWriter := io.Pipe()
+	process.Stdin = pipeReader
+	return pipeWriter, nil
 }
 
-func (p *MockProcess) SetStdin(r io.Reader) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.Stdin = r
+func (process *MockProcess) SetStdin(reader io.Reader) {
+	process.mutex.Lock()
+	defer process.mutex.Unlock()
+	process.Stdin = reader
 }
 
-func (p *MockProcess) SetStdout(w io.Writer) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.Stdout = w
+func (process *MockProcess) SetStdout(writer io.Writer) {
+	process.mutex.Lock()
+	defer process.mutex.Unlock()
+	process.Stdout = writer
 }
 
-func (p *MockProcess) SetStderr(w io.Writer) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.Stderr = w
+func (process *MockProcess) SetStderr(writer io.Writer) {
+	process.mutex.Lock()
+	defer process.mutex.Unlock()
+	process.Stderr = writer
 }
 
-func (p *MockProcess) SetEnv(env []string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.Env = env
+func (process *MockProcess) SetEnv(environmentVariables []string) {
+	process.mutex.Lock()
+	defer process.mutex.Unlock()
+	process.Environment = environmentVariables
 }

@@ -1,22 +1,21 @@
-# Exclude sensitive keys
 keys/
 
-# Exclude Git metadata
 .git/
 .github/
 .gitignore
 
-# Exclude local development and OS-specific files
 .DS_Store
 *.log
 tmp/
 
-# Exclude Python build/cache artifacts
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+node_modules/
 
-# Exclude the dockerignore itself
+app/catstar-backup/bin/
+worktree_test_head/
+
 .dockerignore
-
-# Exclude Zsh/Shell helper source (if they are only for local machine use)
-# src/lib/zsh/

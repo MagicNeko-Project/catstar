@@ -9,7 +9,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config represents the root configuration structure for Catstar Backup.
+type StrategyType string
+
+const (
+	StrategyTypeRestic      StrategyType = "restic"
+	StrategyTypeBtrfsRestic StrategyType = "btrfs_restic"
+	StrategyTypeTarSSH      StrategyType = "tar_ssh"
+	StrategyTypeTest        StrategyType = "test"
+)
+
+// Config represents the root configuration structure for backup operations.
 type Config struct {
 	App           AppConfig           `yaml:"app" validate:"required"`
 	Notifications NotificationsConfig `yaml:"notifications"`
@@ -24,7 +33,7 @@ type AppConfig struct {
 	LogLevel    string `yaml:"log_level" validate:"omitempty,oneof=debug info warn error"`
 }
 
-// NotificationsConfig defines all possible notification sinks and settings.
+// NotificationsConfig defines notification sinks and settings.
 type NotificationsConfig struct {
 	SendSummary  bool            `yaml:"send_summary"`
 	SendVerbose  bool            `yaml:"send_verbose"`
@@ -51,7 +60,7 @@ type DebugConfig struct {
 	SkipSummary bool `yaml:"skip_summary"`
 }
 
-// TelemetryConfig defines HTTP endpoints for logging and status tracking.
+// TelemetryConfig defines HTTP endpoints for status tracking and logging.
 type TelemetryConfig struct {
 	PingStartURL     string `yaml:"ping_start_url" validate:"omitempty,url"`
 	PingEndURL       string `yaml:"ping_end_url" validate:"omitempty,url"`
@@ -92,44 +101,38 @@ type TarSSHConfig struct {
 	FileName        string `yaml:"file_name" validate:"required"`
 }
 
-// Load reads the YAML configuration file from the specified path, performs
-// environment variable expansion (e.g., ${RESTIC_PASSWORD}), unmarshals it
-// into the Config struct, and rigorously validates the structure.
-func Load(path string) (*Config, error) {
-	fileBytes, err := os.ReadFile(path)
+// Load reads and parses YAML configuration from the specified path,
+// expands environment variables, and validates structure constraints.
+func Load(configPath string) (*Config, error) {
+	fileBytes, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// 2026 Standard: Expand environment variables prior to parsing.
-	// This prevents hardcoded secrets in the YAML file.
-	expandedYAML := os.ExpandEnv(string(fileBytes))
+	expandedContent := os.ExpandEnv(string(fileBytes))
 
-	var cfg Config
-	if err := yaml.Unmarshal([]byte(expandedYAML), &cfg); err != nil {
+	var parsedConfig Config
+	if err := yaml.Unmarshal([]byte(expandedContent), &parsedConfig); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal YAML: %w", err)
 	}
 
-	// Set sane defaults where optional
-	if cfg.App.TimeZone == "" {
-		cfg.App.TimeZone = "UTC"
+	if parsedConfig.App.TimeZone == "" {
+		parsedConfig.App.TimeZone = "UTC"
 	}
-	if cfg.App.LogLevel == "" {
-		cfg.App.LogLevel = "info"
+	if parsedConfig.App.LogLevel == "" {
+		parsedConfig.App.LogLevel = "info"
 	}
 
-	// Validate the complete structure
-	validate := validator.New(validator.WithRequiredStructEnabled())
-	if err := validate.Struct(&cfg); err != nil {
+	structValidator := validator.New(validator.WithRequiredStructEnabled())
+	if err := structValidator.Struct(&parsedConfig); err != nil {
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 
-	// Globally apply timezone
-	if loc, err := time.LoadLocation(cfg.App.TimeZone); err == nil {
-		time.Local = loc
-	} else {
-		return nil, fmt.Errorf("invalid timezone %q: %w", cfg.App.TimeZone, err)
+	location, err := time.LoadLocation(parsedConfig.App.TimeZone)
+	if err != nil {
+		return nil, fmt.Errorf("invalid timezone %q: %w", parsedConfig.App.TimeZone, err)
 	}
+	time.Local = location
 
-	return &cfg, nil
+	return &parsedConfig, nil
 }

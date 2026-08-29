@@ -15,102 +15,112 @@ import (
 	"github.com/MagicNeko-Project/catstar-backup/internal/notify"
 )
 
+const defaultStreamingBlockSize = "bs=64K"
+
 // TarSSHEngine runs a streaming backup pipeline: tar | openssl | dd | ssh.
-// It passes the OpenSSL decryption password via the environment for security.
 type TarSSHEngine struct {
-	jobName  string
-	machine  string
-	verbose  bool
-	cfg      *config.TarSSHConfig
-	logger   *slog.Logger
-	notifier *notify.CompositeNotifier
-	factory  CommandFactory
-	clock    clock.Provider
+	jobName        string
+	machineName    string
+	verbose        bool
+	config         *config.TarSSHConfig
+	logger         *slog.Logger
+	notifier       *notify.CompositeNotifier
+	commandFactory CommandFactory
+	clockProvider  clock.Provider
 }
 
-func NewTarSSHEngine(jobName, machineName string, verbose bool, cfg *config.TarSSHConfig, logger *slog.Logger, notifier *notify.CompositeNotifier, factory CommandFactory, clk clock.Provider) *TarSSHEngine {
+func NewTarSSHEngine(
+	jobName string,
+	machineName string,
+	verbose bool,
+	tarSSHConfig *config.TarSSHConfig,
+	logger *slog.Logger,
+	notifier *notify.CompositeNotifier,
+	commandFactory CommandFactory,
+	clockProvider clock.Provider,
+) *TarSSHEngine {
 	return &TarSSHEngine{
-		jobName:  jobName,
-		machine:  machineName,
-		verbose:  verbose,
-		cfg:      cfg,
-		logger:   logger.With("job", jobName),
-		notifier: notifier,
-		factory:  factory,
-		clock:    clk,
+		jobName:        jobName,
+		machineName:    machineName,
+		verbose:        verbose,
+		config:         tarSSHConfig,
+		logger:         logger.With("job", jobName),
+		notifier:       notifier,
+		commandFactory: commandFactory,
+		clockProvider:  clockProvider,
 	}
 }
 
-func (e *TarSSHEngine) Name() string { return e.jobName }
+func (engine *TarSSHEngine) Name() string { return engine.jobName }
 
-func (e *TarSSHEngine) Execute(ctx context.Context) error {
-	e.logger.Info("Executing Tar SSH Backup Pipeline")
-	if e.verbose {
-		e.notifier.Send(ctx, fmt.Sprintf("%s 开始备份 (%s)：tar.zst", e.machine, e.jobName))
+func (engine *TarSSHEngine) Execute(ctx context.Context) error {
+	engine.logger.Info("Executing Tar SSH Backup Pipeline")
+	if engine.verbose {
+		engine.notifier.Send(ctx, fmt.Sprintf("%s 开始备份 (%s)：tar.zst", engine.machineName, engine.jobName))
 	}
 
-	eg, egCtx := errgroup.WithContext(ctx)
+	pipelineGroup, pipelineContext := errgroup.WithContext(ctx)
 
-	// Replace the simple bash date format for the target filename
-	fileName := strings.ReplaceAll(e.cfg.FileName, "%(%F_%H%M%S)T", e.clock.Now().Format("2006-01-02_150405"))
+	formattedTimestamp := engine.clockProvider.Now().Format("2006-01-02_150405")
+	targetFileName := strings.ReplaceAll(engine.config.FileName, "%(%F_%H%M%S)T", formattedTimestamp)
 
-	tarCmd := e.factory.Create(egCtx, "tar", "-I", "zstd", "-cp", "--one-file-system", e.cfg.Target)
-	sslCmd := e.factory.Create(egCtx, "openssl", e.cfg.OpenSSLType, "-salt", "-pass", "env:CATSTAR_SSL_PASS")
-	ddCmd := e.factory.Create(egCtx, "dd", "bs=64K")
-	sshCmd := e.factory.Create(egCtx, "ssh", e.cfg.SSHServer, fmt.Sprintf("cat > '%s'", fileName))
+	tarCommand := engine.commandFactory.Create(pipelineContext, "tar", "-I", "zstd", "-cp", "--one-file-system", engine.config.Target)
+	sslCommand := engine.commandFactory.Create(pipelineContext, "openssl", engine.config.OpenSSLType, "-salt", "-pass", "env:CATSTAR_SSL_PASS")
+	ddCommand := engine.commandFactory.Create(pipelineContext, "dd", defaultStreamingBlockSize)
+	sshCommand := engine.commandFactory.Create(pipelineContext, "ssh", engine.config.SSHServer, fmt.Sprintf("cat > '%s'", targetFileName))
 
-	sslCmd.SetEnv(append(os.Environ(), "CATSTAR_SSL_PASS="+e.cfg.OpenSSLPassword))
+	sslCommand.SetEnv(append(os.Environ(), "CATSTAR_SSL_PASS="+engine.config.OpenSSLPassword))
 
 	var pipesToClose []io.Closer
 	defer func() {
-		for _, p := range pipesToClose {
-			p.Close()
+		for _, pipe := range pipesToClose {
+			_ = pipe.Close()
 		}
 	}()
 
-	tarOut, err := tarCmd.StdoutPipe()
+	tarStdout, err := tarCommand.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create tar stdout pipe: %w", err)
 	}
-	pipesToClose = append(pipesToClose, tarOut)
-	sslCmd.SetStdin(tarOut)
+	pipesToClose = append(pipesToClose, tarStdout)
+	sslCommand.SetStdin(tarStdout)
 
-	sslOut, err := sslCmd.StdoutPipe()
+	sslStdout, err := sslCommand.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create openssl stdout pipe: %w", err)
 	}
-	pipesToClose = append(pipesToClose, sslOut)
-	ddCmd.SetStdin(sslOut)
+	pipesToClose = append(pipesToClose, sslStdout)
+	ddCommand.SetStdin(sslStdout)
 
-	ddOut, err := ddCmd.StdoutPipe()
+	ddStdout, err := ddCommand.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create dd stdout pipe: %w", err)
 	}
-	pipesToClose = append(pipesToClose, ddOut)
-	sshCmd.SetStdin(ddOut)
+	pipesToClose = append(pipesToClose, ddStdout)
+	sshCommand.SetStdin(ddStdout)
 
 	pipesToClose = nil
 
-	tarCmd.SetStderr(newSlogWriter(e.logger, "error", "tar"))
-	sslCmd.SetStderr(newSlogWriter(e.logger, "error", "openssl"))
-	ddCmd.SetStderr(newSlogWriter(e.logger, "error", "dd"))
-	sshCmd.SetStderr(newSlogWriter(e.logger, "error", "ssh"))
+	tarCommand.SetStderr(newSlogWriter(engine.logger, slog.LevelError, "tar"))
+	sslCommand.SetStderr(newSlogWriter(engine.logger, slog.LevelError, "openssl"))
+	ddCommand.SetStderr(newSlogWriter(engine.logger, slog.LevelError, "dd"))
+	sshCommand.SetStderr(newSlogWriter(engine.logger, slog.LevelError, "ssh"))
 
-	processes := []Process{tarCmd, sslCmd, ddCmd, sshCmd}
-	for _, p := range processes {
-		eg.Go(func() error {
-			if err := p.Start(); err != nil {
-				return fmt.Errorf("failed to start process: %w", err)
+	processes := []Process{tarCommand, sslCommand, ddCommand, sshCommand}
+	for _, pipelineProcess := range processes {
+		pipelineGroup.Go(func() error {
+			if err := pipelineProcess.Start(); err != nil {
+				return fmt.Errorf("failed to start pipeline process: %w", err)
 			}
-			return p.Wait()
+			return pipelineProcess.Wait()
 		})
 	}
 
-	if err := eg.Wait(); err != nil {
-		e.logger.Error("Tar SSH Pipeline failed", "error", err)
-		return err
+	if err := pipelineGroup.Wait(); err != nil {
+		engine.logger.Error("Tar SSH Pipeline failed", "error", err)
+		return fmt.Errorf("pipeline execution failure: %w", err)
 	}
 
-	e.logger.Info("Tar SSH Pipeline completed successfully")
+	engine.logger.Info("Tar SSH Pipeline completed successfully")
 	return nil
 }

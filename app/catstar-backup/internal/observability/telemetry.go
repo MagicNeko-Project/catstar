@@ -13,139 +13,137 @@ import (
 	"github.com/MagicNeko-Project/catstar-backup/internal/config"
 )
 
-// LogBuffer is a thread-safe buffer that captures log output during the run
-// for upload later if an error occurs or a summary is requested.
+// LogBuffer is a thread-safe in-memory buffer that captures log output.
 type LogBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mutex  sync.Mutex
+	buffer bytes.Buffer
 }
 
 func NewLogBuffer() *LogBuffer {
 	return &LogBuffer{}
 }
 
-func (l *LogBuffer) Write(p []byte) (n int, err error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.buf.Write(p)
+func (logBuffer *LogBuffer) Write(payload []byte) (int, error) {
+	logBuffer.mutex.Lock()
+	defer logBuffer.mutex.Unlock()
+	return logBuffer.buffer.Write(payload)
 }
 
-func (l *LogBuffer) String() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.buf.String()
+func (logBuffer *LogBuffer) String() string {
+	logBuffer.mutex.Lock()
+	defer logBuffer.mutex.Unlock()
+	return logBuffer.buffer.String()
 }
 
-// HTTPDoer represents a network transport capability. Abstracting this
-// enables payload construction testing without an actual TCP socket.
+// HTTPDoer abstracts HTTP client transport for testing.
 type HTTPDoer interface {
-	Do(req *http.Request) (*http.Response, error)
+	Do(request *http.Request) (*http.Response, error)
 }
 
 // TelemetryClient handles start/stop HTTP pings and log uploads.
 type TelemetryClient struct {
-	cfg    *config.Config
-	client HTTPDoer
+	config     *config.Config
+	httpClient HTTPDoer
 }
 
-func NewTelemetryClient(cfg *config.Config, httpClient HTTPDoer) *TelemetryClient {
+func NewTelemetryClient(configuration *config.Config, httpClient HTTPDoer) *TelemetryClient {
 	return &TelemetryClient{
-		cfg:    cfg,
-		client: httpClient,
+		config:     configuration,
+		httpClient: httpClient,
 	}
 }
 
-// PingStart sends the initialization payload.
-func (t *TelemetryClient) PingStart(ctx context.Context, message string) error {
-	if t.cfg.Telemetry.PingStartURL == "" {
+// PingStart sends the initialization telemetry payload.
+func (telemetry *TelemetryClient) PingStart(ctx context.Context, message string) error {
+	if telemetry.config.Telemetry.PingStartURL == "" {
 		return nil
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.cfg.Telemetry.PingStartURL, strings.NewReader(message))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, telemetry.config.Telemetry.PingStartURL, strings.NewReader(message))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create start ping request: %w", err)
 	}
-	req.Header.Set("Content-Type", "text/plain")
+	request.Header.Set("Content-Type", "text/plain")
 
-	resp, err := t.client.Do(req)
+	response, err := telemetry.httpClient.Do(request)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute start ping: %w", err)
 	}
-	defer resp.Body.Close()
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, response.Body)
 
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("ping start failed with status: %d", resp.StatusCode)
+	if response.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("ping start failed with status code: %d", response.StatusCode)
 	}
 	return nil
 }
 
-// PingEnd sends the final state payload, appending the status code if configured.
-func (t *TelemetryClient) PingEnd(ctx context.Context, statusCode int, logText string) error {
-	if t.cfg.Telemetry.PingEndURL == "" {
+// PingEnd sends the completion telemetry payload.
+func (telemetry *TelemetryClient) PingEnd(ctx context.Context, statusCode int, logText string) error {
+	if telemetry.config.Telemetry.PingEndURL == "" {
 		return nil
 	}
 
-	url := t.cfg.Telemetry.PingEndURL
-	if t.cfg.Telemetry.PingAppendStatus {
-		url = fmt.Sprintf("%s/%d", url, statusCode)
+	endpointURL := telemetry.config.Telemetry.PingEndURL
+	if telemetry.config.Telemetry.PingAppendStatus {
+		endpointURL = fmt.Sprintf("%s/%d", endpointURL, statusCode)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(logText))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpointURL, strings.NewReader(logText))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create end ping request: %w", err)
 	}
-	req.Header.Set("Content-Type", "text/plain")
+	request.Header.Set("Content-Type", "text/plain")
 
-	resp, err := t.client.Do(req)
+	response, err := telemetry.httpClient.Do(request)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute end ping: %w", err)
 	}
-	defer resp.Body.Close()
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, response.Body)
 
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("ping end failed with status: %d", resp.StatusCode)
+	if response.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("ping end failed with status code: %d", response.StatusCode)
 	}
 	return nil
 }
 
-// UploadLogs uploads the captured logs to a pastebin-like service (e.g., ix.io).
-// It returns the URL of the uploaded logs or the raw logs if upload fails/is unconfigured.
-func (t *TelemetryClient) UploadLogs(ctx context.Context, logText string) string {
-	if t.cfg.Telemetry.JournalUploadURL == "" {
-		return logText // Fallback to returning raw text if no URL configured
+// UploadLogs uploads captured logs to a remote journal or paste endpoint.
+func (telemetry *TelemetryClient) UploadLogs(ctx context.Context, logText string) string {
+	if telemetry.config.Telemetry.JournalUploadURL == "" {
+		return logText
 	}
 
-	var b bytes.Buffer
-	w := multipart.NewWriter(&b)
+	var payloadBuffer bytes.Buffer
+	multipartWriter := multipart.NewWriter(&payloadBuffer)
 
-	// Create a form file field named "logs"
-	fw, err := w.CreateFormFile("logs", "backup.log")
+	formFileWriter, err := multipartWriter.CreateFormFile("logs", "backup.log")
 	if err != nil {
 		return logText
 	}
-	if _, err := io.Copy(fw, strings.NewReader(logText)); err != nil {
+	if _, err := io.Copy(formFileWriter, strings.NewReader(logText)); err != nil {
 		return logText
 	}
-	w.Close()
+	_ = multipartWriter.Close()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.cfg.Telemetry.JournalUploadURL, &b)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, telemetry.config.Telemetry.JournalUploadURL, &payloadBuffer)
 	if err != nil {
 		return logText
 	}
-	req.Header.Set("Content-Type", w.FormDataContentType())
+	request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
 
-	resp, err := t.client.Do(req)
+	response, err := telemetry.httpClient.Do(request)
 	if err != nil {
 		return logText
 	}
-	defer resp.Body.Close()
+	defer response.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	if response.StatusCode >= http.StatusBadRequest {
+		_, _ = io.Copy(io.Discard, response.Body)
 		return logText
 	}
 
-	// Assuming the service returns the URL in the response body
-	bodyBytes, err := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(response.Body)
 	if err != nil {
 		return logText
 	}

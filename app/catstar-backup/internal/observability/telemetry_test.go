@@ -5,92 +5,93 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/MagicNeko-Project/catstar-backup/internal/config"
 )
 
 func TestLogBuffer(t *testing.T) {
-	buf := NewLogBuffer()
+	logBuffer := NewLogBuffer()
 
-	// Test writing
-	n, err := buf.Write([]byte("test log"))
+	bytesWritten, err := logBuffer.Write([]byte("test log"))
 	if err != nil {
 		t.Fatalf("unexpected error writing to buffer: %v", err)
 	}
-	if n != 8 {
-		t.Fatalf("expected to write 8 bytes, wrote %d", n)
+	if bytesWritten != 8 {
+		t.Fatalf("expected to write 8 bytes, wrote %d", bytesWritten)
 	}
 
-	// Test concurrent access (this shouldn't panic/race if mu.Lock() is working)
-	for i := 0; i < 100; i++ {
-		go func(val int) {
-			_, _ = buf.Write([]byte(fmt.Sprintf("%d", val)))
-		}(i)
+	var waitGroup sync.WaitGroup
+	for iterationIndex := 0; iterationIndex < 100; iterationIndex++ {
+		waitGroup.Add(1)
+		go func(value int) {
+			defer waitGroup.Done()
+			_, _ = logBuffer.Write([]byte(fmt.Sprintf("%d", value)))
+		}(iterationIndex)
 	}
+	waitGroup.Wait()
 
-	// Ensure string method works
-	str := buf.String()
-	if str == "" {
+	bufferString := logBuffer.String()
+	if bufferString == "" {
 		t.Fatalf("buffer string is unexpectedly empty")
 	}
 }
 
 func TestTelemetryClient_Ping(t *testing.T) {
-	// Create a mock HTTP server to intercept pings
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/start" {
-			w.WriteHeader(http.StatusOK)
+	mockServer := httptest.NewServer(http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/start" {
+			responseWriter.WriteHeader(http.StatusOK)
 			return
 		}
-		if r.URL.Path == "/end/0" {
-			w.WriteHeader(http.StatusOK)
+		if request.URL.Path == "/end/0" {
+			responseWriter.WriteHeader(http.StatusOK)
 			return
 		}
-		if r.URL.Path == "/upload" {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("https://pastebin.example.com/xyz123"))
+		if request.URL.Path == "/upload" {
+			responseWriter.WriteHeader(http.StatusOK)
+			_, _ = responseWriter.Write([]byte("https://pastebin.example.com/xyz123"))
 			return
 		}
-		w.WriteHeader(http.StatusNotFound)
+		responseWriter.WriteHeader(http.StatusNotFound)
 	}))
-	defer ts.Close()
+	defer mockServer.Close()
 
-	cfg := &config.Config{
+	testConfig := &config.Config{
 		Telemetry: config.TelemetryConfig{
-			PingStartURL:     ts.URL + "/start",
-			PingEndURL:       ts.URL + "/end",
+			PingStartURL:     mockServer.URL + "/start",
+			PingEndURL:       mockServer.URL + "/end",
 			PingAppendStatus: true,
-			JournalUploadURL: ts.URL + "/upload",
+			JournalUploadURL: mockServer.URL + "/upload",
 		},
 	}
 
-	client := NewTelemetryClient(cfg, ts.Client())
+	telemetryClient := NewTelemetryClient(testConfig, mockServer.Client())
 	ctx := context.Background()
 
-	t.Run("PingStart Success", func(t *testing.T) {
-		if err := client.PingStart(ctx, "started"); err != nil {
-			t.Fatalf("expected no error on start ping, got %v", err)
+	t.Run("PingStart Success", func(subtest *testing.T) {
+		if err := telemetryClient.PingStart(ctx, "started"); err != nil {
+			subtest.Fatalf("expected no error on start ping, got %v", err)
 		}
 	})
 
-	t.Run("PingEnd Success", func(t *testing.T) {
-		if err := client.PingEnd(ctx, 0, "logs"); err != nil {
-			t.Fatalf("expected no error on end ping, got %v", err)
+	t.Run("PingEnd Success", func(subtest *testing.T) {
+		if err := telemetryClient.PingEnd(ctx, 0, "logs"); err != nil {
+			subtest.Fatalf("expected no error on end ping, got %v", err)
 		}
 	})
 
-	t.Run("PingEnd Failure Simulation", func(t *testing.T) {
-		if err := client.PingEnd(ctx, 1, "logs"); err == nil {
-			t.Fatalf("expected 404 error on bad end ping path (/end/1), got nil")
+	t.Run("PingEnd Failure Simulation", func(subtest *testing.T) {
+		if err := telemetryClient.PingEnd(ctx, 1, "logs"); err == nil {
+			subtest.Fatalf("expected 404 error on bad end ping path (/end/1), got nil")
 		}
 	})
 
-	t.Run("UploadLogs Success", func(t *testing.T) {
-		url := client.UploadLogs(ctx, "log content")
-		expected := "日志：https://pastebin.example.com/xyz123"
-		if url != expected {
-			t.Fatalf("expected URL %q, got %q", expected, url)
+	t.Run("UploadLogs Success", func(subtest *testing.T) {
+		uploadedURL := telemetryClient.UploadLogs(ctx, "log content")
+		expectedURL := "日志：https://pastebin.example.com/xyz123"
+		if uploadedURL != expectedURL {
+			subtest.Fatalf("expected URL %q, got %q", expectedURL, uploadedURL)
 		}
 	})
 }

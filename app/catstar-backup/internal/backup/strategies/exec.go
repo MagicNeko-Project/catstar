@@ -7,6 +7,7 @@ import (
 	"os/exec"
 )
 
+// Process abstracts command execution capabilities.
 type Process interface {
 	Start() error
 	Wait() error
@@ -18,8 +19,9 @@ type Process interface {
 	SetEnv([]string)
 }
 
+// CommandFactory creates Process instances for command execution.
 type CommandFactory interface {
-	Create(ctx context.Context, name string, args ...string) Process
+	Create(ctx context.Context, commandName string, arguments ...string) Process
 }
 
 type DefaultCommandFactory struct {
@@ -30,81 +32,87 @@ func NewDefaultCommandFactory(logger *slog.Logger) *DefaultCommandFactory {
 	return &DefaultCommandFactory{logger: logger}
 }
 
-func (d *DefaultCommandFactory) Create(ctx context.Context, name string, args ...string) Process {
+func (factory *DefaultCommandFactory) Create(ctx context.Context, commandName string, arguments ...string) Process {
 	return &DefaultProcess{
-		cmd:    exec.CommandContext(ctx, name, args...),
-		logger: d.logger,
+		command: exec.CommandContext(ctx, commandName, arguments...),
+		logger:  factory.logger,
 	}
 }
 
 type DefaultProcess struct {
-	cmd    *exec.Cmd
-	logger *slog.Logger
+	command *exec.Cmd
+	logger  *slog.Logger
 }
 
-func (p *DefaultProcess) Start() error {
-	p.logger.Debug("Starting process", "cmd", p.cmd.Path, "args", p.cmd.Args)
-	return p.cmd.Start()
+func (process *DefaultProcess) Start() error {
+	process.logger.Debug("Starting process", "command", process.command.Path, "arguments", process.command.Args)
+	return process.command.Start()
 }
 
-func (p *DefaultProcess) Wait() error {
-	err := p.cmd.Wait()
+func (process *DefaultProcess) Wait() error {
+	err := process.command.Wait()
 	if err != nil {
-		p.logger.Error("Process exited with error", "cmd", p.cmd.Path, "error", err)
+		process.logger.Error("Process exited with error", "command", process.command.Path, "error", err)
 	} else {
-		p.logger.Debug("Process exited cleanly", "cmd", p.cmd.Path)
+		process.logger.Debug("Process exited cleanly", "command", process.command.Path)
 	}
 	return err
 }
 
-func (p *DefaultProcess) StdoutPipe() (io.ReadCloser, error) {
-	return p.cmd.StdoutPipe()
+func (process *DefaultProcess) StdoutPipe() (io.ReadCloser, error) {
+	return process.command.StdoutPipe()
 }
 
-func (p *DefaultProcess) StdinPipe() (io.WriteCloser, error) {
-	return p.cmd.StdinPipe()
+func (process *DefaultProcess) StdinPipe() (io.WriteCloser, error) {
+	return process.command.StdinPipe()
 }
 
-func (p *DefaultProcess) SetStdin(r io.Reader) {
-	p.cmd.Stdin = r
+func (process *DefaultProcess) SetStdin(reader io.Reader) {
+	process.command.Stdin = reader
 }
 
-func (p *DefaultProcess) SetStdout(w io.Writer) {
-	p.cmd.Stdout = w
+func (process *DefaultProcess) SetStdout(writer io.Writer) {
+	process.command.Stdout = writer
 }
 
-func (p *DefaultProcess) SetStderr(w io.Writer) {
-	p.cmd.Stderr = w
+func (process *DefaultProcess) SetStderr(writer io.Writer) {
+	process.command.Stderr = writer
 }
 
-func (p *DefaultProcess) SetEnv(env []string) {
-	p.cmd.Env = env
+func (process *DefaultProcess) SetEnv(environmentVariables []string) {
+	process.command.Env = environmentVariables
 }
 
-func runSimpleCommand(ctx context.Context, factory CommandFactory, logger *slog.Logger, cmdStr string, args ...string) error {
-	cmd := factory.Create(ctx, cmdStr, args...)
+func runSimpleCommand(
+	ctx context.Context,
+	factory CommandFactory,
+	logger *slog.Logger,
+	commandName string,
+	arguments ...string,
+) error {
+	process := factory.Create(ctx, commandName, arguments...)
 
-	writer := newSlogWriter(logger, "info", cmdStr)
-	cmd.SetStdout(writer)
-	cmd.SetStderr(writer)
+	outputWriter := newSlogWriter(logger, slog.LevelInfo, commandName)
+	process.SetStdout(outputWriter)
+	process.SetStderr(outputWriter)
 
-	if err := cmd.Start(); err != nil {
+	if err := process.Start(); err != nil {
 		return err
 	}
-	return cmd.Wait()
+	return process.Wait()
 }
 
 type slogWriter struct {
 	logger *slog.Logger
-	level  string
+	level  slog.Level
 	prefix string
 }
 
-func newSlogWriter(logger *slog.Logger, level, prefix string) *slogWriter {
+func newSlogWriter(logger *slog.Logger, level slog.Level, prefix string) *slogWriter {
 	return &slogWriter{logger: logger, level: level, prefix: prefix}
 }
 
-func (w *slogWriter) Write(p []byte) (n int, err error) {
-	w.logger.Info("Process Output", "cmd", w.prefix, "output", string(p))
-	return len(p), nil
+func (writer *slogWriter) Write(payload []byte) (int, error) {
+	writer.logger.Log(context.Background(), writer.level, "Process Output", "command", writer.prefix, "output", string(payload))
+	return len(payload), nil
 }

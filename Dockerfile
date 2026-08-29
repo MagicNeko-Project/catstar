@@ -1,17 +1,26 @@
-FROM golang:alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:alpine AS builder
 
 WORKDIR /src/app/catstar-backup
 
 COPY app/catstar-backup/go.mod app/catstar-backup/go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 COPY app/catstar-backup/ ./
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/catstar-backup ./cmd/catstar-backup
+
+ARG TARGETOS TARGETARCH TARGETVARIANT
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 \
+    GOOS=${TARGETOS} \
+    GOARCH=${TARGETARCH} \
+    GOARM=${TARGETVARIANT#v} \
+    go build -ldflags="-s -w" -o /out/catstar-backup ./cmd/catstar-backup
 
 FROM alpine:latest
 
 RUN apk add --no-cache openssh-client bash zsh git python3 py3-pip ansible
-RUN apk add --no-cache cloudflared --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing
+RUN apk add --no-cache cloudflared --repository=https://dl-cdn.alpinelinux.org/alpine/edge/testing
 
 WORKDIR /app
 COPY . /app
