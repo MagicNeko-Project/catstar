@@ -1,0 +1,24 @@
+---
+name: Ruff CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ruff:
+    name: Run Ruff CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Ruff Linter
+        uses: astral-sh/ruff-action@v4
+        with:
+          args: "check"
+
+      - name: Run Ruff Formatter
+        uses: astral-sh/ruff-action@v4
+        with:
+          args: "format --check"
