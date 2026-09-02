@@ -20,14 +20,19 @@ jobs:
         distro:
           - target: alpine
             suffix: ""
+            alias: alpine
           - target: alpine-slim
             suffix: -alpine-slim
+            alias: alpine-slim
           - target: debian
             suffix: -debian
+            alias: debian
           - target: debian-slim
             suffix: -debian-slim
+            alias: debian-slim
           - target: distroless
             suffix: -distroless
+            alias: static
 
     steps:
       - name: Checkout repository
@@ -56,6 +61,7 @@ jobs:
             suffix=${{ matrix.distro.suffix }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ matrix.distro.alias }},suffix=,enable={{is_default_branch}}
             type=ref,event=branch
             type=ref,event=tag
 
