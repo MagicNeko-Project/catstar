@@ -61,6 +61,7 @@ jobs:
             suffix=${{ matrix.distro.suffix }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ matrix.distro.target }},suffix=,enable={{is_default_branch}}
             type=raw,value=${{ matrix.distro.alias }},suffix=,enable={{is_default_branch}}
             type=ref,event=branch
             type=ref,event=tag
@@ -77,6 +78,6 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).created }}
+            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
           cache-from: type=gha,scope=buildx-${{ matrix.distro.target }}
           cache-to: type=gha,mode=max,scope=buildx-${{ matrix.distro.target }}
