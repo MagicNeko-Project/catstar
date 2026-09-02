@@ -7,13 +7,15 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 COPY app/catstar-backup/ ./
 ARG TARGETOS TARGETARCH TARGETVARIANT
+ARG VERSION COMMIT BUILD_DATE
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 \
     GOOS=${TARGETOS} \
     GOARCH=${TARGETARCH} \
     GOARM=${TARGETVARIANT#v} \
-    go build -ldflags="-s -w" -o /out/catstar-backup ./cmd/catstar-backup
+    go build -ldflags="-s -w -X main.version=${VERSION} -X main.gitCommit=${COMMIT} -X main.buildDate=${BUILD_DATE}" \
+    -o /out/catstar-backup ./cmd/catstar-backup
 
 FROM gcr.io/distroless/static-debian13:latest AS distroless
 COPY --from=builder /out/catstar-backup /usr/local/bin/catstar-backup
