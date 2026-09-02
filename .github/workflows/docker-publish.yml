@@ -1,10 +1,12 @@
 ---
-name: Minimal Build & Push Docker Image
+name: Build & Push Docker Images
 
 on:
   push:
     branches:
       - master
+    tags:
+      - "v*"
 
 jobs:
   build-and-push:
@@ -12,6 +14,20 @@ jobs:
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        distro:
+          - target: alpine
+            suffix: ""
+          - target: alpine-slim
+            suffix: -alpine-slim
+          - target: debian
+            suffix: -debian
+          - target: debian-slim
+            suffix: -debian-slim
+          - target: distroless
+            suffix: -distroless
 
     steps:
       - name: Checkout repository
@@ -30,13 +46,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Generate lowercase image name and latest tag
+      - name: Generate image metadata and tags
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
+          flavor: |
+            latest=auto
+            suffix=${{ matrix.distro.suffix }}
           tags: |
-            type=raw,value=latest,enable={{ is_default_branch }}
             type=ref,event=branch
             type=ref,event=tag
 
@@ -44,8 +62,10 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          target: ${{ matrix.distro.target }}
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=buildx-${{ matrix.distro.target }}
+          cache-to: type=gha,mode=max,scope=buildx-${{ matrix.distro.target }}
