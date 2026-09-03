@@ -2,25 +2,30 @@
 
 from __future__ import annotations
 
+import io
 import os
 import subprocess
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts.git_archivist import (
     ArchiveBundle,
     RetentionPolicy,
     apply_retention_policy,
     collect_repository_bundles,
+    deduplicate_repository_sources,
     evaluate_retention_candidates,
     inspect_local_repository_cleanliness,
     is_remote_repository_url,
     main,
     parse_remote_repository_relative_path,
+    parse_repository_list_file,
     resolve_local_repository_relative_path,
     update_latest_symlink,
+    update_or_write_repository_list_file,
     verify_bundle_integrity,
 )
 
@@ -451,6 +456,223 @@ class TestGitArchivist(unittest.TestCase):
             )
         finally:
             os.chmod(readonly_dest, 0o755)
+
+    def test_parse_repository_list_file(self) -> None:
+        """Tests parsing of repository list file with comments and whitespace."""
+        list_file = self.root_path / "repos.txt"
+        list_file.write_text(
+            "# Primary repositories\n"
+            "; Alternative comment style\n"
+            "   https://github.com/example-org/sample-repo.git   \n"
+            "\n"
+            "https://github.com/example-org/second-repo.git  # inline comment\n"
+            "https://github.com/example-org/repo-with-hash.git#main\n"
+            "   # Indented whole line comment\n"
+        )
+
+        parsed = parse_repository_list_file(list_file)
+        self.assertEqual(
+            parsed,
+            [
+                "https://github.com/example-org/sample-repo.git",
+                "https://github.com/example-org/second-repo.git",
+                "https://github.com/example-org/repo-with-hash.git#main",
+            ],
+        )
+
+    def test_parse_repository_list_file_stdin(self) -> None:
+        """Tests reading repository list from standard input via '-'."""
+        stdin_content = (
+            "# Stdin repos\n"
+            "https://github.com/example-org/repo-stdin-1.git\n"
+            "https://github.com/example-org/repo-stdin-2.git  # note\n"
+        )
+        with patch("sys.stdin", io.StringIO(stdin_content)):
+            parsed = parse_repository_list_file("-")
+            self.assertEqual(
+                parsed,
+                [
+                    "https://github.com/example-org/repo-stdin-1.git",
+                    "https://github.com/example-org/repo-stdin-2.git",
+                ],
+            )
+
+    def test_parse_repository_list_file_not_found(self) -> None:
+        """Tests that a missing input file raises FileNotFoundError."""
+        nonexistent = self.root_path / "missing_file.txt"
+        with self.assertRaises(FileNotFoundError):
+            parse_repository_list_file(nonexistent)
+
+    def test_deduplicate_repository_sources(self) -> None:
+        """Tests destination-aware deduplication preserving first-seen order."""
+        sources = [
+            "https://github.com/example-org/sample-repo.git",
+            "git@github.com:example-org/sample-repo.git",
+            "https://github.com/example-org/sample-repo/",
+            "https://github.com/example-org/another-repo.git",
+        ]
+        deduped = deduplicate_repository_sources(sources)
+        self.assertEqual(
+            deduped,
+            [
+                "https://github.com/example-org/sample-repo.git",
+                "https://github.com/example-org/another-repo.git",
+            ],
+        )
+
+    def test_main_with_input_file_and_positional_repos(self) -> None:
+        """Tests combining -i with positional arguments and auto-deduplication."""
+        # Create second local repository
+        second_repo = self.root_path / "second_repo"
+        second_repo.mkdir()
+        self._run_git(["init", str(second_repo)])
+        self._run_git(["config", "user.email", "test@example.com"], cwd=second_repo)
+        self._run_git(["config", "user.name", "Test Archivist"], cwd=second_repo)
+        self._run_git(["config", "commit.gpgsign", "false"], cwd=second_repo)
+        self._run_git(
+            [
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/example-org/second-repo.git",
+            ],
+            cwd=second_repo,
+        )
+        (second_repo / "README.md").write_text("# Second\n")
+        self._run_git(["add", "."], cwd=second_repo)
+        self._run_git(["commit", "-m", "init"], cwd=second_repo)
+
+        # Write list file pointing to repo 1
+        list_file = self.root_path / "batch.txt"
+        list_file.write_text(f"{self.repo_directory}\n")
+
+        # Run with list file (-i) and positional second_repo
+        exit_code = main(
+            [
+                "-d",
+                str(self.destination_directory),
+                "-i",
+                str(list_file),
+                str(second_repo),
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertTrue((self.destination_directory / "test_repo.bundle").is_symlink())
+        self.assertTrue(
+            (self.destination_directory / "example-org/second-repo.bundle").is_symlink()
+        )
+
+    def test_write_input_file_append_preserving_comments(self) -> None:
+        """Tests that --write-input-file preserves existing comments and appends new repos."""
+        list_file = self.root_path / "tracked_repos.txt"
+        list_file.write_text(
+            "# Core infrastructure repos\n"
+            "https://github.com/example-org/sample-repo.git  # critical service\n"
+            "\n"
+            "# Secondary services\n"
+            "https://github.com/example-org/second-repo.git\n"
+        )
+
+        # Call with existing repo (duplicate) and new repo
+        count = update_or_write_repository_list_file(
+            target_path=list_file,
+            candidate_sources=[
+                "https://github.com/example-org/sample-repo.git",
+                "https://github.com/example-org/third-repo.git",
+            ],
+            dry_run=False,
+        )
+        self.assertEqual(count, 1)
+
+        content = list_file.read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("# Core infrastructure repos\n"))
+        self.assertIn("# critical service", content)
+        self.assertIn("# Secondary services", content)
+        self.assertTrue(
+            content.endswith("https://github.com/example-org/third-repo.git\n")
+        )
+
+    def test_write_input_file_to_separate_file(self) -> None:
+        """Tests that -i FILE_A and --write-input-file FILE_B keeps A intact and writes B."""
+        file_a = self.root_path / "source_repos.txt"
+        file_a.write_text(f"# Source list\n{self.repo_directory}\n")
+
+        file_b = self.root_path / "target_repos.txt"
+
+        exit_code = main(
+            [
+                "-d",
+                str(self.destination_directory),
+                "-i",
+                str(file_a),
+                "--write-input-file",
+                str(file_b),
+                "-n",
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            file_a.read_text(),
+            f"# Source list\n{self.repo_directory}\n",
+        )
+
+    def test_write_input_file_without_input_file(self) -> None:
+        """Tests that --write-input-file works with positional repos even if -i is omitted."""
+        target_list = self.root_path / "new_output_list.txt"
+        exit_code = main(
+            [
+                "-d",
+                str(self.destination_directory),
+                "--write-input-file",
+                str(target_list),
+                str(self.repo_directory),
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(target_list.is_file())
+        self.assertIn(str(self.repo_directory), target_list.read_text())
+
+    def test_write_input_file_omitted_path_errors(self) -> None:
+        """Tests errors when --write-input-file omits path without valid -i."""
+        # 1. Positional repo provided but --write-input-file omits PATH and -i is missing
+        exit_code_no_i = main(
+            [
+                "-d",
+                str(self.destination_directory),
+                str(self.repo_directory),
+                "--write-input-file",
+            ]
+        )
+        self.assertEqual(exit_code_no_i, 1)
+
+        # 2. -i is stdin '-' and --write-input-file omits PATH
+        with patch("sys.stdin", io.StringIO(f"{self.repo_directory}\n")):
+            exit_code_stdin = main(
+                [
+                    "-d",
+                    str(self.destination_directory),
+                    "-i",
+                    "-",
+                    "--write-input-file",
+                ]
+            )
+            self.assertEqual(exit_code_stdin, 1)
+
+    def test_write_input_file_dry_run(self) -> None:
+        """Tests that --dry-run does not write to the file."""
+        target_list = self.root_path / "dry_run_list.txt"
+        exit_code = main(
+            [
+                "-d",
+                str(self.destination_directory),
+                "--write-input-file",
+                str(target_list),
+                "-n",
+                str(self.repo_directory),
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertFalse(target_list.exists())
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ from urllib.parse import urlparse
 
 TIMESTAMP_FILENAME_PATTERN = re.compile(r"^(\d{8})_(\d{6})(?:_(\d+))?\.bundle$")
 MONTH_DIRECTORY_PATTERN = re.compile(r"^\d{6}$")
+INLINE_COMMENT_PATTERN = re.compile(r"\s+#.*$")
 TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
 MONTH_FORMAT = "%Y%m"
 
@@ -103,11 +104,14 @@ def run_git_command(
         command.extend(["-C", str(working_directory)])
     command.extend(arguments)
 
+    environment = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+
     return subprocess.run(
         command,
         capture_output=capture_output,
         text=True,
         check=check,
+        env=environment,
     )
 
 
@@ -208,6 +212,174 @@ def resolve_local_repository_relative_path(repository_path: Path) -> Path:
         pass
 
     return Path(repository_path.name)
+
+
+def resolve_repository_destination_path(source_identifier: str) -> Path:
+    """
+    Resolves the relative destination path (<org>/<repo>) for a given repository source.
+
+    Accepts remote URLs or local repository paths.
+    """
+    if is_remote_repository_url(source_identifier):
+        return parse_remote_repository_relative_path(source_identifier)
+
+    local_path = Path(source_identifier).resolve()
+    if local_path.exists():
+        return resolve_local_repository_relative_path(local_path)
+
+    return Path(local_path.name)
+
+
+def deduplicate_repository_sources(sources: Sequence[str]) -> list[str]:
+    """
+    Deduplicates repository sources by their resolved relative destination path.
+
+    Preserves first-seen order across merged sources.
+    """
+    deduplicated_sources: list[str] = []
+    seen_destinations: set[Path] = set()
+
+    for source in sources:
+        try:
+            destination_path = resolve_repository_destination_path(source)
+        except (ValueError, OSError, subprocess.CalledProcessError):
+            destination_path = Path(source.strip().rstrip("/"))
+
+        if destination_path not in seen_destinations:
+            seen_destinations.add(destination_path)
+            deduplicated_sources.append(source)
+
+    return deduplicated_sources
+
+
+def parse_repository_list_file(source: str | Path, is_stdin: bool = False) -> list[str]:
+    """
+    Parses a repository list file or standard input.
+
+    - Strips leading and trailing whitespace.
+    - Ignores blank lines.
+    - Ignores whole-line comments starting with '#' or ';'.
+    - Strips inline comments where '#' is preceded by whitespace (e.g. '<url>  # note').
+    - Preserves '#' within URLs when not preceded by whitespace.
+    """
+    if is_stdin or str(source) == "-":
+        raw_lines = sys.stdin.read().splitlines()
+    else:
+        file_path = Path(source).resolve()
+        if not file_path.is_file():
+            raise FileNotFoundError(f"Repository list file not found: {file_path}")
+        try:
+            with open(file_path, encoding="utf-8", errors="replace") as file_handle:
+                raw_lines = file_handle.read().splitlines()
+        except OSError as err:
+            raise OSError(
+                f"Failed to read repository list file '{file_path}': {err}"
+            ) from err
+
+    extracted_repositories: list[str] = []
+    for line in raw_lines:
+        stripped_line = line.strip()
+        if not stripped_line or stripped_line.startswith(("#", ";")):
+            continue
+
+        cleaned_entry = INLINE_COMMENT_PATTERN.sub("", stripped_line).strip()
+        if cleaned_entry:
+            extracted_repositories.append(cleaned_entry)
+
+    return extracted_repositories
+
+
+def update_or_write_repository_list_file(
+    target_path: Path,
+    candidate_sources: Sequence[str],
+    dry_run: bool = False,
+    verbose: bool = False,
+) -> int:
+    """
+    Writes or updates the repository list file with candidate sources.
+
+    - If target_path exists: preserves original lines/comments and appends only
+      newly added repositories whose resolved destinations are not already in target_path.
+    - If target_path does not exist: creates target_path and writes all deduplicated sources.
+    - In dry_run mode: previews changes without modifying files.
+
+    Returns the count of newly appended/written repositories.
+    """
+    if target_path.exists():
+        existing_repositories = parse_repository_list_file(target_path)
+        existing_destinations = {
+            resolve_repository_destination_path(repo) for repo in existing_repositories
+        }
+
+        new_repositories_to_append: list[str] = []
+        for candidate in candidate_sources:
+            try:
+                candidate_destination = resolve_repository_destination_path(candidate)
+            except (ValueError, OSError, subprocess.CalledProcessError):
+                candidate_destination = Path(candidate.strip().rstrip("/"))
+
+            if candidate_destination not in existing_destinations:
+                existing_destinations.add(candidate_destination)
+                new_repositories_to_append.append(candidate)
+
+        if not new_repositories_to_append:
+            if verbose:
+                print(f"Repository list file is already up to date: {target_path}")
+            return 0
+
+        if dry_run:
+            print(
+                f"Would append {len(new_repositories_to_append)} repositories to {target_path}"
+            )
+            return len(new_repositories_to_append)
+
+        try:
+            existing_content = target_path.read_text(encoding="utf-8", errors="replace")
+            if existing_content and not existing_content.endswith("\n"):
+                existing_content += "\n"
+            updated_content = (
+                existing_content + "\n".join(new_repositories_to_append) + "\n"
+            )
+
+            temporary_file_path = (
+                target_path.parent / f".{target_path.name}.tmp_{os.getpid()}"
+            )
+            temporary_file_path.write_text(updated_content, encoding="utf-8")
+            temporary_file_path.replace(target_path)
+        except OSError as err:
+            raise OSError(
+                f"Failed to update repository list file '{target_path}': {err}"
+            ) from err
+
+        if verbose:
+            print(
+                f"Appended {len(new_repositories_to_append)} new repositories to {target_path}"
+            )
+        return len(new_repositories_to_append)
+
+    # Target path does not exist: create fresh file
+    deduplicated = deduplicate_repository_sources(candidate_sources)
+
+    if dry_run:
+        print(f"Would write {len(deduplicated)} repositories to {target_path}")
+        return len(deduplicated)
+
+    try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        content_to_write = "\n".join(deduplicated) + ("\n" if deduplicated else "")
+        temporary_file_path = (
+            target_path.parent / f".{target_path.name}.tmp_{os.getpid()}"
+        )
+        temporary_file_path.write_text(content_to_write, encoding="utf-8")
+        temporary_file_path.replace(target_path)
+    except OSError as err:
+        raise OSError(
+            f"Failed to create repository list file '{target_path}': {err}"
+        ) from err
+
+    if verbose:
+        print(f"Wrote {len(deduplicated)} repositories to {target_path}")
+    return len(deduplicated)
 
 
 def inspect_local_repository_cleanliness(repository_path: Path) -> bool:
@@ -927,6 +1099,24 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "-i",
+        "--input-file",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Path to a text file containing repository URLs/paths (one per line), or '-' for standard input.",
+    )
+
+    parser.add_argument(
+        "--write-input-file",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="PATH",
+        help="Write or update repository list file with deduplicated repositories. Defaults to -i file if PATH is omitted.",
+    )
+
+    parser.add_argument(
         "-d",
         "--destination",
         type=Path,
@@ -1033,10 +1223,56 @@ def main(arguments: Sequence[str] | None = None) -> int:
         list_archived_repositories(destination_root)
         return 0
 
-    if not parsed_args.repositories:
+    # Ingest repositories from -i / --input-file if specified
+    file_repositories: list[str] = []
+    if parsed_args.input_file is not None:
+        try:
+            file_repositories = parse_repository_list_file(
+                parsed_args.input_file,
+                is_stdin=(parsed_args.input_file == "-"),
+            )
+        except (FileNotFoundError, OSError, PermissionError) as error:
+            sys.stderr.write(f"Error: {error}\n")
+            return 1
+
+    raw_repositories = list(parsed_args.repositories) + file_repositories
+    combined_repositories = deduplicate_repository_sources(raw_repositories)
+
+    if not combined_repositories:
         parser.error(
-            "At least one repository path or URL must be specified unless --list is used."
+            "At least one repository path or URL must be specified via arguments or -i/--input-file unless --list is used."
         )
+
+    # Handle --write-input-file if requested
+    if parsed_args.write_input_file is not None:
+        target_write_string = parsed_args.write_input_file
+        if target_write_string == "":
+            if parsed_args.input_file is None:
+                sys.stderr.write(
+                    "Error: --write-input-file requires an explicit PATH when -i/--input-file is omitted.\n"
+                )
+                return 1
+            if parsed_args.input_file == "-":
+                sys.stderr.write(
+                    "Error: Cannot write to standard input; specify an explicit PATH for --write-input-file.\n"
+                )
+                return 1
+            target_write_path = Path(parsed_args.input_file).resolve()
+        else:
+            target_write_path = Path(target_write_string).resolve()
+
+        try:
+            update_or_write_repository_list_file(
+                target_path=target_write_path,
+                candidate_sources=combined_repositories,
+                dry_run=parsed_args.dry_run,
+                verbose=parsed_args.verbose,
+            )
+        except (OSError, PermissionError) as error:
+            sys.stderr.write(
+                f"Error writing repository list file '{target_write_path}': {error}\n"
+            )
+            return 1
 
     retention_policy = RetentionPolicy(
         keep_last=parsed_args.keep_last,
@@ -1048,7 +1284,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
 
     summaries: list[RepositoryExecutionSummary] = []
 
-    for repository_source in parsed_args.repositories:
+    for repository_source in combined_repositories:
         try:
             summary = archive_single_repository(
                 source_identifier=repository_source,
