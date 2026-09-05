@@ -50,21 +50,13 @@ function parseWrapperArguments(sshArguments) {
   };
 }
 
-function sliceBufferIntoFrames(
-  dataBuffer,
-  maximumFrameBytes = MAXIMUM_FRAME_PAYLOAD_BYTES,
+function buildProxyCommand(
+  nodeBinaryPath,
+  scriptPath,
+  allowInsecureCertificate,
 ) {
-  const frames = [];
-  for (
-    let bufferOffset = 0;
-    bufferOffset < dataBuffer.length;
-    bufferOffset += maximumFrameBytes
-  ) {
-    frames.push(
-      dataBuffer.subarray(bufferOffset, bufferOffset + maximumFrameBytes),
-    );
-  }
-  return frames;
+  const insecureFlag = allowInsecureCertificate ? " --insecure" : "";
+  return `"${nodeBinaryPath}" "${scriptPath}" --ws-proxy "%h"${insecureFlag}`;
 }
 
 function runWrapper(sshArguments) {
@@ -79,8 +71,7 @@ function runWrapper(sshArguments) {
   const { insecure, sshPath, remainingArgs } = parsedConfiguration;
   const scriptPath = import.meta.filename;
   const nodeBinaryPath = process.execPath;
-  const insecureFlag = insecure ? " --insecure" : "";
-  const proxyCommand = `"${nodeBinaryPath}" "${scriptPath}" --ws-proxy "%h"${insecureFlag}`;
+  const proxyCommand = buildProxyCommand(nodeBinaryPath, scriptPath, insecure);
 
   const sshChildProcess = spawn(
     sshPath,
@@ -149,6 +140,7 @@ async function runProxy(targetHost, allowInsecureCertificate) {
           break;
         }
 
+        // Inline zero-overhead slicing preserves Cloudflare's 8 KiB frame limit without array allocations
         for (
           let bufferOffset = 0;
           bufferOffset < inputChunk.length;
@@ -165,9 +157,7 @@ async function runProxy(targetHost, allowInsecureCertificate) {
             ),
           );
 
-          if (
-            websocket.bufferedAmount > BUFFERED_AMOUNT_HIGH_WATERMARK_BYTES
-          ) {
+          if (websocket.bufferedAmount > BUFFERED_AMOUNT_HIGH_WATERMARK_BYTES) {
             while (
               websocket.bufferedAmount > BUFFERED_AMOUNT_LOW_WATERMARK_BYTES &&
               websocket.readyState === WEBSOCKET_READY_STATE_OPEN
@@ -201,9 +191,7 @@ async function runProxy(targetHost, allowInsecureCertificate) {
     clearTimeout(connectionTimeout);
     const underlyingError = errorEvent.error || errorEvent;
     const errorMessage =
-      underlyingError.message ||
-      underlyingError.code ||
-      "Connection error";
+      underlyingError.message || underlyingError.code || "Connection error";
     console.error(`Connection error: ${errorMessage}`);
     process.exit(1);
   });
@@ -243,7 +231,8 @@ if (isExecutingAsMain()) {
       console.error("Error: --ws-proxy requires a target host.");
       process.exit(1);
     }
-    const allowInsecureCertificate = commandLineArguments.includes("--insecure");
+    const allowInsecureCertificate =
+      commandLineArguments.includes("--insecure");
     await runProxy(targetHost, allowInsecureCertificate);
   } else if (
     commandLineArguments.length === 0 ||
@@ -265,15 +254,15 @@ if (isExecutingAsMain()) {
 export {
   BUFFERED_AMOUNT_HIGH_WATERMARK_BYTES,
   BUFFERED_AMOUNT_LOW_WATERMARK_BYTES,
+  buildProxyCommand,
   CHUNK_SIZE,
   CONNECT_TIMEOUT_MS,
   CONNECTION_TIMEOUT_MILLISECONDS,
   DRAIN_THROTTLE_DELAY_MILLISECONDS,
   MAXIMUM_FRAME_PAYLOAD_BYTES,
-  WEBSOCKET_READY_STATE_CONNECTING,
-  WEBSOCKET_READY_STATE_OPEN,
   parseWrapperArguments,
-  sliceBufferIntoFrames,
   runProxy,
   runWrapper,
+  WEBSOCKET_READY_STATE_CONNECTING,
+  WEBSOCKET_READY_STATE_OPEN,
 };
