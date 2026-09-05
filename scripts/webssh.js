@@ -3,7 +3,6 @@
 import { Buffer } from "node:buffer";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
-import { fileURLToPath } from "node:url";
 
 const MAXIMUM_FRAME_PAYLOAD_BYTES = 4096;
 const CONNECTION_TIMEOUT_MILLISECONDS = 10_000;
@@ -12,10 +11,6 @@ const BUFFERED_AMOUNT_LOW_WATERMARK_BYTES = 16 * 1024;
 const DRAIN_THROTTLE_DELAY_MILLISECONDS = 10;
 const WEBSOCKET_READY_STATE_CONNECTING = 0;
 const WEBSOCKET_READY_STATE_OPEN = 1;
-
-// Aliases preserved for backwards compatibility with tests and callers
-const CHUNK_SIZE = MAXIMUM_FRAME_PAYLOAD_BYTES;
-const CONNECT_TIMEOUT_MS = CONNECTION_TIMEOUT_MILLISECONDS;
 
 function parseWrapperArguments(sshArguments) {
   let allowInsecureCertificate = false;
@@ -163,7 +158,7 @@ async function runProxy(targetHost, allowInsecureCertificate) {
               websocket.readyState === WEBSOCKET_READY_STATE_OPEN
             ) {
               await new Promise((resolve) =>
-                setTimeout(resolve, DRAIN_THROTTLE_DELAY_MILLISECONDS).unref(),
+                setTimeout(resolve, DRAIN_THROTTLE_DELAY_MILLISECONDS),
               );
             }
           }
@@ -182,9 +177,15 @@ async function runProxy(targetHost, allowInsecureCertificate) {
     process.stdout.write(Buffer.from(messageEvent.data));
   });
 
-  websocket.addEventListener("close", () => {
+  websocket.addEventListener("close", (closeEvent) => {
     clearTimeout(connectionTimeout);
-    process.stdout.write("", () => process.exit(0));
+    const isCleanClosure =
+      closeEvent.wasClean ||
+      closeEvent.code === 1000 ||
+      closeEvent.code === 1001 ||
+      closeEvent.code === 1005;
+    const exitCode = isCleanClosure ? 0 : 1;
+    process.stdout.write("", () => process.exit(exitCode));
   });
 
   websocket.addEventListener("error", (errorEvent) => {
@@ -214,9 +215,7 @@ function isExecutingAsMain() {
     return false;
   }
   try {
-    const executedScriptPath = fs.realpathSync(process.argv[1]);
-    const moduleScriptPath = fileURLToPath(import.meta.url);
-    return executedScriptPath === moduleScriptPath;
+    return fs.realpathSync(process.argv[1]) === import.meta.filename;
   } catch {
     return false;
   }
@@ -255,8 +254,6 @@ export {
   BUFFERED_AMOUNT_HIGH_WATERMARK_BYTES,
   BUFFERED_AMOUNT_LOW_WATERMARK_BYTES,
   buildProxyCommand,
-  CHUNK_SIZE,
-  CONNECT_TIMEOUT_MS,
   CONNECTION_TIMEOUT_MILLISECONDS,
   DRAIN_THROTTLE_DELAY_MILLISECONDS,
   MAXIMUM_FRAME_PAYLOAD_BYTES,
