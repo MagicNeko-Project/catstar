@@ -7,7 +7,6 @@
 # Usage: ssh-agent-mgr [ -h | --help ]
 # -----------------------------------------------------------------------------
 
-# 1. Handle Help Flag
 if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   print -P "%F{cyan}=== SSH Agent Manager (ssh-agent-mgr) ===%f"
   print -P "Scans common SSH agent socket locations, validates active agents,"
@@ -29,14 +28,12 @@ local current_sock="$SSH_AUTH_SOCK"
 local -a candidate_sockets valid_sockets socket_descriptions
 local socket candidate choice index key_list exit_status key_count first_key_comment selected_sock
 
-# 2. Gather Candidate Sockets
-# Include current environment variable if set and valid
 if [[ -n "$current_sock" && -S "$current_sock" ]]; then
   candidate_sockets+=("$current_sock")
   _CATSTAR_KNOWN_SSH_SOCKETS[$current_sock]=1
 fi
 
-# Include previously known sockets from this shell session
+# Include previously known sockets from session
 for socket in ${(k)_CATSTAR_KNOWN_SSH_SOCKETS}; do
   if [[ -S "$socket" ]]; then
     candidate_sockets+=("$socket")
@@ -67,7 +64,6 @@ for candidate in "${common_paths[@]}"; do
   fi
 done
 
-# 3. Deduplicate Candidate Sockets using Zsh associative array
 local -a unique_sockets
 local -A seen_sockets
 for socket in "${candidate_sockets[@]}"; do
@@ -83,7 +79,6 @@ if (( ${#unique_sockets[@]} == 0 )); then
   return 1
 fi
 
-# 4. Validate Sockets and Gather Key Information (Pure Zsh, Zero Forks)
 for socket in "${unique_sockets[@]}"; do
   # Test socket communication with ssh-add -l (exactly one external call per socket)
   key_list=$(env SSH_AUTH_SOCK="$socket" ssh-add -l 2>/dev/null)
@@ -116,7 +111,6 @@ if (( ${#valid_sockets[@]} == 0 )); then
   return 1
 fi
 
-# 5. Display User-Friendly Interactive Menu
 print -P "\n%F{cyan}=== SSH Agent Manager ===%f\n"
 print -P "Available SSH Agents:"
 
@@ -136,7 +130,6 @@ for index in {1..${#valid_sockets[@]}}; do
 done
 print ""
 
-# 6. Prompt for Selection
 if ! read -r "choice?Select SSH agent number (or 'q' to quit): "; then
   print ""
   return 1

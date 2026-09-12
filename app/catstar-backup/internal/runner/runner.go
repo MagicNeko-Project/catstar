@@ -36,14 +36,17 @@ type App struct {
 // NewApp wires together dependencies and initializes the backup execution plan.
 func NewApp(configuration *config.Config, outputStream io.Writer, clockProvider clock.Provider) (*App, error) {
 	logBuffer := observability.NewLogBuffer()
-	multiWriter := io.MultiWriter(outputStream, logBuffer)
+	var logWriter io.Writer = logBuffer
+	if outputStream != nil && outputStream != logBuffer {
+		logWriter = io.MultiWriter(outputStream, logBuffer)
+	}
 
 	var logLevel slog.Level
 	if err := logLevel.UnmarshalText([]byte(configuration.App.LogLevel)); err != nil {
 		logLevel = slog.LevelInfo
 	}
 
-	logger := slog.New(slog.NewTextHandler(multiWriter, &slog.HandlerOptions{Level: logLevel}))
+	logger := slog.New(slog.NewTextHandler(logWriter, &slog.HandlerOptions{Level: logLevel}))
 
 	telemetryHTTPClient := &http.Client{Timeout: defaultTelemetryTimeout}
 	notificationHTTPClient := &http.Client{Timeout: defaultNotificationTimeout}

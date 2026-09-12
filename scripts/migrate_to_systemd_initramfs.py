@@ -99,9 +99,7 @@ def log_step(msg: str) -> None:
     print(f"\n{Theme.BOLD}{Theme.CYAN}==> {msg}{Theme.RESET}")
 
 
-# ============================================================================
 # Data Models
-# ============================================================================
 
 
 @dataclass
@@ -146,9 +144,7 @@ class ValidationResult:
     embedded_hooks: list[str] = field(default_factory=list)
 
 
-# ============================================================================
 # Signal & Critical Section Management
-# ============================================================================
 
 
 class SignalManager:
@@ -209,9 +205,7 @@ class SignalManager:
 global_signal_mgr = SignalManager()
 
 
-# ============================================================================
 # System Diagnostics & Kernel Resolution
-# ============================================================================
 
 
 class SystemDiagnostics:
@@ -358,9 +352,7 @@ class SystemDiagnostics:
         return ""
 
 
-# ============================================================================
 # Pre-Flight Safety Guard
-# ============================================================================
 
 
 class PreflightSafetyGuard:
@@ -447,9 +439,7 @@ class PreflightSafetyGuard:
             )
 
 
-# ============================================================================
 # Hook Translation Engine
-# ============================================================================
 
 
 class HookMigrator:
@@ -740,9 +730,7 @@ class HookMigrator:
         )
 
 
-# ============================================================================
 # Bootloader Migrator
-# ============================================================================
 
 
 class BootloaderMigrator:
@@ -835,9 +823,7 @@ class BootloaderMigrator:
         )
 
 
-# ============================================================================
-# ACID Multi-File Atomic Transaction Manager
-# ============================================================================
+# Atomic Transaction Manager
 
 
 @dataclass
@@ -956,9 +942,7 @@ class AtomicTransactionManager:
         self.staged_temps.clear()
 
 
-# ============================================================================
 # Empirical Image Validator
-# ============================================================================
 
 
 class RobustImageValidator:
@@ -1096,9 +1080,7 @@ class RobustImageValidator:
         )
 
 
-# ============================================================================
 # Visual Renderers & UI
-# ============================================================================
 
 
 class DiffViewer:
@@ -1166,9 +1148,7 @@ class TableRenderer:
         return "\n".join(lines)
 
 
-# ============================================================================
 # Main Controller & Execution Logic
-# ============================================================================
 
 
 def confirm_execution(prompt_msg: str, assume_yes: bool = False) -> bool:
@@ -1378,9 +1358,9 @@ all generated initramfs images against mandatory systemd service manifests.
             f"{Theme.BOLD}{Theme.HEADER}=== Arch Linux systemd-based Initramfs Migrator ==={Theme.RESET}"
         )
 
-    # Phase 1: Environment Diagnostics & Pre-Flight
+    # Environment Diagnostics & Pre-Flight
     if not args.json:
-        log_step("Phase 1: Environment Diagnostics & Pre-Flight Safety")
+        log_step("Environment Diagnostics & Pre-Flight Safety")
     try:
         SystemDiagnostics.verify_arch_linux()
         SystemDiagnostics.verify_dependencies()
@@ -1410,9 +1390,9 @@ all generated initramfs images against mandatory systemd service manifests.
         log_error(f"Pre-flight diagnostics failed: {e}")
         sys.exit(ExitCode.PREFLIGHT_FAILED)
 
-    # Phase 2: Hook Translation Plan
+    # Hook Translation Plan
     if not args.json:
-        log_step("Phase 2: Hook Translation Plan")
+        log_step("Hook Translation Plan")
     if not args.conf.exists():
         log_error(f"Configuration file {args.conf} does not exist.")
         sys.exit(ExitCode.ERROR_USAGE)
@@ -1430,9 +1410,9 @@ all generated initramfs images against mandatory systemd service manifests.
         for n in plan.notes:
             print(f"  {Theme.CYAN}•{Theme.RESET} {n}")
 
-    # Phase 3: Bootloader Kernel Parameter Audit
+    # Bootloader Kernel Parameter Audit
     if not args.json:
-        log_step("Phase 3: Bootloader Kernel Parameter Audit ('rw' -> 'ro')")
+        log_step("Bootloader Kernel Parameter Audit ('rw' -> 'ro')")
     bl_files = BootloaderMigrator.find_bootloader_configs()
     bl_targets: list[BootloaderTarget] = []
 
@@ -1466,9 +1446,9 @@ all generated initramfs images against mandatory systemd service manifests.
                         )
                     )
 
-    # Phase 4: Sandbox Dry-Run Test
+    # Sandbox Dry-Run Test
     if not args.json:
-        log_step("Phase 4: Sandbox Test Build & Image Assertions")
+        log_step("Sandbox Test Build & Image Assertions")
     try:
         run_dry_run_sandbox(args.conf, plan.proposed_hooks, kernel_info)
     except Exception as e:  # noqa: BLE001
@@ -1508,9 +1488,9 @@ all generated initramfs images against mandatory systemd service manifests.
             )
         return
 
-    # Phase 5: Interactive Confirmation & Execution
+    # Interactive Confirmation & Execution
     if not args.json:
-        log_step("Phase 5: Elevated Execution & 2-Phase Atomic Commit")
+        log_step("Elevated Execution & 2-Phase Atomic Commit")
         if not confirm_execution(
             "Proceed with migration, atomic file updates, and initramfs rebuild?",
             args.yes,
@@ -1561,9 +1541,9 @@ all generated initramfs images against mandatory systemd service manifests.
         subprocess.run(["mkinitcpio", "-P"], capture_output=True, check=False)
         sys.exit(ExitCode.ERROR_GENERIC)
 
-    # Phase 6: Post-Rebuild Image Validation across All Presets
+    # Post-Rebuild Image Validation across All Presets
     if not args.json:
-        log_step("Phase 6: Post-Rebuild Image Validation (All Presets)")
+        log_step("Post-Rebuild Image Validation (All Presets)")
     preset_images = RobustImageValidator.discover_preset_images()
     if not preset_images:
         preset_images = [(p, "default") for p in Path("/boot").glob("initramfs-*.img")]
