@@ -19,13 +19,9 @@ from pathlib import Path
 class PathTraversalError(ValueError):
     """Raised when a zip member attempts directory traversal or sibling folder bypass."""
 
-    pass
-
 
 class SizeLimitExceededError(ValueError):
     """Raised when cumulative extraction size exceeds configured max-size."""
-
-    pass
 
 
 def parse_size_to_bytes(size_str: str | int | None, default_bytes: int = 0) -> int:
