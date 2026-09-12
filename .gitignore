@@ -11,3 +11,5 @@
 /ansible/collections/ansible_collections/local/*/tests/output/
 /ansible/roles/*
 *.retry
+node_modules/
+package-lock.json
