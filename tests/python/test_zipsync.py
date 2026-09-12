@@ -126,9 +126,11 @@ class TestZipSync(unittest.TestCase):
             syncer = ZipSyncer(max_size="1KB")
 
             stderr_io = io.StringIO()
-            with patch("sys.stderr", stderr_io):
-                with self.assertRaises(SizeLimitExceededError):
-                    syncer.sync(src_dir, dest_dir)
+            with (
+                patch("sys.stderr", stderr_io),
+                self.assertRaises(SizeLimitExceededError),
+            ):
+                syncer.sync(src_dir, dest_dir)
 
             self.assertIn(
                 "Exceeded cumulative extraction size limit", stderr_io.getvalue()
