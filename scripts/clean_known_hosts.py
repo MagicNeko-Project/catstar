@@ -26,10 +26,7 @@ def host_matches(host: str, pattern: str) -> bool:
 
     # If pattern is an IP prefix (e.g. 192.168.1)
     is_ip_prefix = all(part.isdigit() for part in p.split("."))
-    if is_ip_prefix and h.startswith(p + "."):
-        return True
-
-    return False
+    return is_ip_prefix and h.startswith(p + ".")
 
 
 def line_matches(line: str, patterns: list[str]) -> bool:
