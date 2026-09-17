@@ -325,9 +325,8 @@ def fetch_repository_references(repository_path: Path) -> dict[str, str]:
 
     refs: dict[str, str] = {}
     for line in out.stdout.splitlines():
-        if parts := line.strip().split(maxsplit=1):
-            if len(parts) == 2:
-                refs[parts[1]] = parts[0]
+        if len(parts := line.strip().split(maxsplit=1)) == 2:
+            refs[parts[1]] = parts[0]
 
     try:
         wt_out = run_git_command(
@@ -355,9 +354,8 @@ def fetch_bundle_references(bundle_path: Path) -> dict[str, str]:
     out = run_git_command(["bundle", "list-heads", str(bundle_path)])
     refs: dict[str, str] = {}
     for line in out.stdout.splitlines():
-        if parts := line.strip().split(maxsplit=1):
-            if len(parts) == 2:
-                refs[parts[1]] = parts[0]
+        if len(parts := line.strip().split(maxsplit=1)) == 2:
+            refs[parts[1]] = parts[0]
     return refs
 
 
@@ -762,12 +760,15 @@ def list_archived_repositories(destination_root: Path) -> None:
 
     discovered: list[Path] = []
     for candidate in destination_root.glob("**/*"):
-        if candidate.is_dir() and not MONTH_DIRECTORY_PATTERN.match(candidate.name):
-            if any(
+        if (
+            candidate.is_dir()
+            and not MONTH_DIRECTORY_PATTERN.match(candidate.name)
+            and any(
                 sub.is_dir() and MONTH_DIRECTORY_PATTERN.match(sub.name)
                 for sub in candidate.iterdir()
-            ):
-                discovered.append(candidate)
+            )
+        ):
+            discovered.append(candidate)
 
     if not discovered:
         print(f"No git archives found in: {destination_root}")
