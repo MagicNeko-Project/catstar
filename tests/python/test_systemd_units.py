@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Test suite for static validation and custom constraint assertions of systemd unit files.
 Ensures 100% of deployed system and user unit files pass structural syntax and security rules.
