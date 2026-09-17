@@ -112,7 +112,9 @@ class TestSystemdUnits(unittest.TestCase):
         """
         systemd_analyze = shutil.which("systemd-analyze")
         if not systemd_analyze:
-            self.skipTest("systemd-analyze utility is not available in host environment.")
+            self.skipTest(
+                "systemd-analyze utility is not available in host environment."
+            )
 
         unit_file_strings = [str(p) for p in self.all_unit_paths]
         command = [systemd_analyze, "verify", "--man=no"] + unit_file_strings
@@ -238,9 +240,10 @@ class TestSystemdUnits(unittest.TestCase):
         exec_start_str = " ".join(exec_start_lines)
 
         # Check if service invokes container engines (podman / docker)
-        is_container_service = any(
-            cmd in exec_start_str for cmd in ["podman", "docker"]
-        ) or "container-" in unit_path.name
+        is_container_service = (
+            any(cmd in exec_start_str for cmd in ["podman", "docker"])
+            or "container-" in unit_path.name
+        )
 
         if is_container_service:
             has_sdnotify = "--sdnotify" in exec_start_str
@@ -271,7 +274,9 @@ class TestSystemdUnits(unittest.TestCase):
             )
             with self.assertRaises(AssertionError) as context:
                 self.assert_container_service_notification_flags(bad_unit_path)
-            self.assertIn("lacks required container notification flag", str(context.exception))
+            self.assertIn(
+                "lacks required container notification flag", str(context.exception)
+            )
 
     def test_network_service_isolation_flags(self) -> None:
         """
@@ -293,7 +298,10 @@ class TestSystemdUnits(unittest.TestCase):
         """
         Verify that snapshot and backup background services do not contain conflicting ReadOnlyPaths=/ path locks.
         """
-        backup_services = ["catstar-backup.service", "minecraft-scheduled-restart@.service"]
+        backup_services = [
+            "catstar-backup.service",
+            "minecraft-scheduled-restart@.service",
+        ]
         for unit_path in self.all_unit_paths:
             if unit_path.name in backup_services:
                 parsed = parse_unit_file(unit_path)
