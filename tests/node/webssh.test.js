@@ -4,7 +4,6 @@ import {
   BUFFERED_AMOUNT_HIGH_WATERMARK_BYTES,
   BUFFERED_AMOUNT_LOW_WATERMARK_BYTES,
   buildProxyCommand,
-  CHUNK_SIZE,
   CONNECTION_TIMEOUT_MILLISECONDS,
   DRAIN_THROTTLE_DELAY_MILLISECONDS,
   MAXIMUM_FRAME_PAYLOAD_BYTES,
@@ -16,7 +15,6 @@ import {
 describe("webssh CLI & Configuration Unit Tests", () => {
   it("constants enforce safe buffer thresholds and state invariants", () => {
     assert.equal(MAXIMUM_FRAME_PAYLOAD_BYTES, 4096);
-    assert.equal(CHUNK_SIZE, 4096);
     assert.ok(MAXIMUM_FRAME_PAYLOAD_BYTES <= 8192);
     assert.ok(
       BUFFERED_AMOUNT_LOW_WATERMARK_BYTES <
