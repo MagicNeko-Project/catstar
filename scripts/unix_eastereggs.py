@@ -21,9 +21,7 @@ import webbrowser
 from dataclasses import dataclass
 from typing import ClassVar
 
-# -----------------------------------------------------------------------------
-# 1. ASCII Art & Data Assets
-# -----------------------------------------------------------------------------
+# ASCII Art & Data Assets
 
 SL_LOCOMOTIVE_FRAME_1: list[str] = [
     "      ======  _____    _________ ",
@@ -278,9 +276,7 @@ TRIVIA_QUESTIONS: list[dict[str, object]] = [
 ]
 
 
-# -----------------------------------------------------------------------------
-# 2. Terminal Palette & Curses Helpers
-# -----------------------------------------------------------------------------
+# Terminal Palette & Curses Helpers
 
 
 class TerminalPalette:
@@ -515,9 +511,7 @@ def display_scrollable_text(
             scroll_offset += 1
 
 
-# -----------------------------------------------------------------------------
-# 3. Base Easter Egg Definition
-# -----------------------------------------------------------------------------
+# Base Easter Egg Definition
 
 
 @dataclass
@@ -540,9 +534,7 @@ class EasterEgg:
         raise NotImplementedError
 
 
-# -----------------------------------------------------------------------------
-# 4. Domain Easter Egg Implementations
-# -----------------------------------------------------------------------------
+# Domain Easter Egg Implementations
 
 
 class SteamLocomotive(EasterEgg):
@@ -1666,9 +1658,7 @@ class TriviaQuiz(EasterEgg):
         stdscr.getch()
 
 
-# -----------------------------------------------------------------------------
-# 5. Easter Egg Registry
-# -----------------------------------------------------------------------------
+# Easter Egg Registry
 
 
 class EasterEggRegistry:
@@ -1745,9 +1735,7 @@ def build_default_registry() -> EasterEggRegistry:
     return registry
 
 
-# -----------------------------------------------------------------------------
-# 6. Interactive Curses TUI Menu
-# -----------------------------------------------------------------------------
+# Interactive Curses TUI Menu
 
 
 def run_tui_menu(
@@ -1831,9 +1819,7 @@ def run_tui_menu(
             active_catalog[selected_index].interactive(stdscr)
 
 
-# -----------------------------------------------------------------------------
-# 7. Command Line Entry Point
-# -----------------------------------------------------------------------------
+# Command Line Entry Point
 
 
 def main(custom_argv: list[str] | None = None) -> int:

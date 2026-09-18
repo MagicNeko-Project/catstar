@@ -1,40 +1,33 @@
 #!/usr/bin/env python3
 
 """
-This script generates random port numbers from predefined ranges (privileged, registered, or ephemeral).
-Users can specify one or more ranges using command-line options and also choose how many random ports to generate.
-By default, the script generates one ephemeral port if no options are provided.
+Generates random port numbers from predefined ranges (privileged, registered, or ephemeral).
+Users can specify one or more ranges using command-line options and choose how many random ports to generate.
+By default, generates one ephemeral port if no options are provided.
 """
 
 import argparse
-import bisect
 import random
 from collections.abc import Iterable
 
 # Predefined port ranges
 PORT_RANGES = {
-    "privileged": range(1, 1023),
-    "registered": range(1024, 49151),
-    "ephemeral": range(49152, 65535),
+    "privileged": range(1, 1024),
+    "registered": range(1024, 49152),
+    "ephemeral": range(49152, 65536),
 }
 
 
 def choose_random_ports(ranges: Iterable[str], count: int) -> list[int]:
-    all_ranges = [PORT_RANGES[name] for name in ranges]
-    cumulative = [0]
-    for r in all_ranges:
-        cumulative.append(cumulative[-1] + len(r))
+    """Draws count unique random ports from the combined set of specified ranges."""
+    pool = []
+    for name in ranges:
+        pool.extend(PORT_RANGES[name])
 
-    total = cumulative[-1]
-    if count > total:
-        raise ValueError(f"Requested {count} ports, but only {total} available.")
+    if count > len(pool):
+        raise ValueError(f"Requested {count} ports, but only {len(pool)} available.")
 
-    def resolve_index(i: int) -> int:
-        idx = bisect.bisect_right(cumulative, i) - 1
-        return all_ranges[idx][i - cumulative[idx]]
-
-    indices = random.sample(range(total), count)
-    return [resolve_index(i) for i in indices]
+    return random.sample(pool, count)
 
 
 def main():
@@ -69,7 +62,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Determine selected ranges
     selected_ranges = set()
     if args.privileged:
         selected_ranges.add("privileged")
