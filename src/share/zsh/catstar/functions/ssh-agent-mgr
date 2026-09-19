@@ -17,7 +17,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   print -P "  ssh-agent-mgr -h|--help Display this help message\n"
   print -P "%F{white}Discovered Locations:%f"
   print -P "  Scans environment variables, macOS temporary dirs (/var/folders/...), "
-  print -P "  1Password, GPG Agent, launchd, and XDG runtime directories."
+  print -P "  1Password, GPG Agent, launchd, Termux, and XDG runtime directories."
   return 0
 fi
 
@@ -50,15 +50,24 @@ done
 local -a common_paths=(
   /var/folders/*/*/*/ssh-*/agent.*(N)
   /tmp/ssh-*/agent.*(N)
-  "$HOME/.1password/agent.sock"(N)
-  "$HOME/.gnupg/S.gpg-agent.ssh"(N)
+  "$HOME/.1password/agent.sock"
+  "$HOME/.gnupg/S.gpg-agent.ssh"
   /run/user/[0-9]*/keyring/ssh(N)
   /run/user/[0-9]*/ssh-agent.socket(N)
   /private/tmp/com.apple.launchd.*/Listeners(N)
-  "$XDG_RUNTIME_DIR/keyring/ssh"(N)
-  "$XDG_RUNTIME_DIR/ssh-agent.socket"(N)
-  "$XDG_RUNTIME_DIR/gcr/ssh"(N)
 )
+
+if [[ -n "$XDG_RUNTIME_DIR" ]]; then
+  common_paths+=(
+    "$XDG_RUNTIME_DIR/keyring/ssh"
+    "$XDG_RUNTIME_DIR/ssh-agent.socket"
+    "$XDG_RUNTIME_DIR/gcr/ssh"
+  )
+fi
+
+if [[ -n "$TERMUX_VERSION" && -n "$PREFIX" ]]; then
+  common_paths+=("$PREFIX/var/run/ssh-agent.socket")
+fi
 
 for candidate in "${common_paths[@]}"; do
   if [[ -S "$candidate" ]]; then
