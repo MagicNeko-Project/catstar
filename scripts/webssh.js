@@ -87,10 +87,6 @@ function runWrapper(sshArguments) {
 }
 
 async function runProxy(targetHost, allowInsecureCertificate) {
-  if (allowInsecureCertificate) {
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-  }
-
   if (typeof globalThis.WebSocket === "undefined") {
     console.error(
       "Error: Native globalThis.WebSocket is not available in this Node.js version.",
@@ -111,10 +107,15 @@ async function runProxy(targetHost, allowInsecureCertificate) {
     requestHeaders["cf-access-client-secret"] = process.env.CF_CLIENT_SECRET;
   }
 
-  const websocket = new globalThis.WebSocket(
-    websocketUrl,
-    Object.keys(requestHeaders).length > 0 ? { headers: requestHeaders } : {},
-  );
+  const websocketOptions = {
+    rejectUnauthorized: !allowInsecureCertificate,
+  };
+
+  if (Object.keys(requestHeaders).length > 0) {
+    websocketOptions.headers = requestHeaders;
+  }
+
+  const websocket = new globalThis.WebSocket(websocketUrl, websocketOptions);
   websocket.binaryType = "arraybuffer";
 
   const connectionTimeout = setTimeout(() => {
