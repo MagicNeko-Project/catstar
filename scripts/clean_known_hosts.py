@@ -6,92 +6,73 @@ import os
 import sys
 
 
-class HostMatcher:
-    """Matches host patterns against lines of a known_hosts file."""
+def normalize_host(raw: str) -> str:
+    """Normalizes a host token from a known_hosts file (e.g. [host]:port -> host)."""
+    raw = raw.strip()
+    if raw.startswith("[") and "]" in raw:
+        return raw[1 : raw.index("]")]
+    return raw
 
-    def __init__(self, patterns: list[str]):
-        self.patterns = patterns
 
-    def line_matches(self, line: str) -> bool:
-        """Checks if a known_hosts line matches any of the patterns."""
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            return False  # Keep comments and blank lines
-
-        hosts_field = stripped.split(" ", 1)[0]
-        hosts = hosts_field.split(",")
-        for h in hosts:
-            normalized_host = self._normalize_host(h)
-            if self._host_matches(normalized_host):
-                return True
+def host_matches(host: str, pattern: str) -> bool:
+    """Checks if a normalized host matches a domain or IP pattern."""
+    h = host.lower()
+    p = pattern.lower().rstrip(".")
+    if not p:
         return False
 
-    def _normalize_host(self, raw: str) -> set[str]:
-        """
-        Normalizes a host token from a known_hosts file.
-        e.g., [host]:port -> host
-        """
-        if raw.startswith("[") and "]:" in raw:
-            raw = raw[1 : raw.find("]:")]
-        return set(raw.split("."))
+    if h == p or h.endswith("." + p):
+        return True
 
-    def _host_matches(self, host: set[str]) -> bool:
-        """Checks if the set of a pattern's components is a subset of the host's."""
-        for p in self.patterns:
-            sub = set(p.split("."))
-            if not (sub - host):
-                return True
+    # If pattern is an IP prefix (e.g. 192.168.1)
+    is_ip_prefix = all(part.isdigit() for part in p.split("."))
+    return is_ip_prefix and h.startswith(p + ".")
+
+
+def line_matches(line: str, patterns: list[str]) -> bool:
+    """Checks if a known_hosts line matches any of the given patterns."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
         return False
 
+    hosts_field = stripped.split(" ", 1)[0]
+    for host_token in hosts_field.split(","):
+        normalized = normalize_host(host_token)
+        for pattern in patterns:
+            if host_matches(normalized, pattern):
+                return True
+    return False
 
-class KnownHostsFile:
-    """Manages reading, cleaning, and writing a known_hosts file."""
 
-    def __init__(self, path: str, matcher: HostMatcher):
-        self.path = path
-        self.matcher = matcher
+def clean_known_hosts(
+    path: str, patterns: list[str], inplace: bool = False, dry_run: bool = False
+) -> None:
+    """Cleans matching host entries from a known_hosts file."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        print(f"Error: File not found at {path}", file=sys.stderr)
+        sys.exit(1)
 
-    def clean(self, inplace: bool, dry_run: bool = False):
-        """
-        Cleans the file, writing to stdout, modifying in place, or showing a diff.
-        """
-        try:
-            lines = self._read_lines()
-        except FileNotFoundError:
-            print(f"Error: File not found at {self.path}", file=sys.stderr)
-            sys.exit(1)
+    if dry_run:
+        for line in lines:
+            if line_matches(line, patterns):
+                sys.stdout.write(f"- {line.strip()}\n")
+            else:
+                sys.stdout.write(f"  {line.strip()}\n")
+        return
 
-        if dry_run:
-            for line in lines:
-                if self.matcher.line_matches(line):
-                    sys.stdout.write(f"- {line.strip()}\n")
-                else:
-                    sys.stdout.write(f"  {line.strip()}\n")
-            return
+    output_lines = [line for line in lines if not line_matches(line, patterns)]
 
-        output_lines = [line for line in lines if not self.matcher.line_matches(line)]
-
-        if inplace:
-            self._backup()
-            self._write_lines(output_lines)
-            print(f"Cleaned file written in place. Backup saved as {self.path}.bak")
-        else:
-            sys.stdout.writelines(output_lines)
-
-    def _read_lines(self) -> list[str]:
-        """Reads all lines from the file."""
-        with open(self.path, encoding="utf-8") as f:
-            return f.readlines()
-
-    def _write_lines(self, lines: list[str]):
-        """Writes lines to the file."""
-        with open(self.path, "w", encoding="utf-8") as f:
-            f.writelines(lines)
-
-    def _backup(self):
-        """Renames the file to create a backup."""
-        backup_path = self.path + ".bak"
-        os.rename(self.path, backup_path)
+    if inplace:
+        backup_path = path + ".bak"
+        os.rename(path, backup_path)
+        with open(path, "w", encoding="utf-8") as f:
+            f.writelines(output_lines)
+        print(f"Cleaned file written in place. Backup saved as {backup_path}")
+    else:
+        sys.stdout.writelines(output_lines)
 
 
 def main():
@@ -119,9 +100,9 @@ def main():
     )
     args = parser.parse_args()
 
-    matcher = HostMatcher(args.patterns)
-    known_hosts = KnownHostsFile(args.file, matcher)
-    known_hosts.clean(args.inplace, args.dry_run)
+    clean_known_hosts(
+        args.file, args.patterns, inplace=args.inplace, dry_run=args.dry_run
+    )
 
 
 if __name__ == "__main__":
