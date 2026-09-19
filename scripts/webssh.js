@@ -86,11 +86,56 @@ function runWrapper(sshArguments) {
   });
 }
 
-async function runProxy(targetHost, allowInsecureCertificate) {
-  if (allowInsecureCertificate) {
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+let cachedAgentClass = null;
+
+function getAgentClass() {
+  if (cachedAgentClass) {
+    return cachedAgentClass;
   }
 
+  if (typeof globalThis.WebSocket !== "undefined") {
+    try {
+      const probeSocket = new globalThis.WebSocket("wss://127.0.0.1:1");
+      const controllerSymbol = Object.getOwnPropertySymbols(probeSocket).find(
+        (symbol) => symbol.description === "controller",
+      );
+      const controller = probeSocket[controllerSymbol];
+      if (controller?.dispatcher?.constructor) {
+        cachedAgentClass = controller.dispatcher.constructor;
+      }
+      controller?.terminate?.();
+      controller?.abort?.();
+      probeSocket.close();
+    } catch {
+      // Ignore probing errors in environments where probe socket instantiation fails
+    }
+  }
+
+  return cachedAgentClass;
+}
+
+function buildWebSocketOptions(allowInsecureCertificate, requestHeaders = {}) {
+  const websocketOptions = {
+    rejectUnauthorized: !allowInsecureCertificate,
+  };
+
+  if (Object.keys(requestHeaders).length > 0) {
+    websocketOptions.headers = requestHeaders;
+  }
+
+  if (allowInsecureCertificate && typeof globalThis.WebSocket !== "undefined") {
+    const AgentClass = getAgentClass();
+    if (AgentClass) {
+      websocketOptions.dispatcher = new AgentClass({
+        connect: { rejectUnauthorized: false },
+      });
+    }
+  }
+
+  return websocketOptions;
+}
+
+async function runProxy(targetHost, allowInsecureCertificate) {
   if (typeof globalThis.WebSocket === "undefined") {
     console.error(
       "Error: Native globalThis.WebSocket is not available in this Node.js version.",
@@ -111,10 +156,12 @@ async function runProxy(targetHost, allowInsecureCertificate) {
     requestHeaders["cf-access-client-secret"] = process.env.CF_CLIENT_SECRET;
   }
 
-  const websocket = new globalThis.WebSocket(
-    websocketUrl,
-    Object.keys(requestHeaders).length > 0 ? { headers: requestHeaders } : {},
+  const websocketOptions = buildWebSocketOptions(
+    allowInsecureCertificate,
+    requestHeaders,
   );
+
+  const websocket = new globalThis.WebSocket(websocketUrl, websocketOptions);
   websocket.binaryType = "arraybuffer";
 
   const connectionTimeout = setTimeout(() => {
@@ -254,6 +301,7 @@ export {
   BUFFERED_AMOUNT_HIGH_WATERMARK_BYTES,
   BUFFERED_AMOUNT_LOW_WATERMARK_BYTES,
   buildProxyCommand,
+  buildWebSocketOptions,
   CONNECTION_TIMEOUT_MILLISECONDS,
   DRAIN_THROTTLE_DELAY_MILLISECONDS,
   MAXIMUM_FRAME_PAYLOAD_BYTES,
