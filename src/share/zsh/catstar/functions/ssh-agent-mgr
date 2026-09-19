@@ -49,10 +49,16 @@ local -a common_paths=(
   /tmp/ssh-*/agent.*(N)
   "$HOME/.1password/agent.sock"
   "$HOME/.gnupg/S.gpg-agent.ssh"
-  /run/user/[0-9]*/keyring/ssh(N)
-  /run/user/[0-9]*/ssh-agent.socket(N)
   /private/tmp/com.apple.launchd.*/Listeners(N)
 )
+
+if [[ -n "$UID" ]]; then
+  common_paths+=(
+    "/run/user/$UID/keyring/ssh"
+    "/run/user/$UID/ssh-agent.socket"
+    "/run/user/$UID/gcr/ssh"
+  )
+fi
 
 if [[ -n "$XDG_RUNTIME_DIR" ]]; then
   common_paths+=(
