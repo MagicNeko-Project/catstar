@@ -163,7 +163,21 @@
   fi
 
   # ---------------------------------------------------------------------------
-  # 5. Oh My Zsh Integration
+  # 5. Function Autoloading & Completion Registration
+  # ---------------------------------------------------------------------------
+  local functions_directory="$catstar_directory/functions"
+  if [[ -d "$functions_directory" ]]; then
+    typeset -g -U fpath
+    fpath=("$functions_directory" $fpath)
+
+    () {
+      setopt localoptions extendedglob
+      autoload -Uz "$functions_directory"/(^_*)(N:t)
+    }
+  fi
+
+  # ---------------------------------------------------------------------------
+  # 6. Oh My Zsh Integration
   # ---------------------------------------------------------------------------
 
   local -a omz_flags=()
@@ -175,24 +189,6 @@
   done
 
   catstar_init_omz "${omz_flags[@]}"
-
-  # ---------------------------------------------------------------------------
-  # 6. Custom Catstar Function Autoloading
-  # ---------------------------------------------------------------------------
-  local functions_directory="$catstar_directory/functions"
-  if [[ -d "$functions_directory" ]]; then
-    # Enforce built-in array deduplication via unique global declaration
-    typeset -g -U fpath
-    fpath=("$functions_directory" $fpath)
-
-    # Autoload all non-hidden modules, excluding completion files starting with an underscore (_)
-    # We isolate the setopt localoptions inside a nested anonymous function so it does
-    # not affect options configured by Oh My Zsh (like promptsubst) in the outer scope.
-    () {
-      setopt localoptions extendedglob
-      autoload -Uz "$functions_directory"/(^_*)(N:t)
-    }
-  fi
 
   # ---------------------------------------------------------------------------
   # 7. Plugin Loaders Execution

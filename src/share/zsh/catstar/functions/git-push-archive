@@ -1,0 +1,128 @@
+# Push branches to a destination remote with collision-resistant ref names
+# Usage: git-push-archive [options] <remote> [<branch>...]
+
+_git_push_archive_show_help() {
+    print -r -- 'Usage: git-push-archive [options] <remote> [<branch>...]
+
+Pushes branch(es) to a destination remote, scoping remote refs under the
+repository path prefix (<prefix>/<branch>) to prevent cross-repository conflicts.
+
+All options must precede the <remote> argument.
+
+Arguments:
+  <remote>              Destination Git remote name or URL.
+  <branch>...           One or more local branch names to push.
+                        If omitted and --all is not passed, pushes current branch.
+
+Options:
+  -p, --prefix <prefix> Override the computed repository path prefix.
+  -a, --all             Push all local branches.
+  -h, --help            Show this help menu.
+  <git push options>    All standard git push options (e.g. -f, -n) are forwarded.'
+}
+
+if (( $# == 0 )); then
+    _git_push_archive_show_help
+    return 0
+fi
+
+if ! command git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    print -u2 "Error: Not inside a valid git repository."
+    return 1
+fi
+
+local custom_prefix=""
+local push_all=false
+local -a push_options=()
+
+# Parse all options strictly before the <remote> argument
+while [[ "$1" == -* ]]; do
+    case "$1" in
+        -h|--help)
+            _git_push_archive_show_help
+            return 0
+            ;;
+        -p|--prefix)
+            if [[ -z "$2" || "$2" == -* ]]; then
+                print -u2 "Error: Option '$1' requires a prefix argument."
+                return 1
+            fi
+            custom_prefix="$2"
+            shift 2
+            ;;
+        --prefix=*)
+            custom_prefix="${1#--prefix=}"
+            shift
+            ;;
+        -a|--all)
+            push_all=true
+            shift
+            ;;
+        *)
+            push_options+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if (( $# == 0 )); then
+    print -u2 "Error: Destination remote required."
+    print -u2 "Usage: git-push-archive [options] <remote> [<branch>...]"
+    return 1
+fi
+
+local target_remote="$1"
+shift
+local -a target_branches=( "$@" )
+
+# 1. Resolve repository prefix: custom override > origin URL > directory name
+local repo_prefix="$custom_prefix"
+if [[ -z "$repo_prefix" ]]; then
+    local source_url
+    source_url=$(command git remote get-url origin 2>/dev/null)
+    if [[ -n "$source_url" ]]; then
+        local cleaned="${source_url%.git}"
+        cleaned="${cleaned%/}"
+        if [[ "$cleaned" == *:* && "$cleaned" != *//* ]]; then
+            repo_prefix="${cleaned#*:}"
+        else
+            repo_prefix="${cleaned#*://}"
+            repo_prefix="${repo_prefix#*/}"
+        fi
+    fi
+fi
+
+if [[ -z "$repo_prefix" ]]; then
+    repo_prefix="${$(command git rev-parse --show-toplevel 2>/dev/null):t}"
+fi
+repo_prefix="${${repo_prefix#/}%/}"
+
+# 2. Determine branches to push
+if [[ "$push_all" == true && ${#target_branches} -gt 0 ]]; then
+    print -u2 "Error: Cannot combine --all with branch arguments."
+    return 1
+fi
+
+local -a branches=()
+if [[ "$push_all" == true ]]; then
+    branches=( "${(@f)$(command git for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null)}" )
+elif (( ${#target_branches} > 0 )); then
+    branches=( "${target_branches[@]}" )
+else
+    local current_branch
+    current_branch=$(command git symbolic-ref --quiet --short HEAD 2>/dev/null)
+    if [[ -z "$current_branch" ]]; then
+        print -u2 "Error: Detached HEAD. Please specify a branch name."
+        return 1
+    fi
+    branches=( "$current_branch" )
+fi
+
+# 3. Construct namespaced refspecs and execute push
+local -a refspecs=()
+local branch
+for branch in "${branches[@]}"; do
+    refspecs+=("refs/heads/${branch}:refs/heads/${repo_prefix}/${branch}")
+done
+
+command git push "${push_options[@]}" "$target_remote" "${refspecs[@]}"

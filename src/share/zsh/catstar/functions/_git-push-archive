@@ -1,0 +1,37 @@
+#compdef git-push-archive
+
+__git_push_archive_remotes() {
+    command git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+    local raw_remotes
+    raw_remotes="$(command git remote 2>/dev/null)" || return 1
+    if [[ -n "$raw_remotes" ]]; then
+        local -a remote_names
+        remote_names=("${(@f)raw_remotes}")
+        _describe -t remotes 'remote' remote_names
+    fi
+}
+
+__git_push_archive_branches() {
+    command git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+    local raw_branches
+    raw_branches="$(command git for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null)" || return 1
+    if [[ -n "$raw_branches" ]]; then
+        local -a branch_names
+        branch_names=("${(@f)raw_branches}")
+        _describe -t branches 'branch' branch_names
+    fi
+}
+
+_git-push-archive() {
+    local -a arguments=(
+        '(-p --prefix)'{-p,--prefix}'[Override computed repository path prefix]:prefix:'
+        '(-a --all)'{-a,--all}'[Push all local branches]'
+        '(-h --help)'{-h,--help}'[Display help menu]'
+        '1:destination remote:__git_push_archive_remotes'
+        '*:branch:__git_push_archive_branches'
+    )
+
+    _arguments -s -S "${arguments[@]}"
+}
+
+_git-push-archive "$@"
