@@ -181,9 +181,10 @@ describe("webssh CLI & Configuration Unit Tests", () => {
           `Sec-WebSocket-Accept: ${acceptKey}\r\n` +
           "\r\n",
       );
-      setTimeout(() => {
+      const destroyTimer = setTimeout(() => {
         socket.destroy();
       }, 50);
+      destroyTimer.unref();
     });
 
     await new Promise((resolve, reject) => {
@@ -217,6 +218,11 @@ describe("webssh CLI & Configuration Unit Tests", () => {
       );
     } finally {
       process.stdin.pause();
+      const wsControllerSymbol = Object.getOwnPropertySymbols(ws).find(
+        (s) => s.description === "controller",
+      );
+      ws[wsControllerSymbol]?.terminate?.();
+      ws[wsControllerSymbol]?.abort?.();
       for (const socket of activeSockets) {
         socket.destroy();
       }

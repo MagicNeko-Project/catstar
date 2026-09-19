@@ -86,6 +86,34 @@ function runWrapper(sshArguments) {
   });
 }
 
+let cachedAgentClass = null;
+
+function getAgentClass() {
+  if (cachedAgentClass) {
+    return cachedAgentClass;
+  }
+
+  if (typeof globalThis.WebSocket !== "undefined") {
+    try {
+      const probeSocket = new globalThis.WebSocket("wss://127.0.0.1:1");
+      const controllerSymbol = Object.getOwnPropertySymbols(probeSocket).find(
+        (symbol) => symbol.description === "controller",
+      );
+      const controller = probeSocket[controllerSymbol];
+      if (controller?.dispatcher?.constructor) {
+        cachedAgentClass = controller.dispatcher.constructor;
+      }
+      controller?.terminate?.();
+      controller?.abort?.();
+      probeSocket.close();
+    } catch {
+      // Ignore probing errors in environments where probe socket instantiation fails
+    }
+  }
+
+  return cachedAgentClass;
+}
+
 function buildWebSocketOptions(allowInsecureCertificate, requestHeaders = {}) {
   const websocketOptions = {
     rejectUnauthorized: !allowInsecureCertificate,
@@ -96,20 +124,11 @@ function buildWebSocketOptions(allowInsecureCertificate, requestHeaders = {}) {
   }
 
   if (allowInsecureCertificate && typeof globalThis.WebSocket !== "undefined") {
-    try {
-      const probeSocket = new globalThis.WebSocket("wss://0.0.0.0:0");
-      const controllerSymbol = Object.getOwnPropertySymbols(probeSocket).find(
-        (symbol) => symbol.description === "controller",
-      );
-      const AgentClass = probeSocket[controllerSymbol]?.dispatcher?.constructor;
-      probeSocket.close();
-      if (AgentClass) {
-        websocketOptions.dispatcher = new AgentClass({
-          connect: { rejectUnauthorized: false },
-        });
-      }
-    } catch {
-      // Ignore probing errors in environments where probe socket instantiation fails
+    const AgentClass = getAgentClass();
+    if (AgentClass) {
+      websocketOptions.dispatcher = new AgentClass({
+        connect: { rejectUnauthorized: false },
+      });
     }
   }
 
