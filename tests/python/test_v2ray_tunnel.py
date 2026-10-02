@@ -67,6 +67,15 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
             ),
         )
 
+    def test_parse_endpoint_plain_port_outbound_raises_error(self) -> None:
+        """Verifies that a plain port number raises a ValueError when specified as an outbound target."""
+        with self.assertRaises(ValueError) as context:
+            parse_endpoint("1234", is_inbound=False)
+        self.assertIn(
+            "Remote destination must specify a target address or hostname",
+            str(context.exception),
+        )
+
     def test_parse_endpoint_url_ws_insecure(self) -> None:
         """Verifies parsing of an insecure WebSocket URL."""
         endpoint = parse_endpoint("ws://example.com:8080/ws-path", is_inbound=False)
@@ -508,3 +517,13 @@ class TestV2RayTunnelGenerator(unittest.TestCase):
 
         # Outbound must have domainStrategy UseIP
         self.assertEqual(config["outbounds"][0]["settings"]["domainStrategy"], "UseIP")
+
+    @unittest.mock.patch("sys.argv", ["v2ray_tunnel.py", "--remote", "1234"])
+    @unittest.mock.patch("sys.stderr")
+    def test_main_plain_port_outbound_failure(self, mock_stderr: Any) -> None:
+        """Verifies that invoking main with a plain-port outbound target exits with code 1 and writes to stderr."""
+        from scripts.v2ray_tunnel import main
+
+        with self.assertRaises(SystemExit) as context:
+            main()
+        self.assertEqual(context.exception.code, 1)

@@ -137,6 +137,10 @@ def parse_endpoint(url_string: str, is_inbound: bool) -> EndpointConfiguration:
     """
     # Handle plain port number
     if url_string.isdigit():
+        if not is_inbound:
+            raise ValueError(
+                f"Remote destination must specify a target address or hostname. Got: '{url_string}'"
+            )
         port = validate_port_number(url_string)
         return EndpointConfiguration(
             transport_protocol="tcp",
