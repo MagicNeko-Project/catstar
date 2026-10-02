@@ -88,6 +88,8 @@ function runWrapper(sshArguments) {
 
 async function runProxy(targetHost, allowInsecureCertificate) {
   if (allowInsecureCertificate) {
+    // Native globalThis.WebSocket lacks direct TLS options, and custom dispatchers require external npm dependencies.
+    // Disabling verification here is isolated to this ephemeral ProxyCommand subprocess.
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
   }
 
