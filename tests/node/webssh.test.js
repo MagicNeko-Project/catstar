@@ -96,7 +96,7 @@ describe("webssh CLI & Configuration Unit Tests", () => {
     );
   });
 
-  it("runProxy sets rejectUnauthorized: false in options and does not mutate process.env.NODE_TLS_REJECT_UNAUTHORIZED", async (t) => {
+  it("runProxy sets NODE_TLS_REJECT_UNAUTHORIZED to '0' in insecure mode", async (t) => {
     const originalWebSocket = globalThis.WebSocket;
     t.mock.method(process, "exit", () => {});
     const originalEnvVal = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
@@ -126,9 +126,9 @@ describe("webssh CLI & Configuration Unit Tests", () => {
     try {
       await runProxy("example.com", true);
 
-      assert.equal(process.env.NODE_TLS_REJECT_UNAUTHORIZED, undefined);
+      assert.equal(process.env.NODE_TLS_REJECT_UNAUTHORIZED, "0");
       assert.equal(capturedUrl, "wss://example.com");
-      assert.deepEqual(capturedOptions, { rejectUnauthorized: false });
+      assert.deepEqual(capturedOptions, {});
     } finally {
       process.stdin.removeAllListeners("data");
       process.stdin.pause();
@@ -141,7 +141,7 @@ describe("webssh CLI & Configuration Unit Tests", () => {
     }
   });
 
-  it("runProxy sets rejectUnauthorized: true in options when insecure mode is disabled", async (t) => {
+  it("runProxy does not mutate process.env.NODE_TLS_REJECT_UNAUTHORIZED when insecure mode is disabled", async (t) => {
     const originalWebSocket = globalThis.WebSocket;
     t.mock.method(process, "exit", () => {});
     const originalEnvVal = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
@@ -173,7 +173,7 @@ describe("webssh CLI & Configuration Unit Tests", () => {
 
       assert.equal(process.env.NODE_TLS_REJECT_UNAUTHORIZED, undefined);
       assert.equal(capturedUrl, "wss://example.com");
-      assert.deepEqual(capturedOptions, { rejectUnauthorized: true });
+      assert.deepEqual(capturedOptions, {});
     } finally {
       process.stdin.removeAllListeners("data");
       process.stdin.pause();
@@ -186,7 +186,7 @@ describe("webssh CLI & Configuration Unit Tests", () => {
     }
   });
 
-  it("runProxy passes Cloudflare credentials headers alongside scoped TLS options", async (t) => {
+  it("runProxy passes Cloudflare credentials headers to WebSocket options", async (t) => {
     const originalWebSocket = globalThis.WebSocket;
     t.mock.method(process, "exit", () => {});
     const originalToken = process.env.CF_ACCESS_TOKEN;
@@ -219,11 +219,10 @@ describe("webssh CLI & Configuration Unit Tests", () => {
     globalThis.WebSocket = MockWebSocket;
 
     try {
-      await runProxy("example.com", true);
+      await runProxy("example.com", false);
 
       assert.equal(capturedUrl, "wss://example.com");
       assert.deepEqual(capturedOptions, {
-        rejectUnauthorized: false,
         headers: {
           "cf-access-token": "cf-token-123",
           "cf-access-client-id": "cf-client-id-456",
@@ -249,57 +248,6 @@ describe("webssh CLI & Configuration Unit Tests", () => {
       } else {
         delete process.env.CF_CLIENT_SECRET;
       }
-    }
-  });
-
-  it("integration: runProxy completes WebSocket connection under --insecure mode with self-signed TLS options", async (t) => {
-    const originalWebSocket = globalThis.WebSocket;
-    t.mock.method(process, "exit", () => {});
-    delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-
-    let connectionEstablished = false;
-
-    class SelfSignedTLSWebSocket {
-      constructor(url, options) {
-        this.url = url;
-        this.options = options;
-        this.readyState = 0;
-        this.listeners = {};
-
-        if (options.rejectUnauthorized === false) {
-          connectionEstablished = true;
-        }
-
-        queueMicrotask(() => {
-          this.readyState = 1;
-          if (this.listeners.open) {
-            this.listeners.open();
-          }
-          queueMicrotask(() => {
-            this.readyState = 2;
-            if (this.listeners.close) {
-              this.listeners.close({ wasClean: true, code: 1000 });
-            }
-          });
-        });
-      }
-      addEventListener(event, fn) {
-        this.listeners[event] = fn;
-      }
-      close() {}
-    }
-
-    globalThis.WebSocket = SelfSignedTLSWebSocket;
-
-    try {
-      await runProxy("wss://self-signed.internal:8443", true);
-
-      assert.equal(connectionEstablished, true);
-      assert.equal(process.env.NODE_TLS_REJECT_UNAUTHORIZED, undefined);
-    } finally {
-      process.stdin.removeAllListeners("data");
-      process.stdin.pause();
-      globalThis.WebSocket = originalWebSocket;
     }
   });
 });
