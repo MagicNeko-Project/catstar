@@ -1,42 +1,34 @@
-# Project Test Directory
+# Project Test Suites
 
-This directory contains unit test suites and framework utilities for testing project components.
+This directory houses domain-partitioned test suites for project components. Each subdirectory is fully autonomous with its own runtime tooling and execution harness.
 
 ## Directory Structure
 
 ```text
 tests/
 ├── README.md              <-- Top-level test documentation
-├── run_tests.zsh          <-- CLI runner for ZSH test suites
-├── bootstrap.zsh          <-- Project environment loader for ZSH tests
-├── lib/                   <-- Framework internal libraries
-│   ├── assertions.zsh
-│   ├── cli.zsh
-│   ├── discovery.zsh
-│   ├── executor.zsh
-│   ├── reporter.zsh
-│   └── ztest.zsh          <-- ZTEST core assertion engine
-├── zsh/                   <-- ZSH unit test suites
-│   ├── README.md          <-- ZSH Test Authoring Specification
-│   ├── sanity_randstr_test.zsh
-│   └── sanity_gen_ipv4_test.zsh
-└── python/                <-- Python unit test suites
-    └── test_v2ray_tunnel.py
+├── zsh/                   <-- Native Zsh test suites, CLI runner, and ztest framework
+│   ├── run.zsh            <-- CLI runner for Zsh test suites
+│   ├── bootstrap.zsh      <-- Environment loader for Zsh tests
+│   ├── lib/               <-- ztest framework modules
+│   └── README.md          <-- Zsh test authoring specification
+├── python/                <-- Python unit test suites (unittest)
+└── node/                  <-- Node.js unit test suites (node --test)
 ```
 
 ## Running Unit Tests
 
-### ZSH Unit Tests
+### Zsh Unit Tests
 
 ```bash
-# Run all ZSH unit tests
-./tests/run_tests.zsh
+# Run all Zsh unit tests
+./tests/zsh/run.zsh
 
 # Run specific test matching a pattern
-./tests/run_tests.zsh --filter="IPv4*"
+./tests/zsh/run.zsh --filter="IPv4*"
 
 # List discovered test cases
-./tests/run_tests.zsh --list
+./tests/zsh/run.zsh --list
 ```
 
 ### Python Unit Tests
@@ -44,4 +36,11 @@ tests/
 ```bash
 # Run all Python unit tests
 python3 -m unittest discover -s tests/python -p "test_*.py"
+```
+
+### Node.js Unit Tests
+
+```bash
+# Run all Node.js unit tests
+node --test tests/node/*.test.js
 ```

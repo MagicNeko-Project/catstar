@@ -28,7 +28,7 @@ Linux filesystem overlay mirroring host directories (`/etc`, `/lib/systemd`) man
 Automated test suites partitioned by domain (Go tests are co-located within `app/`):
 - **`tests/python/`**: Unit tests for Python automation scripts.
 - **`tests/node/`**: Unit tests for Node.js utilities.
-- **`tests/zsh/`**: Behavioral test suite verifying modular Zsh functions and loaders.
+- **`tests/zsh/`**: Dedicated test harness and behavioral suites verifying modular Zsh functions and loaders.
 
 ### `.github/`
 Continuous integration workflows automating testing, linting, and build verification across all repository domains.

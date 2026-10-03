@@ -161,20 +161,20 @@ Execute test suites using the CLI runner:
 
 ```bash
 # Run all test suites
-./tests/run_tests.zsh
+./tests/zsh/run.zsh
 
 # Run specific test suites or cases matching a pattern
-./tests/run_tests.zsh --filter="IPv4GeneratorTest.*"
-./tests/run_tests.zsh -f "*valid_input*"
+./tests/zsh/run.zsh --filter="IPv4GeneratorTest.*"
+./tests/zsh/run.zsh -f "*valid_input*"
 
 # List discovered test suites and test cases without running
-./tests/run_tests.zsh --list
+./tests/zsh/run.zsh --list
 
 # Stop test execution immediately on the first failed test
-./tests/run_tests.zsh --break-on-failure
+./tests/zsh/run.zsh --break-on-failure
 
 # Specify a custom bootstrap script for environment initialization
-./tests/run_tests.zsh --bootstrap=path/to/bootstrap.zsh
+./tests/zsh/run.zsh --bootstrap=path/to/bootstrap.zsh
 ```
 
 ---

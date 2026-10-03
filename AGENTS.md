@@ -27,7 +27,7 @@ Each area operates under separate control and independent tooling:
 
 - **`src/share/zsh/` (Zsh Shell Environment):**
   - Modular Zsh configuration, prompt definitions, and autoloaded functions.
-  - Pure native Zsh runtime; verified by the shell test suite in `tests/zsh/`.
+  - Pure native Zsh runtime; verified by the isolated shell test suite in `tests/zsh/` (`./tests/zsh/run.zsh`).
 
 - **`src/` & `stow.sh` (System Filesystem Overlay):**
   - Host filesystem mirror (`src/etc/`, `src/lib/systemd/`) deployed via the root `stow.sh` wrapper using GNU Stow.
@@ -36,7 +36,7 @@ Each area operates under separate control and independent tooling:
 
 - **`tests/` (Test Suites):**
   - Test suites partitioned strictly by domain (`tests/python/` and `tests/node/` for `scripts/`, `tests/zsh/` for `src/share/zsh/`).
-  - Shared test harness infrastructure resides in `tests/lib/` and `tests/run_tests.zsh`.
+  - All Zsh test harness infrastructure (`run.zsh`, `bootstrap.zsh`, `lib/`) is contained entirely within `tests/zsh/`.
   - Never treat `tests/` as a monolithic shared area; test edits must remain confined to the active domain's test suite.
 
 - **`.github/` (CI/CD Workflows):**
