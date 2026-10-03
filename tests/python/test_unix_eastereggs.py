@@ -153,6 +153,9 @@ class TestEasterEggRegistry(unittest.TestCase):
         egg, _ = self.registry.resolve(["python", "-m", "antigravity"])
         self.assertIsInstance(egg, PythonEggs)
 
+        egg, _ = self.registry.resolve(["import", "this"])
+        self.assertIsInstance(egg, PythonEggs)
+
         egg, _ = self.registry.resolve(["make", "love"])
         self.assertIsInstance(egg, MakeLove)
 
