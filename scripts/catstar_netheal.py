@@ -87,7 +87,12 @@ def run_dns_resolution_test(domain_name: str, timeout_seconds: int) -> bool:
             resolved_ip = future.result(timeout=float(timeout_seconds))
         logger.info(f"DNS resolution test for '{domain_name}' succeeded: {resolved_ip}")
         return True
-    except (socket.gaierror, OSError, TimeoutError, concurrent.futures.TimeoutError) as error:
+    except (
+        socket.gaierror,
+        OSError,
+        TimeoutError,
+        concurrent.futures.TimeoutError,
+    ) as error:
         logger.warning(f"DNS resolution test for '{domain_name}' failed: {error}")
         return False
 
