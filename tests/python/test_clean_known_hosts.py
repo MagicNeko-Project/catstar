@@ -30,6 +30,23 @@ class TestCleanKnownHosts(unittest.TestCase):
         self.assertFalse(host_matches("badexample.com", "example.com"))
         self.assertFalse(host_matches("example.com.org", "example.com"))
 
+    def test_host_matches_permuted_and_rearranged_patterns(self) -> None:
+        # Verify set-subtraction false positives (permuted octets / rearranged labels) do not match
+        self.assertFalse(host_matches("192.168.1.1", "1.1.1.1"))
+        self.assertFalse(host_matches("1.1.1.192", "192.168.1.1"))
+        self.assertFalse(host_matches("example.org", "org.example"))
+        self.assertFalse(host_matches("192.168.10.50", "192.168.1"))
+
+    def test_clean_known_hosts_file_not_found(self) -> None:
+        with patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
+            with self.assertRaises(SystemExit) as cm:
+                clean_known_hosts("/nonexistent/known_hosts", ["example.com"])
+            self.assertEqual(cm.exception.code, 1)
+            self.assertIn(
+                "Error: File not found at /nonexistent/known_hosts",
+                mock_stderr.getvalue(),
+            )
+
     def test_line_matches(self) -> None:
         self.assertFalse(line_matches("# Comment line", ["example.com"]))
         self.assertFalse(line_matches("", ["example.com"]))
