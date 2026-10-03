@@ -29,7 +29,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y zsh
 
       - name: Run ZSH Unit Tests
-        run: ./tests/run_tests.zsh
+        run: ./tests/zsh/run.zsh
 
   test-python:
     name: Python Unit Tests (${{ matrix.python-version }})
@@ -47,7 +47,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Run Python Unit Tests
-        run: python3 -m unittest discover -s tests
+        run: python3 -m unittest discover -s tests/python -p "test_*.py"
 
   test-node:
     name: Node Unit Tests (${{ matrix.node-version }})

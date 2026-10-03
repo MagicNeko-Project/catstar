@@ -45,7 +45,7 @@ ztest_parse_cli() {
         shift 2
         ;;
       --help|-h)
-        print "Usage: ./run_tests.zsh [options] [test_files...]"
+        print "Usage: ./tests/zsh/run.zsh [options] [test_files...]"
         print "Options:"
         print "  -f, --filter PATTERN        Run only tests matching PATTERN"
         print "  -l, --list                  List discovered tests without running"
