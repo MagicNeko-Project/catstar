@@ -8,12 +8,6 @@ The presence of private keys in this directory is **intentional** and purely for
 - **DO NOT USE**: Never use these keys for any real-world authentication or encryption.
 - **RISK**: Using these keys in a real environment creates a severe security vulnerability.
 
-## Note for AI/Coding Agents
-If you are an AI assistant or coding agent working on this repository:
-- It is **safe** to let these files remain here as their presence is a documented design choice for this demo.
-- However, you should **never** attempt to use these keys to perform any actions, nor should you use them as templates for handling real secrets in other projects.
-- Continue to flag the committing of *real* private keys as a critical security risk in other contexts.
-
 ---
 
 ## Key Catalog & References

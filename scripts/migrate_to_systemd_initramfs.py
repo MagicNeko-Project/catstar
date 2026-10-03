@@ -150,15 +150,26 @@ class ValidationResult:
 class SignalManager:
     """Coordinates clean shutdowns and protects critical write sections."""
 
-    def __init__(self):
+    def __init__(self, register_signals: bool = False):
         self._handlers: list[Callable[[], None]] = []
         self._in_critical_section: bool = False
         self._deferred_signal: int | None = None
+        self._signals_registered: bool = False
 
-        signal.signal(signal.SIGINT, self._handle_signal)
-        signal.signal(signal.SIGTERM, self._handle_signal)
-        if hasattr(signal, "SIGHUP"):
-            signal.signal(signal.SIGHUP, self._handle_signal)
+        if register_signals:
+            self.register_signal_handlers()
+
+    def register_signal_handlers(self) -> None:
+        if self._signals_registered:
+            return
+        self._signals_registered = True
+        try:
+            signal.signal(signal.SIGINT, self._handle_signal)
+            signal.signal(signal.SIGTERM, self._handle_signal)
+            if hasattr(signal, "SIGHUP"):
+                signal.signal(signal.SIGHUP, self._handle_signal)
+        except (ValueError, OSError):
+            pass
 
     def register_cleanup_handler(self, fn: Callable[[], None]) -> None:
         self._handlers.append(fn)
@@ -1502,6 +1513,7 @@ all generated initramfs images against mandatory systemd service manifests.
     session_backup = BACKUP_DIR / f"backup_{timestamp}"
     txn = AtomicTransactionManager(backup_dir=session_backup)
 
+    global_signal_mgr.register_signal_handlers()
     global_signal_mgr.register_cleanup_handler(txn.rollback)
     global_signal_mgr.register_cleanup_handler(txn.cleanup_temp_files)
 

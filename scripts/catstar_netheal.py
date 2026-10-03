@@ -6,6 +6,7 @@ Triggers declarative recovery actions upon reaching a consecutive failure thresh
 """
 
 import argparse
+import concurrent.futures
 import json
 import logging
 import os
@@ -80,17 +81,15 @@ def run_dns_resolution_test(domain_name: str, timeout_seconds: int) -> bool:
     logger.info(
         f"Running DNS resolution test for domain: '{domain_name}' (timeout: {timeout_seconds}s)..."
     )
-    original_timeout = socket.getdefaulttimeout()
     try:
-        socket.setdefaulttimeout(float(timeout_seconds))
-        resolved_ip = socket.gethostbyname(domain_name)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(socket.gethostbyname, domain_name)
+            resolved_ip = future.result(timeout=float(timeout_seconds))
         logger.info(f"DNS resolution test for '{domain_name}' succeeded: {resolved_ip}")
         return True
-    except (socket.gaierror, OSError, TimeoutError) as error:
+    except (socket.gaierror, OSError, TimeoutError, concurrent.futures.TimeoutError) as error:
         logger.warning(f"DNS resolution test for '{domain_name}' failed: {error}")
         return False
-    finally:
-        socket.setdefaulttimeout(original_timeout)
 
 
 def run_http_request_test(
