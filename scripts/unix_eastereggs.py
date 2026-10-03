@@ -556,8 +556,11 @@ class SteamLocomotive(EasterEgg):
         original_sigint_handler = None
         try:
             if not allow_interrupt:
-                original_sigint_handler = signal.getsignal(signal.SIGINT)
-                signal.signal(signal.SIGINT, signal.SIG_IGN)
+                try:
+                    original_sigint_handler = signal.getsignal(signal.SIGINT)
+                    signal.signal(signal.SIGINT, signal.SIG_IGN)
+                except (ValueError, TypeError):
+                    original_sigint_handler = None
 
             def run(stdscr: curses.window) -> None:
                 self._animate(
@@ -1685,28 +1688,37 @@ class EasterEggRegistry:
             return None, []
 
         first_token: str = argv[0].lower()
+        joined_cmd: str = " ".join(argv).lower()
+
+        # Check multi-token combinations first (e.g. `apt-get moo`, `python -m this`)
+        if len(argv) >= 2:
+            if "apt" in first_token and "moo" in joined_cmd:
+                egg = self._alias_map.get("apt") or self._alias_map.get("apt-get")
+                if egg:
+                    return egg, argv
+            if "python" in first_token and any(
+                kw in joined_cmd for kw in ("this", "antigravity", "__hello__")
+            ):
+                egg = self._alias_map.get("this") or self._alias_map.get("python")
+                if egg:
+                    return egg, argv
+            if "import" in first_token:
+                egg = self._alias_map.get("this") or self._alias_map.get("python")
+                if egg:
+                    return egg, argv
+            if "make" in first_token and "love" in joined_cmd:
+                egg = self._alias_map.get("make")
+                if egg:
+                    return egg, argv
 
         # Check single-token aliases
         if first_token in self._alias_map:
             return self._alias_map[first_token], argv
 
         # Check secret aliases
-        if first_token in [alias.lower() for alias in self.secret_egg.aliases]:
+        secret_aliases = [alias.lower() for alias in self.secret_egg.aliases]
+        if first_token in secret_aliases:
             return self.secret_egg, argv
-
-        # Check multi-token combinations (e.g. `apt-get moo`, `python -m this`)
-        if len(argv) >= 2:
-            combined_two: str = f"{argv[0]} {argv[1]}".lower()
-            if "apt" in argv[0].lower() and "moo" in argv[1].lower():
-                return self._alias_map.get("apt"), argv
-            if "python" in argv[0].lower() and "this" in combined_two:
-                return self._alias_map.get("this"), argv
-            if "python" in argv[0].lower() and "antigravity" in combined_two:
-                return self._alias_map.get("this"), argv
-            if "python" in argv[0].lower() and "__hello__" in combined_two:
-                return self._alias_map.get("this"), argv
-            if "import" in argv[0].lower():
-                return self._alias_map.get("this"), argv
 
         # Fuzzy / partial matching
         for egg in self._eggs:
