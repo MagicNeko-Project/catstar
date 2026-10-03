@@ -1,35 +1,49 @@
-# Catstar AI Agent Guidelines (AGENTS.md)
+# Agent Guidelines
 
 ## 1. Operating Mandate
-- **Full Autonomy:** Determine optimal implementation strategies autonomously. Prioritize zero cognitive load and readability.
+- **Full Autonomy:** Determine optimal implementation strategies autonomously, prioritizing readability and zero cognitive load.
 - **Native Idioms:** Follow established community patterns rather than rigid, prescriptive rules.
-- **Unbranded Code:** Ensure all generated code, UI prompts, and documentation remain strictly unbranded. Avoid inserting project names, logos, or custom watermarks; focus purely on clean, functional utility.
+- **Unbranded Code:** Ensure all generated code, UI strings, and documentation remain strictly unbranded. Omit project names, logos, or custom watermarks in favor of plain functional utility.
+- **Domain Isolation:** The project is strictly partitioned into distinct areas. Confine file modifications to the active domain, except during global or project-level refactorings of a common theme.
+- **Directory Maintenance:** Whenever a new conceptual or root-level directory is added to the project, update this file immediately to define its domain boundaries, ownership, and rules.
 
-## 2. Repository Structure
-`catstar` is a multi-language infrastructure and automation repository:
-- `ansible/`: Server provisioning and service deployment (YAML/Jinja2).
-- `app/catstar-backup/`: Standalone backup orchestration daemon (Go).
-- `scripts/`: Automation and repository maintenance utilities (Python/Zsh).
-- `src/`: Linux root filesystem mirror deployed via GNU Stow, including custom systemd units and modular Zsh configurations.
-- `config/`: Static system configurations. Normally irrelevant for coding tasks.
-- `docs/`: System documentation and migration guides. Normally irrelevant for coding tasks.
+## 2. Domain Partitions
+Each area operates under separate control and independent tooling:
 
-## 3. Native Standards & Coding Guidelines
-Always target the latest stable release and adhere to strict native standards. Prioritize zero cognitive load, flat logic, and plain-English naming across all languages:
+- **`ansible/` (Server Provisioning):**
+  - Infrastructure automation and server provisioning (YAML/Jinja2).
+  - Enforce thin, modular roles, task idempotency, and `ansible-lint` compliance.
 
-- **Go (`app/`):**
-  - Maintain idiomatic Go structure, strict static typing, and `gofmt` compliance.
-  - Reject cryptic variable names (`r`, `c`, `i`); use descriptive labels and flat error handling.
-- **Python (`scripts/`):**
-  - Enforce strict type hinting (PEP 484) and PEP 8 compliance.
-  - Break complex operations into named sequential steps; avoid dense list comprehensions or clever one-liners.
-- **Shell / Zsh (`src/share/zsh`):**
-  - Code must be Zsh native; do not mix or use other shell syntaxes.
-  - Maintain modular organization, lazy-loaded functions (`autoload`), scope isolation via anonymous functions, strict variable quoting, and correct script path resolution (`$1` vs `$0`).
-- **Ansible (`ansible/`):**
-  - Follow `ansible-lint` standards and maintain thin, modular roles.
-  - Ensure all tasks are idempotent and cleanly separate configuration from execution logic.
+- **`app/` (Compiled Tools):**
+  - Standalone structured, compiled tools (Go), kept strictly separate from the script directory.
+  - Ownership includes root container packaging (`Dockerfile`, `.dockerignore`).
+  - Internal tests are co-located within each tool directory under `app/`.
 
-## 4. Boundary Constraints
-- **Untracked Files:** Strictly respect `.gitignore`. Ignore any files not checked into git.
-- **Exclusions:** Completely ignore the `keys/` directory (irrelevant and immutable).
+- **`scripts/` & `src/bin/` (Automation & CLI Tools):**
+  - Standalone automation utilities, maintenance scripts, and CLI binaries (Python, Node.js, Shell).
+  - Ownership includes root toolchain manifests (`pyproject.toml`, `package.json`, `biome.json`, `uv.lock`, `pnpm-lock.yaml`).
+  - Associated test suites are located in `tests/python/` and `tests/node/`.
+  - For `src/bin/`, only create symlinks when explicitly instructed by the user.
+
+- **`src/share/zsh/` (Zsh Shell Environment):**
+  - Modular Zsh configuration, prompt definitions, and autoloaded functions.
+  - Pure native Zsh runtime; verified by the shell test suite in `tests/zsh/`.
+
+- **`src/` & `stow.sh` (System Filesystem Overlay):**
+  - Host filesystem mirror (`src/etc/`, `src/lib/systemd/`) deployed via the root `stow.sh` wrapper using GNU Stow.
+  - Manages systemd unit definitions, configuration templates, and symlink deployment rules.
+  - Excludes `src/bin/` (CLI Tools) and `src/share/zsh/` (Zsh Shell Environment).
+
+- **`tests/` (Test Suites):**
+  - Test suites partitioned strictly by domain (`tests/python/` and `tests/node/` for `scripts/`, `tests/zsh/` for `src/share/zsh/`).
+  - Shared test harness infrastructure resides in `tests/lib/` and `tests/run_tests.zsh`.
+  - Never treat `tests/` as a monolithic shared area; test edits must remain confined to the active domain's test suite.
+
+- **`.github/` (CI/CD Workflows):**
+  - Centralized GitHub Actions workflow definitions.
+  - Workflows mirror domain toolchains and are modified strictly when updating automation for that domain.
+
+## 3. Boundary Constraints
+- **`config/` & `docs/`:** Static configuration and documentation with no relationship to the rest of the project. Do not inspect unless explicitly instructed by the user for specific named files.
+- **`keys/`:** Do not inspect its content under any condition.
+- **Untracked Files:** Strictly respect `.gitignore`. Never inspect, modify, or commit files not tracked by git.
