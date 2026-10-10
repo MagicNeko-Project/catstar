@@ -4,8 +4,8 @@ import json
 import signal
 import tempfile
 import unittest
-from unittest.mock import mock_open, patch
 from pathlib import Path
+from unittest.mock import mock_open, patch
 
 from scripts.migrate_to_systemd_initramfs import (
     AtomicTransactionManager,

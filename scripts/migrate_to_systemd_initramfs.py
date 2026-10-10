@@ -25,6 +25,14 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any, ClassVar
 
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    try:
+        from typing_extensions import Self
+    except ImportError:
+        Self = Any  # type: ignore[assignment,misc]
+
 # Configuration Constants
 DEFAULT_CONF_PATH = Path("/etc/mkinitcpio.conf")
 BACKUP_DIR = Path("/var/backups/mkinitcpio-systemd-migration")
@@ -175,7 +183,7 @@ class SignalManager:
                 pass
         self._orig_handlers.clear()
 
-    def __enter__(self) -> "SignalManager":
+    def __enter__(self) -> Self:
         self.install_handlers()
         return self
 
