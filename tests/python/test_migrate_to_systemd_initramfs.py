@@ -1,17 +1,21 @@
 """Unit tests for Arch Linux systemd-based initramfs migration script."""
 
 import json
+import signal
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import mock_open, patch
 
 from scripts.migrate_to_systemd_initramfs import (
     AtomicTransactionManager,
     BootloaderMigrator,
     HookMigrator,
+    PreflightSafetyGuard,
     RobustImageValidator,
     SignalManager,
     SystemDiagnostics,
+    migrate_cmdline_params,
 )
 
 
@@ -233,6 +237,89 @@ class TestBootloaderMigrator(unittest.TestCase):
             target = BootloaderMigrator.audit_config(conf_path)
             self.assertFalse(target.needs_update)
             self.assertEqual(target.original_content, target.proposed_content)
+
+    def test_audit_config_grub_quotes_and_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            grub_path = Path(tmpdir) / "grub"
+            grub_path.write_text(
+                'GRUB_CMDLINE_LINUX="rw quiet"\nGRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 rw"\n'
+            )
+
+            target = BootloaderMigrator.audit_config(grub_path)
+            self.assertTrue(target.needs_update)
+            self.assertIn('GRUB_CMDLINE_LINUX="ro quiet"', target.proposed_content)
+            self.assertIn(
+                'GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 ro"', target.proposed_content
+            )
+
+    def test_audit_config_cmdline_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cmd_path = Path(tmpdir) / "cmdline"
+            cmd_path.write_text("root=UUID=456 rw quiet splash\n")
+
+            target = BootloaderMigrator.audit_config(cmd_path)
+            self.assertTrue(target.needs_update)
+            self.assertEqual(target.proposed_content, "root=UUID=456 ro quiet splash\n")
+
+    def test_audit_config_cmdline_already_ro_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cmd_path = Path(tmpdir) / "cmdline"
+            cmd_path.write_text("root=UUID=456 ro quiet splash\n")
+
+            target = BootloaderMigrator.audit_config(cmd_path)
+            self.assertFalse(target.needs_update)
+            self.assertEqual(target.original_content, target.proposed_content)
+
+
+class TestCmdlineParamsMigration(unittest.TestCase):
+    """Test helper migrate_cmdline_params."""
+
+    def test_migrate_cmdline_params(self) -> None:
+        self.assertEqual(migrate_cmdline_params("rw"), "ro")
+        self.assertEqual(migrate_cmdline_params("rw quiet"), "ro quiet")
+        self.assertEqual(
+            migrate_cmdline_params("root=UUID=1 rw quiet"), "root=UUID=1 ro quiet"
+        )
+        self.assertEqual(
+            migrate_cmdline_params("root=UUID=1 ro quiet"), "root=UUID=1 ro quiet"
+        )
+        self.assertEqual(
+            migrate_cmdline_params("root=UUID=1 rw ro quiet"), "root=UUID=1 ro quiet"
+        )
+        self.assertEqual(migrate_cmdline_params("no_rw_here"), "no_rw_here")
+
+
+class TestPreflightSafetyGuard(unittest.TestCase):
+    """Test mount option parsing and prefix matching."""
+
+    def test_get_mount_options_prefix_matching(self) -> None:
+        mounts_data = (
+            "/dev/sda1 / ext4 rw,relatime 0 0\n"
+            "/dev/sda2 /b ext4 ro,relatime 0 0\n"
+            "/dev/sda3 /boot ext4 rw,noatime 0 0\n"
+        )
+        with patch("builtins.open", mock_open(read_data=mounts_data)):
+            opts = PreflightSafetyGuard.get_mount_options(Path("/boot"))
+            self.assertIn("rw", opts)
+            self.assertIn("noatime", opts)
+            self.assertNotIn("ro", opts)
+
+
+class TestSignalManager(unittest.TestCase):
+    """Test SignalManager isolation without global side effects on init."""
+
+    def test_no_side_effects_on_init(self) -> None:
+        orig_sigint = signal.getsignal(signal.SIGINT)
+        _ = SignalManager(install=False)
+        self.assertEqual(signal.getsignal(signal.SIGINT), orig_sigint)
+
+    def test_install_and_restore_handlers(self) -> None:
+        orig_sigint = signal.getsignal(signal.SIGINT)
+        mgr = SignalManager()
+        mgr.install_handlers()
+        self.assertNotEqual(signal.getsignal(signal.SIGINT), orig_sigint)
+        mgr.restore_handlers()
+        self.assertEqual(signal.getsignal(signal.SIGINT), orig_sigint)
 
 
 class TestSystemDiagnostics(unittest.TestCase):
