@@ -23,7 +23,15 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import IntEnum
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    try:
+        from typing_extensions import Self
+    except ImportError:
+        Self = Any  # type: ignore[assignment,misc]
 
 # Configuration Constants
 DEFAULT_CONF_PATH = Path("/etc/mkinitcpio.conf")
@@ -150,15 +158,37 @@ class ValidationResult:
 class SignalManager:
     """Coordinates clean shutdowns and protects critical write sections."""
 
-    def __init__(self):
+    def __init__(self, install: bool = False):
         self._handlers: list[Callable[[], None]] = []
         self._in_critical_section: bool = False
         self._deferred_signal: int | None = None
+        self._orig_handlers: dict[int, Any] = {}
+        if install:
+            self.install_handlers()
 
-        signal.signal(signal.SIGINT, self._handle_signal)
-        signal.signal(signal.SIGTERM, self._handle_signal)
+    def install_handlers(self) -> None:
+        sigs = [signal.SIGINT, signal.SIGTERM]
         if hasattr(signal, "SIGHUP"):
-            signal.signal(signal.SIGHUP, self._handle_signal)
+            sigs.append(signal.SIGHUP)
+        for sig in sigs:
+            if sig not in self._orig_handlers:
+                self._orig_handlers[sig] = signal.getsignal(sig)
+                signal.signal(sig, self._handle_signal)
+
+    def restore_handlers(self) -> None:
+        for sig, old_h in self._orig_handlers.items():
+            try:
+                signal.signal(sig, old_h)
+            except (OSError, ValueError):
+                pass
+        self._orig_handlers.clear()
+
+    def __enter__(self) -> Self:
+        self.install_handlers()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.restore_handlers()
 
     def register_cleanup_handler(self, fn: Callable[[], None]) -> None:
         self._handlers.append(fn)
@@ -200,9 +230,6 @@ class SignalManager:
 
     def critical_section(self) -> "CriticalSection":
         return self.CriticalSection(self)
-
-
-global_signal_mgr = SignalManager()
 
 
 # System Diagnostics & Kernel Resolution
@@ -364,6 +391,7 @@ class PreflightSafetyGuard:
     @staticmethod
     def get_mount_options(path: Path) -> list[str]:
         resolved = path.resolve()
+        resolved_str = str(resolved)
         best_match = ""
         best_opts: list[str] = []
         try:
@@ -373,7 +401,11 @@ class PreflightSafetyGuard:
                     if len(parts) >= 4:
                         mp = parts[1]
                         opts = parts[3].split(",")
-                        if str(resolved).startswith(mp) and len(mp) > len(best_match):
+                        if (
+                            resolved_str == mp
+                            or resolved_str.startswith(mp.rstrip("/") + "/")
+                            or mp == "/"
+                        ) and len(mp) > len(best_match):
                             best_match = mp
                             best_opts = opts
         except (OSError, ValueError):
@@ -733,6 +765,20 @@ class HookMigrator:
 # Bootloader Migrator
 
 
+def migrate_cmdline_params(params_str: str) -> str:
+    """Migrates 'rw' kernel parameter to 'ro' within parameter string."""
+    tokens = params_str.split()
+    if not tokens or "rw" not in tokens:
+        return params_str
+
+    if "ro" in tokens:
+        new_tokens = [t for t in tokens if t != "rw"]
+    else:
+        new_tokens = ["ro" if t == "rw" else t for t in tokens]
+
+    return " ".join(new_tokens)
+
+
 class BootloaderMigrator:
     """Discovers, audits, and transforms bootloader parameters from 'rw' to 'ro'."""
 
@@ -778,41 +824,97 @@ class BootloaderMigrator:
         content = path.read_text(encoding="utf-8")
         bl_type = "unknown"
 
-        def replacer(m):
-            line = m.group(0)
-            tokens = line.split()
-            new_tokens = []
-            has_ro = "ro" in tokens
-            for t in tokens:
-                if t == "rw":
-                    if not has_ro and "ro" not in new_tokens:
-                        new_tokens.append("ro")
-                else:
-                    new_tokens.append(t)
-            return " ".join(new_tokens)
+        lines = content.splitlines(keepends=True)
+        new_lines = []
 
         if path.suffix == ".conf" and "loader/entries" in str(path):
             bl_type = "systemd-boot"
-            new_content = re.sub(
-                r"^(\s*options\s+.*)$", replacer, content, flags=re.MULTILINE
-            )
+            for line in lines:
+                m = re.match(r"^(\s*options\s+)(.*)$", line)
+                if m:
+                    prefix, params = m.group(1), m.group(2)
+                    nl = (
+                        "\r\n"
+                        if line.endswith("\r\n")
+                        else ("\n" if line.endswith("\n") else "")
+                    )
+                    p_clean = params.rstrip("\r\n")
+                    new_lines.append(f"{prefix}{migrate_cmdline_params(p_clean)}{nl}")
+                else:
+                    new_lines.append(line)
+
         elif path.name == "grub":
             bl_type = "GRUB"
-            new_content = re.sub(
-                r"^(\s*GRUB_CMDLINE_LINUX(?:_DEFAULT)?=.*)$",
-                replacer,
-                content,
-                flags=re.MULTILINE,
-            )
+            for line in lines:
+                m = re.match(r"^(\s*GRUB_CMDLINE_LINUX(?:_DEFAULT)?=)(.*)$", line)
+                if m:
+                    prefix, raw_val = m.group(1), m.group(2)
+                    nl = (
+                        "\r\n"
+                        if line.endswith("\r\n")
+                        else ("\n" if line.endswith("\n") else "")
+                    )
+                    val_clean = raw_val.rstrip("\r\n")
+                    if (val_clean.startswith('"') and val_clean.endswith('"')) or (
+                        val_clean.startswith("'") and val_clean.endswith("'")
+                    ):
+                        q = val_clean[0]
+                        inner = val_clean[1:-1]
+                        new_val = f"{q}{migrate_cmdline_params(inner)}{q}"
+                    else:
+                        new_val = migrate_cmdline_params(val_clean)
+                    new_lines.append(f"{prefix}{new_val}{nl}")
+                else:
+                    new_lines.append(line)
+
         elif "cmdline" in path.name:
             bl_type = "UKI / Cmdline"
-            new_content = replacer(re.match(r".*", content))
+            for line in lines:
+                if line.strip().startswith("#"):
+                    new_lines.append(line)
+                else:
+                    nl = (
+                        "\r\n"
+                        if line.endswith("\r\n")
+                        else ("\n" if line.endswith("\n") else "")
+                    )
+                    line_clean = line.rstrip("\r\n")
+                    new_lines.append(f"{migrate_cmdline_params(line_clean)}{nl}")
+
         else:
             bl_type = "Generic Bootloader"
-            new_content = re.sub(
-                r"(\boptions\b.*?\b|\bcmdline.*?\b)rw(\b|$)", r"\g<1>ro\2", content
-            )
+            for line in lines:
+                m = re.match(r"^(\s*(?:options|cmdline|bootargs)\s+)(.*)$", line)
+                if m:
+                    prefix, params = m.group(1), m.group(2)
+                    nl = (
+                        "\r\n"
+                        if line.endswith("\r\n")
+                        else ("\n" if line.endswith("\n") else "")
+                    )
+                    p_clean = params.rstrip("\r\n")
+                    if (p_clean.startswith('"') and p_clean.endswith('"')) or (
+                        p_clean.startswith("'") and p_clean.endswith("'")
+                    ):
+                        q = p_clean[0]
+                        inner = p_clean[1:-1]
+                        new_p = f"{q}{migrate_cmdline_params(inner)}{q}"
+                    else:
+                        new_p = migrate_cmdline_params(p_clean)
+                    new_lines.append(f"{prefix}{new_p}{nl}")
+                else:
+                    if re.search(r"\brw\b", line):
+                        nl = (
+                            "\r\n"
+                            if line.endswith("\r\n")
+                            else ("\n" if line.endswith("\n") else "")
+                        )
+                        line_clean = line.rstrip("\r\n")
+                        new_lines.append(f"{migrate_cmdline_params(line_clean)}{nl}")
+                    else:
+                        new_lines.append(line)
 
+        new_content = "".join(new_lines)
         needs_update = content != new_content
         return BootloaderTarget(
             path=path,
@@ -894,8 +996,8 @@ class AtomicTransactionManager:
             latest.unlink()
         latest.symlink_to(self.backup_dir.name)
 
-    def commit(self, signal_mgr: SignalManager) -> None:
-        with signal_mgr.critical_section():
+    def commit(self, signal_mgr: SignalManager | None = None) -> None:
+        def _commit_impl():
             applied: list[FileUpdateOp] = []
             try:
                 for op in self.operations:
@@ -923,6 +1025,12 @@ class AtomicTransactionManager:
                         shutil.copy2(op.backup_path, op.target_path)
                 self.cleanup_temp_files()
                 raise
+
+        if signal_mgr:
+            with signal_mgr.critical_section():
+                _commit_impl()
+        else:
+            _commit_impl()
 
     def rollback(self) -> None:
         log_warn("Restoring configuration files from backup snapshot...")
@@ -1502,8 +1610,9 @@ all generated initramfs images against mandatory systemd service manifests.
     session_backup = BACKUP_DIR / f"backup_{timestamp}"
     txn = AtomicTransactionManager(backup_dir=session_backup)
 
-    global_signal_mgr.register_cleanup_handler(txn.rollback)
-    global_signal_mgr.register_cleanup_handler(txn.cleanup_temp_files)
+    signal_mgr = SignalManager(install=True)
+    signal_mgr.register_cleanup_handler(txn.rollback)
+    signal_mgr.register_cleanup_handler(txn.cleanup_temp_files)
 
     # Stage mkinitcpio.conf
     new_mk_content = HookMigrator.update_hooks_in_config(
@@ -1519,17 +1628,18 @@ all generated initramfs images against mandatory systemd service manifests.
 
     try:
         txn.prepare_and_backup()
-        txn.commit(global_signal_mgr)
+        txn.commit(signal_mgr)
         log_success("Atomic configuration transaction committed.")
     except Exception as e:  # noqa: BLE001
         log_error(f"Transaction failure: {e}")
+        signal_mgr.restore_handlers()
         sys.exit(ExitCode.ERROR_GENERIC)
 
     # Rebuild all presets
     if not args.json:
         log_info("Rebuilding all initramfs presets via 'mkinitcpio -P'...")
     try:
-        with global_signal_mgr.critical_section():
+        with signal_mgr.critical_section():
             res = subprocess.run(
                 ["mkinitcpio", "-P"], capture_output=True, text=True, check=True
             )
@@ -1539,6 +1649,7 @@ all generated initramfs images against mandatory systemd service manifests.
         log_error(f"Preset rebuild failed: {e}. Executing emergency rollback...")
         txn.rollback()
         subprocess.run(["mkinitcpio", "-P"], capture_output=True, check=False)
+        signal_mgr.restore_handlers()
         sys.exit(ExitCode.ERROR_GENERIC)
 
     # Post-Rebuild Image Validation across All Presets
