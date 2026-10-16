@@ -5,24 +5,50 @@ _git_profile_is_inside_git_repository() {
     command git rev-parse --is-inside-work-tree >/dev/null 2>&1
 }
 
+_git_profile_apply_identity() {
+    local target_scope="$1"
+    local name="$2"
+    local email="$3"
+    local key="$4"
+
+    command git config "$target_scope" user.name "$name"
+    command git config "$target_scope" user.email "$email"
+    if [[ -n "$key" ]]; then
+        command git config "$target_scope" user.signingkey "$key"
+    else
+        command git config "$target_scope" --unset user.signingkey 2>/dev/null
+    fi
+
+    print -r -- "Git identity ($target_scope) set to: $name <$email>${key:+ (Key: $key)}"
+}
+
 _git_profile_get_commit_author() {
     local commit_ref="${1:-HEAD}"
     if ! command git rev-parse --verify --quiet "$commit_ref^{commit}" >/dev/null; then
         print -u2 "Error: '$commit_ref' is not a valid commit reference."
         return 1
     fi
-    local author_name author_email signing_key
-    author_name=$(command git show -s --format='%an' "$commit_ref" 2>/dev/null)
-    author_email=$(command git show -s --format='%ae' "$commit_ref" 2>/dev/null)
-    signing_key=$(command git show -s --format='%GK' "$commit_ref" 2>/dev/null)
 
-    if [[ -z "$author_name" || -z "$author_email" ]]; then
+    local raw_author_info
+    raw_author_info=$(command git show -s --format='%an%x00%ae%x00%GK' "$commit_ref" 2>/dev/null)
+    local -a author_parts
+    author_parts=("${(@ps:\0:)raw_author_info}")
+
+    commit_author_name="$author_parts[1]"
+    commit_author_email="$author_parts[2]"
+    commit_author_key="$author_parts[3]"
+
+    if [[ -z "$commit_author_name" || -z "$commit_author_email" ]]; then
         print -u2 "Error: Failed to extract author details from '$commit_ref'."
         return 1
     fi
-    commit_author_name="$author_name"
-    commit_author_email="$author_email"
-    commit_author_key="$signing_key"
+}
+
+_git_profile_get_profile() {
+    local profile_name="$1"
+    stored_name=$(command git config --global --get "profile.$profile_name.name" 2>/dev/null)
+    stored_email=$(command git config --global --get "profile.$profile_name.email" 2>/dev/null)
+    stored_key=$(command git config --global --get "profile.$profile_name.signingkey" 2>/dev/null)
 }
 
 _git_profile_list_commit_authors() {
@@ -110,6 +136,10 @@ _git_profile_find_matching_profile_name() {
     local target_email="$2"
     local target_key="$3"
 
+    if [[ -z "$target_name" && -z "$target_email" ]]; then
+        return 1
+    fi
+
     local -A profile_names profile_emails profile_keys
     local -a profile_list
 
@@ -129,44 +159,24 @@ _git_profile_find_matching_profile_name() {
     return 1
 }
 
-_git_profile_get_config_with_scope() {
-    local key="$1"
-    local scope_filter="$2"
-    local output
-
-    if [[ -n "$scope_filter" ]]; then
-        output=$(command git config "$scope_filter" --show-scope "$key" 2>/dev/null)
-    else
-        output=$(command git config --show-scope "$key" 2>/dev/null)
-    fi
-
-    if [[ -n "$output" ]]; then
-        print -r -- "$output"
-    fi
-}
-
 _git_profile_get_active_identity() {
     local scope_filter="$1"
-    local output
-
-    output=$(_git_profile_get_config_with_scope "user.name" "$scope_filter")
-    active_name="${output#*$'\t'}"
-    active_name_scope="${output%%$'\t'*}"
-
-    output=$(_git_profile_get_config_with_scope "user.email" "$scope_filter")
-    active_email="${output#*$'\t'}"
-    active_email_scope="${output%%$'\t'*}"
-
-    output=$(_git_profile_get_config_with_scope "user.signingkey" "$scope_filter")
-    active_key="${output#*$'\t'}"
-    active_key_scope="${output%%$'\t'*}"
+    if [[ -n "$scope_filter" ]]; then
+        active_name=$(command git config "$scope_filter" --get user.name 2>/dev/null)
+        active_email=$(command git config "$scope_filter" --get user.email 2>/dev/null)
+        active_key=$(command git config "$scope_filter" --get user.signingkey 2>/dev/null)
+    else
+        active_name=$(command git config --get user.name 2>/dev/null)
+        active_email=$(command git config --get user.email 2>/dev/null)
+        active_key=$(command git config --get user.signingkey 2>/dev/null)
+    fi
 }
 
 _git_profile_print_active_block() {
     local scope_label="$1"
     local scope_flag="$2"
 
-    local active_name active_name_scope active_email active_email_scope active_key active_key_scope
+    local active_name active_email active_key
     _git_profile_get_active_identity "$scope_flag"
 
     print -r -- "$scope_label:"
@@ -200,19 +210,21 @@ _git_profile_print_table() {
         return 0
     fi
 
-    local active_name active_name_scope active_email active_email_scope active_key active_key_scope
+    local active_name active_email active_key
     _git_profile_get_active_identity "$active_scope"
+
+    local matched_profile_name
+    matched_profile_name=$(_git_profile_find_matching_profile_name "$active_name" "$active_email" "$active_key")
 
     local current_profile_name
     for current_profile_name in "${(@n)profile_list}"; do
         local active_marker=" "
+        if [[ -n "$matched_profile_name" && "$current_profile_name" == "$matched_profile_name" ]]; then
+            active_marker="*"
+        fi
         local check_name="$profile_names[$current_profile_name]"
         local check_email="$profile_emails[$current_profile_name]"
         local check_key="$profile_keys[$current_profile_name]"
-
-        if [[ "$check_name" == "$active_name" && "$check_email" == "$active_email" && ("$check_key" == "$active_key" || (-z "$check_key" && -z "$active_key")) ]]; then
-            active_marker="*"
-        fi
         printf "  %-1s %-20s %s <%s>%s\n" "$active_marker" "$current_profile_name" "$check_name" "$check_email" "${check_key:+ (Key: $check_key)}"
     done
 }
@@ -331,8 +343,11 @@ case "$selected_subcommand" in
                 return 1
             fi
 
-            local active_name active_name_scope active_email active_email_scope active_key active_key_scope
+            local active_name active_email active_key
             _git_profile_get_active_identity "$target_scope"
+
+            local matched_profile_name
+            matched_profile_name=$(_git_profile_find_matching_profile_name "$active_name" "$active_email" "$active_key")
 
             print -r -- "Please select a profile to activate ($target_scope):"
             local current_profile_name active_marker
@@ -340,13 +355,13 @@ case "$selected_subcommand" in
             local -a numerical_profile_map
             for current_profile_name in "${(@n)profile_list}"; do
                 active_marker=" "
+                if [[ -n "$matched_profile_name" && "$current_profile_name" == "$matched_profile_name" ]]; then
+                    active_marker="*"
+                fi
                 local check_name="$profile_names[$current_profile_name]"
                 local check_email="$profile_emails[$current_profile_name]"
                 local check_key="$profile_keys[$current_profile_name]"
 
-                if [[ "$check_name" == "$active_name" && "$check_email" == "$active_email" && ("$check_key" == "$active_key" || (-z "$check_key" && -z "$active_key")) ]]; then
-                    active_marker="*"
-                fi
                 printf "%2d) %s %-20s : %s <%s>%s\n" "$index" "$active_marker" "$current_profile_name" "$check_name" "$check_email" "${check_key:+ (Key: $check_key)}"
                 numerical_profile_map+=("$current_profile_name")
                 ((index++))
@@ -373,29 +388,19 @@ case "$selected_subcommand" in
         fi
 
         local stored_name stored_email stored_key
-        stored_name=$(command git config --global --get "profile.$target_profile_name.name" 2>/dev/null)
-        stored_email=$(command git config --global --get "profile.$target_profile_name.email" 2>/dev/null)
-        stored_key=$(command git config --global --get "profile.$target_profile_name.signingkey" 2>/dev/null)
+        _git_profile_get_profile "$target_profile_name"
 
         if [[ -z "$stored_name" || -z "$stored_email" ]]; then
             print -u2 "Error: Profile '$target_profile_name' is missing required name or email."
             return 1
         fi
 
-        command git config "$target_scope" user.name "$stored_name"
-        command git config "$target_scope" user.email "$stored_email"
-        if [[ -n "$stored_key" ]]; then
-            command git config "$target_scope" user.signingkey "$stored_key"
-        else
-            command git config "$target_scope" --unset user.signingkey 2>/dev/null
-        fi
-
-        print -r -- "Git identity ($target_scope) set to: $stored_name <$stored_email>${stored_key:+ (Key: $stored_key)}"
+        _git_profile_apply_identity "$target_scope" "$stored_name" "$stored_email" "$stored_key"
         return 0
         ;;
 
     clear)
-        local active_name active_name_scope active_email active_email_scope active_key active_key_scope
+        local active_name active_email active_key
         _git_profile_get_active_identity "$target_scope"
 
         if [[ -z "$active_name" && -z "$active_email" ]]; then
@@ -433,15 +438,7 @@ case "$selected_subcommand" in
         local commit_author_name commit_author_email commit_author_key
         _git_profile_get_commit_author "$commit_reference" || return 1
 
-        command git config "$target_scope" user.name "$commit_author_name"
-        command git config "$target_scope" user.email "$commit_author_email"
-        if [[ -n "$commit_author_key" ]]; then
-            command git config "$target_scope" user.signingkey "$commit_author_key"
-        else
-            command git config "$target_scope" --unset user.signingkey 2>/dev/null
-        fi
-
-        print -r -- "Git identity ($target_scope) set to: $commit_author_name <$commit_author_email>${commit_author_key:+ (Key: $commit_author_key)}"
+        _git_profile_apply_identity "$target_scope" "$commit_author_name" "$commit_author_email" "$commit_author_key"
         return 0
         ;;
 
@@ -507,14 +504,7 @@ case "$selected_subcommand" in
         print -r -- "Profile '$new_profile_name' was successfully created."
 
         if (( $+parsed_options[--use] )); then
-            command git config "$target_scope" user.name "$input_name"
-            command git config "$target_scope" user.email "$input_email"
-            if [[ -n "$input_key" ]]; then
-                command git config "$target_scope" user.signingkey "$input_key"
-            else
-                command git config "$target_scope" --unset user.signingkey 2>/dev/null
-            fi
-            print -r -- "Git identity ($target_scope) set to: $input_name <$input_email>${input_key:+ (Key: $input_key)}"
+            _git_profile_apply_identity "$target_scope" "$input_name" "$input_email" "$input_key"
         fi
         return 0
         ;;
@@ -557,9 +547,7 @@ case "$selected_subcommand" in
         fi
 
         local stored_name stored_email stored_key
-        stored_name=$(command git config --global "profile.$current_profile_name.name" 2>/dev/null)
-        stored_email=$(command git config --global "profile.$current_profile_name.email" 2>/dev/null)
-        stored_key=$(command git config --global "profile.$current_profile_name.signingkey" 2>/dev/null)
+        _git_profile_get_profile "$current_profile_name"
 
         if [[ -z "$stored_name" ]]; then
             print -u2 "Error: Profile '$current_profile_name' does not exist."
@@ -574,7 +562,7 @@ case "$selected_subcommand" in
         command git config --global "profile.$new_profile_name.name" "$stored_name"
         command git config --global "profile.$new_profile_name.email" "$stored_email"
         if [[ -n "$stored_key" ]]; then
-             command git config --global "profile.$new_profile_name.signingkey" "$stored_key"
+            command git config --global "profile.$new_profile_name.signingkey" "$stored_key"
         fi
 
         command git config --global --remove-section "profile.$current_profile_name" 2>/dev/null
@@ -605,6 +593,7 @@ case "$selected_subcommand" in
         local current_profile_name current_line profile_found
 
         all_configuration_lines=("${(@f)$(command git config --global --get-regexp '^profile\.' 2>/dev/null)}")
+        all_configuration_lines=("${(@)all_configuration_lines:#}")
 
         if [[ ${#all_configuration_lines} -eq 0 ]]; then
             if [[ ${#requested_profiles} -gt 0 ]]; then
@@ -657,6 +646,7 @@ case "$selected_subcommand" in
             fi
             file_lines=("${(@f)$(< "$input_source_path")}")
         fi
+        file_lines=("${(@)file_lines:#}")
 
         if [[ ${#file_lines} -eq 0 ]]; then
             print -r -- "Import file is empty. Nothing to import."
@@ -701,4 +691,5 @@ case "$selected_subcommand" in
         done
         print -r -- "Successfully imported ${#new_profile_names} profile(s) into global scope."
         return 0
+        ;;
 esac
