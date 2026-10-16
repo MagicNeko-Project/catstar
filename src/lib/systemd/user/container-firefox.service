@@ -27,7 +27,7 @@ ExecStartPre=-/usr/bin/podman create \
     --shm-size=${SHM_SIZE} \
     -v ${DATA_DIR}:/config \
     ${CONTAINER_IMAGE}
-ExecStart=/usr/bin/podman start --attach %j
+ExecStart=/usr/bin/podman start --sdnotify=conmon --attach %j
 ExecStop=/usr/bin/podman stop --ignore -t 10 %j
 
 [Install]

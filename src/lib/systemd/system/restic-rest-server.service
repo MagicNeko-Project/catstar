@@ -11,4 +11,3 @@ ProtectHome=yes
 PrivateUsers=yes
 PrivateDevices=yes
 ProtectProc=invisible
-PrivateNetwork=yes
