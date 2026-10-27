@@ -1,6 +1,6 @@
 !/src/*
-/ansible/hosts/*.yml
-/ansible/*.yml
+/ansible/hosts/
+/ansible/certs/
 /*.txt
 /.vscode/
 *.tar.xz

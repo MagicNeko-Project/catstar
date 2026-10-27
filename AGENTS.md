@@ -46,4 +46,4 @@ Each area operates under separate control and independent tooling:
 ## 3. Boundary Constraints
 - **`config/` & `docs/`:** Static configuration and documentation with no relationship to the rest of the project. Do not inspect unless explicitly instructed by the user for specific named files.
 - **`keys/`:** Do not inspect its content under any condition.
-- **Untracked Files:** Strictly respect `.gitignore`. Never inspect, modify, or commit files not tracked by git.
+- **External Repositories & Inventories:** Companion Git repositories (such as host inventories or certificate stores) are independent projects with distinct histories. Dynamically discover their locations rather than hardcoding paths; never track them in this repository, and never leak host-specific state into this repository's files or commit messages.
