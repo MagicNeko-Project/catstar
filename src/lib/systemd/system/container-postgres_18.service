@@ -1,0 +1,42 @@
+[Unit]
+Description=Podman container: postgres_18
+Documentation=man:podman-generate-systemd(1)
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=%t/containers
+
+[Service]
+Environment=CONTAINER_IMAGE=docker.io/library/postgres:18.6
+Environment=BIND_IP=127.0.0.1
+Environment=BIND_PORT=5432
+Environment=DATA_DIR=/data/%j
+EnvironmentFile=-%E/container-%j.conf
+EnvironmentFile=-/usr/local/etc/container-%j.conf
+Environment=PODMAN_SYSTEMD_UNIT=%n
+RuntimeDirectory=postgresql-18
+Restart=on-failure
+TimeoutStopSec=70
+Type=notify
+NotifyAccess=all
+ExecStartPre=/bin/rm -f %t/%n.ctr-id
+ExecStart=/usr/bin/podman run \
+    --rm \
+    --replace \
+    --name=%j \
+    --cidfile=%t/%n.ctr-id \
+    --sdnotify=conmon \
+    --cgroups=no-conmon \
+    --network=slirp4netns \
+    -p ${BIND_IP}:${BIND_PORT}:5432 \
+    -v ${DATA_DIR}:/var/lib/postgresql \
+    -v %t/postgresql-18:/var/run/postgresql \
+    -e POSTGRES_USER \
+    -e POSTGRES_PASSWORD \
+    -e POSTGRES_INITDB_ARGS \
+    -d \
+    ${CONTAINER_IMAGE}
+ExecStop=/usr/bin/podman stop --ignore -t 10 --cidfile=%t/%n.ctr-id
+ExecStopPost=/usr/bin/podman rm -f --ignore -t 10 --cidfile=%t/%n.ctr-id
+
+[Install]
+WantedBy=default.target
