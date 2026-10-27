@@ -108,39 +108,22 @@ function buildGitHubPayload(options) {
     name: options.name,
     description: options.description || "",
     private: !isPublic,
-    auto_init: false,
     has_issues: Boolean(options.issues),
     has_projects: Boolean(options.projects),
     has_wiki: Boolean(options.wiki),
     has_discussions: Boolean(options.discussions),
     has_downloads: Boolean(options.downloads),
-    is_template: false,
-    allow_squash_merge: false,
-    allow_rebase_merge: false,
-    allow_auto_merge: false,
-    delete_branch_on_merge: true,
-    allow_forking: false,
-    web_commit_signoff_required: true,
-    security_and_analysis: {
-      advanced_security: { status: "disabled" },
-      secret_scanning: { status: "disabled" },
-      secret_scanning_push_protection: { status: "disabled" },
-      secret_scanning_validity_checks: { status: "disabled" },
-      dependabot_security_updates: { status: "disabled" },
-    },
   };
 }
 
 function buildGitLabPayload(options) {
   const isPublic = Boolean(options.public);
-  const repoLevel = isPublic ? "enabled" : "private";
 
   return {
     name: options.name,
     path: options.name,
     description: options.description || "",
     visibility: isPublic ? "public" : "private",
-    repository_access_level: repoLevel,
     issues_access_level: resolveGitLabAccessLevel(options.issues),
     wiki_access_level: resolveGitLabAccessLevel(options.wiki),
     snippets_access_level: resolveGitLabAccessLevel(options.snippets),
@@ -148,33 +131,8 @@ function buildGitLabPayload(options) {
       options["merge-requests"],
     ),
     builds_access_level: resolveGitLabAccessLevel(options.pipelines),
-    forking_access_level: "disabled",
-    pages_access_level: "disabled",
-    analytics_access_level: "disabled",
-    container_registry_access_level: "disabled",
-    security_and_compliance_access_level: "disabled",
-    releases_access_level: "disabled",
-    environments_access_level: "disabled",
-    feature_flags_access_level: "disabled",
-    infrastructure_access_level: "disabled",
-    monitor_access_level: "disabled",
-    requirements_access_level: "disabled",
-    model_experiments_access_level: "disabled",
-    model_registry_access_level: "disabled",
-    auto_devops_enabled: false,
     packages_enabled: Boolean(options.packages),
-    service_desk_enabled: false,
     lfs_enabled: Boolean(options.lfs),
-    shared_runners_enabled: false,
-    public_jobs: false,
-    emails_disabled: true,
-    printing_merge_request_link_enabled: false,
-    enforce_auth_checks_on_uploads: true,
-    ci_forward_deployment_enabled: false,
-    ci_allow_fork_pipelines_to_run_in_parent_project: false,
-    container_expiration_policy_attributes: {
-      enabled: false,
-    },
   };
 }
 
