@@ -1,0 +1,75 @@
+---
+nftables_flush_ruleset: false
+
+nftables_defines_default:
+  eth:
+    - wl*
+    - en*
+    - eth*
+  ts:
+    - tailscale*
+  wg:
+    - wg*
+  lo:
+    - lo
+    - lo-*
+
+nftables_defines: {}
+
+nftables_tables:
+  - name: filter
+    family: inet
+    includes:
+      - /etc/nftables.d/*.nft
+    chains:
+      input:
+        type: filter
+        hook: input
+        priority: filter
+        policy: drop
+        rules:
+          - ct state { established, related } accept
+          - ct state invalid drop
+          - iifname $lo accept
+          - iifname != $lo ip daddr 127.0.0.0/8 drop
+          - iifname != $lo ip6 daddr ::1 drop
+          - icmp type { echo-request, destination-unreachable, time-exceeded, parameter-problem } accept
+          - icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, echo-request } accept
+          - icmpv6 type { nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert } ip6 hoplimit 255 accept
+          - iifname $eth udp sport 67 udp dport 68 accept
+          - tcp dport ssh accept
+          - iifname $ts jump ts
+          - iifname $wg jump wg
+          - iifname $eth jump eth
+          # - meta nftrace set 1
+      eth: []
+      ts: []
+      wg: []
+      forward:
+        type: filter
+        hook: forward
+        priority: filter
+        policy: drop
+        rules:
+          - ct state { established, related } accept
+          - ct state invalid drop
+          - tcp flags syn tcp option maxseg size set rt mtu
+          - ip daddr 169.254.0.0/16 drop
+      output:
+        type: filter
+        hook: output
+        priority: filter
+        policy: accept
+        rules: []
+
+  - name: nat
+    family: inet
+    chains:
+      postrouting:
+        type: nat
+        hook: postrouting
+        priority: srcnat
+      prerouting:
+        type: nat
+        hook: prerouting
+        priority: dstnat

@@ -1,0 +1,30 @@
+---
+- name: Install nftables
+  ansible.builtin.package:
+    name: nftables
+  tags: install
+
+- name: Enable nftables service
+  ansible.builtin.systemd_service:
+    name: nftables.service
+    enabled: true
+  tags: install
+
+- name: Copy nftables snippet files
+  ansible.builtin.copy:
+    src: nftables.d/
+    dest: /etc/nftables.d/
+    mode: "0644"
+    directory_mode: "0755"
+  notify: Reload nftables
+
+- name: Deploy nftables configuration
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: "0644"
+    lstrip_blocks: true
+    validate: nft -cf %s
+  notify: Reload nftables

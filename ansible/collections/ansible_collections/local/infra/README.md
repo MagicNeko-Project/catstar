@@ -7,6 +7,7 @@ This Ansible collection (`local.infra`) manages the local server infrastructure 
 * **Plugins:** Custom filter plugins (e.g., Nginx configurations/blocks).
 * **Roles:** Modular deployment and provisioning roles:
   * `common`: Core system settings, swappiness, and shell environments.
+  * `nftables`: Declarative nftables firewall tables, chains, and IP set deployments.
   * `nginx`: High-performance Nginx web server configurations.
   * `ssl`: SSL certificate deployments.
   * `v2ray`: Network routing and tunnel daemons.

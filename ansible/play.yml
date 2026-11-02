@@ -10,6 +10,11 @@
       tags:
         - common
 
+    - role: local.infra.nftables
+      tags:
+        - nftables
+      when: not (skip_nftables | default(false))
+
     - role: local.infra.ssl
       tags:
         - ssl

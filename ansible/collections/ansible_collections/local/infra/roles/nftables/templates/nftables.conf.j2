@@ -1,0 +1,71 @@
+# 此文件由 Ansible 管理，请勿手动修改，任何手动更改都将被覆盖。
+{% if nftables_flush_ruleset %}
+
+flush ruleset
+{% elif nftables_tables %}
+
+{% for table in nftables_tables %}
+{% set table_id = table.name if ' ' in table.name else (table.family | default('inet')) ~ ' ' ~ table.name %}
+table {{ table_id }}
+delete table {{ table_id }}
+{% endfor %}
+{% endif %}
+{% set merged_defines = nftables_defines_default | combine(nftables_defines) %}
+{% if merged_defines %}
+
+{% for def_name, def_val in merged_defines.items() if def_val is not none and def_val != [] and def_val != '' %}
+define {{ def_name }} = {{ '{ ' ~ (def_val | join(', ')) ~ ' }' if (def_val is sequence and def_val is not string) else def_val }}
+{% endfor %}
+{% endif %}
+{% for table in nftables_tables %}
+{% set table_id = table.name if ' ' in table.name else (table.family | default('inet')) ~ ' ' ~ table.name %}
+
+table {{ table_id }} {
+{% for include_path in table.includes | default([], true) %}
+  include "{{ include_path }}"
+{% endfor %}
+{% for set_name, set_spec in (table.sets | default({}, true)).items() %}
+{% if not loop.first or (table.includes | default([], true)) %}
+
+{% endif %}
+  set {{ set_name }} {
+    type {{ set_spec.type }}
+{% if set_spec.flags is defined and set_spec.flags %}
+    flags {{ set_spec.flags | join(', ') if (set_spec.flags is sequence and set_spec.flags is not string) else set_spec.flags }}
+{% endif %}
+{% if set_spec.elements is defined and set_spec.elements %}
+    elements = {
+{% for element in set_spec.elements %}
+      {{ element }}{{ ',' if not loop.last else '' }}
+{% endfor %}
+    }
+{% endif %}
+  }
+{% endfor %}
+{% for chain_name, chain_spec in (table.chains | default({}, true)).items() %}
+{% if not loop.first or (table.includes | default([], true)) or (table.sets | default({}, true)) %}
+
+{% endif %}
+  chain {{ chain_name }} {
+{% if chain_spec is mapping %}
+{% if chain_spec.type is defined %}
+{% set chain_header = 'type ' ~ chain_spec.type ~ ' hook ' ~ chain_spec.hook ~ ' priority ' ~ chain_spec.priority ~ ';' %}
+{% if chain_spec.policy is defined %}
+{% set chain_header = chain_header ~ ' policy ' ~ chain_spec.policy ~ ';' %}
+{% endif %}
+    {{ chain_header }}
+{% endif %}
+{% for rule in chain_spec.rules | default([], true) %}
+    {{ rule }}
+{% endfor %}
+{% elif chain_spec is sequence and chain_spec is not string %}
+{% for rule in chain_spec %}
+    {{ rule }}
+{% endfor %}
+{% endif %}
+  }
+{% endfor %}
+}
+{% endfor %}
+
+# vim: set ft=nftables ts=2 sts=2 sw=2 et:
