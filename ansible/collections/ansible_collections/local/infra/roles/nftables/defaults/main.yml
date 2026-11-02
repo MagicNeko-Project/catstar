@@ -10,6 +10,9 @@ nftables_defines_default:
     - tailscale*
   wg:
     - wg*
+  podman:
+    - podman*
+    - cni-podman*
   lo:
     - lo
     - lo-*
@@ -41,10 +44,14 @@ nftables_tables:
           - iifname $ts jump ts
           - iifname $wg jump wg
           - iifname $eth jump eth
+          - iifname $podman jump podman
           # - meta nftrace set 1
       eth: []
       ts: []
       wg: []
+      podman:
+        - udp dport 53 accept
+        - tcp dport 53 accept
       forward:
         type: filter
         hook: forward
@@ -55,6 +62,8 @@ nftables_tables:
           - ct state invalid drop
           - tcp flags syn tcp option maxseg size set rt mtu
           - ip daddr 169.254.0.0/16 drop
+          - iifname $podman oifname != $podman accept
+          - iifname != $eth iifname != $podman oifname $podman ct status dnat accept
       output:
         type: filter
         hook: output
@@ -73,3 +82,14 @@ nftables_tables:
         type: nat
         hook: prerouting
         priority: dstnat
+
+  - name: filter
+    family: bridge
+    chains:
+      forward:
+        type: filter
+        hook: forward
+        priority: filter
+        policy: accept
+        rules:
+          - ibrname $podman drop
