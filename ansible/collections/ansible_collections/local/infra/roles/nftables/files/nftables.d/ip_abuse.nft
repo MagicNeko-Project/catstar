@@ -1,3 +1,5 @@
+# 此文件由 Ansible 管理，请勿手动修改，任何手动更改都将被覆盖。
+
 # https://github.com/anacrolix/torrent/issues/889
 set bt_abuse {
     type ipv4_addr

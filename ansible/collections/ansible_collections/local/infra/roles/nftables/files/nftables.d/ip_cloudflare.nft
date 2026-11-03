@@ -1,3 +1,5 @@
+# 此文件由 Ansible 管理，请勿手动修改，任何手动更改都将被覆盖。
+
 # https://www.cloudflare.com/ips-v4
 set cloudflare_v4 {
     type ipv4_addr
