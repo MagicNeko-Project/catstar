@@ -1,0 +1,51 @@
+[Unit]
+Description=Podman container: polr
+Documentation=man:podman-generate-systemd(1)
+Wants=network-online.target container-postgres_18.service
+After=network-online.target container-postgres_18.service
+RequiresMountsFor=%t/containers
+
+[Service]
+Environment=CONTAINER_IMAGE=ghcr.io/miracrypto/polr:latest
+Environment=BIND_IP=127.0.0.1
+Environment=BIND_PORT=3000
+EnvironmentFile=-%E/container-%j.conf
+EnvironmentFile=-/usr/local/etc/container-%j.conf
+Environment=PODMAN_SYSTEMD_UNIT=%n
+Restart=on-failure
+TimeoutStopSec=70
+Type=notify
+NotifyAccess=all
+ExecStartPre=/bin/rm -f %t/%n.ctr-id
+ExecStart=/usr/bin/podman run \
+    --rm \
+    --replace \
+    --name=%j \
+    --cidfile=%t/%n.ctr-id \
+    --sdnotify=conmon \
+    --cgroups=no-conmon \
+    --network=slirp4netns \
+    -p ${BIND_IP}:${BIND_PORT}:3000 \
+    -v %t/postgresql-18:/run/postgresql-18 \
+    -e APP_NAME \
+    -e APP_PROTOCOL \
+    -e APP_ADDRESS \
+    -e APP_KEY \
+    -e DATABASE_URL \
+    -e POLR_BASE \
+    -e POLR_SECRET_BYTES \
+    -e _API_KEY_LENGTH \
+    -e SETTING_PUBLIC_INTERFACE \
+    -e SETTING_SHORTEN_PERMISSION \
+    -e SETTING_INDEX_REDIRECT \
+    -e SETTING_REDIRECT_404 \
+    -e POLR_VERSION \
+    -e POLR_RELDATE \
+    -e POLR_GENERATED_AT \
+    -d \
+    ${CONTAINER_IMAGE}
+ExecStop=/usr/bin/podman stop --ignore -t 10 --cidfile=%t/%n.ctr-id
+ExecStopPost=/usr/bin/podman rm -f --ignore -t 10 --cidfile=%t/%n.ctr-id
+
+[Install]
+WantedBy=default.target
