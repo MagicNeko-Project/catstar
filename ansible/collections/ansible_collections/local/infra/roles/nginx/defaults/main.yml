@@ -48,6 +48,7 @@ nginx_sites_disabled: []
 nginx_stream: []
 nginx_proxy_cache_paths: []
 # vars file for nginx
+nginx_mozilla_ssl: modern
 nginx_redirect_code: 301 # Choose 301 or 302
 nginx_http_port: 80
 nginx_https_port: 443

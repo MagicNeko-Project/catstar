@@ -15,7 +15,7 @@
 
 - name: Check if certificate exists on remote host
   ansible.builtin.stat:
-    path: "{{ (ssl_root, item) | path_join }}/full.pem"
+    path: "{{ (nginx_ssl_root, item) | path_join }}/full.pem"
   loop: "{{ [ssl_copy | default([]), nginx_sites_enabled | local.infra.gather_ssl_hosts] | flatten | unique }}"
   register: nginx_remote_certs_stat
 

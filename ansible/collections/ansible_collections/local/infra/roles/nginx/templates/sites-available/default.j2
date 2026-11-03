@@ -16,8 +16,8 @@ server {
 
 # Deny SSL without proper SNI
 server {
-  listen {{ nginx_https_port }} ssl http2 default_server;
-  listen [::]:{{ nginx_https_port }} ssl http2 default_server;
+  listen {{ nginx_https_port }} ssl default_server;
+  listen [::]:{{ nginx_https_port }} ssl default_server;
 
   ssl_reject_handshake on;
 }

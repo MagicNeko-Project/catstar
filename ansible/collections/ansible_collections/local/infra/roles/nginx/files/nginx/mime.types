@@ -5,7 +5,7 @@ types {
     text/xml                                         xml;
     image/gif                                        gif;
     image/jpeg                                       jpeg jpg;
-    application/javascript                           js;
+    application/javascript                           js mjs;
     application/atom+xml                             atom;
     application/rss+xml                              rss;
 
@@ -69,6 +69,7 @@ types {
     application/x-x509-ca-cert                       der pem crt;
     application/x-xpinstall                          xpi;
     application/xhtml+xml                            xhtml;
+    application/xslt+xml                             xsl xslt;
     application/xspf+xml                             xspf;
     application/zip                                  zip;
 
@@ -88,10 +89,12 @@ types {
     video/mp2t                                       ts;
     video/mp4                                        mp4;
     video/mpeg                                       mpeg mpg;
+    video/ogg                                        ogv;
     video/quicktime                                  mov;
     video/webm                                       webm;
     video/x-flv                                      flv;
     video/x-m4v                                      m4v;
+    video/x-matroska                                 mkv;
     video/x-mng                                      mng;
     video/x-ms-asf                                   asx asf;
     video/x-ms-wmv                                   wmv;

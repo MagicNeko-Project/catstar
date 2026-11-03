@@ -38,6 +38,11 @@ def test_parse_listen_ports() -> None:
     assert ports[3].ssl
     assert ports[3].v6
 
+    assert str(ports[0]) == "80"
+    assert str(ports[1]) == "[::]:80"
+    assert str(ports[2]) == "443 ssl"
+    assert str(ports[3]) == "[::]:443 ssl"
+
 
 def test_nginx_location_block_filter() -> None:
     """Verify that the nginx_location_block filter correctly builds location blocks."""
@@ -71,28 +76,53 @@ def test_nginx_server_block_filter() -> None:
     server_block = result[0]
     assert server_block.server_name == "example.com"
     assert server_block.ssl_host == "example.com"
+    assert server_block.http2 is True
     assert len(server_block.listen) == 2
     assert server_block.listen[0].port == 443
     assert server_block.listen[0].ssl
     assert not server_block.listen[0].v6
+    assert str(server_block.listen[0]) == "443 ssl"
     assert server_block.listen[1].port == 443
     assert server_block.listen[1].ssl
     assert server_block.listen[1].v6
+    assert str(server_block.listen[1]) == "[::]:443 ssl"
     assert server_block.locations == [{"location": "/", "proxy": "http://frontend"}]
+
+
+def test_nginx_server_block_http2_modes() -> None:
+    """Verify server-level http2 defaults across SSL, plain HTTP, and explicit overrides."""
+    filter_module = nginx.FilterModule()
+
+    plain_http = filter_module.nginx_server_block({"listen": 80}, "plain.example.com")[
+        0
+    ]
+    assert plain_http.http2 is False
+    assert plain_http.ssl_host is None
+
+    mixed_ports = filter_module.nginx_server_block(
+        {"listen": "80 443"}, "mixed.example.com"
+    )[0]
+    assert mixed_ports.http2 is True
+    assert mixed_ports.ssl_host == "example.com"
+
+    explicit_disabled = filter_module.nginx_server_block(
+        {"listen": 443, "http2": False}, "http1.example.com"
+    )[0]
+    assert explicit_disabled.http2 is False
 
 
 def test_gather_ssl_hosts_filter() -> None:
     """Verify that gather_ssl_hosts extracts correct domains for SSL certifications."""
     filter_module = nginx.FilterModule()
     sites: dict[str, dict[str, Any]] = {
-        "default": {},
+        "default": {"template": "default"},
         "c5.example.com": {},
         "c6.example.com": {"server_name": "c6.example.com"},
     }
 
     ssl_hosts: list[str] = filter_module.gather_ssl_hosts(sites)
 
-    assert ssl_hosts == ["default", "example.com", "example.com"]
+    assert ssl_hosts == ["example.com", "example.com"]
 
 
 def test_nginx_options_formatting() -> None:

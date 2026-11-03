@@ -11,12 +11,15 @@ server {
 {% for listen in s.listen %}
   listen {{ listen }};
 {% endfor %}
+{% if s.http2 %}
+  http2 on;
+{% endif %}
 
 {% if s.ssl_host %}
   include {{ nginx_ssl_snippets }}/{{ s.ssl_host }}.conf;
 {% endif %}
 
-server_name {{ s.server_name }};
+  server_name {{ s.server_name }};
 
 {% for location in s.locations | local.infra.nginx_location_block %}
   location {{ location.location }} {
