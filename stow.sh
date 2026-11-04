@@ -215,10 +215,43 @@ ensure_target_directories() {
 }
 
 
+# Resolve only the immediate symlink hop so stowed symlinks inside 'src/' are not chased to external targets
+resolve_symlink_target() {
+    local link_path="$1"
+    local target
+    target=$(readlink "$link_path" || true)
+    if [[ -z "$target" ]]; then
+        return 0
+    fi
+
+    if [[ "$target" != /* ]]; then
+        local link_dir
+        link_dir=$(cd -P -- "$(dirname "$link_path")" >/dev/null 2>&1 && pwd -P)
+        target="$link_dir/$target"
+    fi
+
+    if [[ "$target" == "/" ]]; then
+        echo "/"
+        return 0
+    fi
+
+    local target_dir resolved_dir
+    target_dir=$(dirname "$target")
+    if resolved_dir=$(cd -P -- "$target_dir" >/dev/null 2>&1 && pwd -P); then
+        echo "${resolved_dir%/}/$(basename "$target")"
+        return 0
+    fi
+
+    echo "$target"
+}
+
+
 check_conflicts() {
     echo -e "${BLUE}Checking for conflicts in '$TARGET_DIR'...${NC}"
     local conflicts_found=0
     local -A checked_paths=()
+    local src_dir
+    src_dir="$(cd -P -- "$BASE_DIR/src" >/dev/null 2>&1 && pwd -P)"
 
     # We scan 'src' to find target destinations that already exist as regular files
     while IFS= read -r -d '' file; do
@@ -255,8 +288,8 @@ check_conflicts() {
         # Safe conflict checking for stale/external symlinks, prompting to run 'prune'
         if [[ -L "$dest_path" ]]; then
             local resolved
-            resolved=$(readlink -f "$dest_path" || true)
-            if [[ "$resolved" != "$BASE_DIR/src/$rel_path" && "$resolved" != "$BASE_DIR/src/$rel_path"/* ]]; then
+            resolved=$(resolve_symlink_target "$dest_path")
+            if [[ "$resolved" != "$src_dir/$rel_path" && "$resolved" != "$src_dir/$rel_path"/* ]]; then
                 echo -e "${RED}Conflict detected: Stale/external symlink exists: $dest_path -> $resolved${NC}" >&2
                 echo -e "${RED}Please resolve this manually, or run './stow.sh prune' to automatically remove it.${NC}" >&2
                 conflicts_found=1
@@ -385,6 +418,8 @@ execute_prune() {
     echo -e "${BLUE}Pruning old/broken symlinks in '$TARGET_DIR'...${NC}"
     local pruned_count=0
     local -A checked_paths=()
+    local src_dir
+    src_dir="$(cd -P -- "$BASE_DIR/src" >/dev/null 2>&1 && pwd -P)"
 
     while IFS= read -r -d '' file; do
         local rel_path="${file#$BASE_DIR/src/}"
@@ -420,10 +455,10 @@ execute_prune() {
         # If the destination is a symlink, verify where it points
         if [[ -L "$dest_path" ]]; then
             local resolved
-            resolved=$(readlink -f "$dest_path" || true)
+            resolved=$(resolve_symlink_target "$dest_path")
 
             # If resolved target does not point to our current repo src folder
-            if [[ "$resolved" != "$BASE_DIR/src/$rel_path" && "$resolved" != "$BASE_DIR/src/$rel_path"/* ]]; then
+            if [[ "$resolved" != "$src_dir/$rel_path" && "$resolved" != "$src_dir/$rel_path"/* ]]; then
                 if [[ "$DRY_RUN" == "true" ]]; then
                     echo -e "${CYAN}[Dry-Run] Would remove old/broken symlink: $dest_path -> $resolved${NC}"
                 else
@@ -479,7 +514,7 @@ execute_status() {
         if [[ -L "$dest_path" ]]; then
             total_links=$((total_links + 1))
             local target_resolved
-            target_resolved=$(readlink -f "$dest_path" || true)
+            target_resolved=$(resolve_symlink_target "$dest_path")
 
             if [[ -e "$dest_path" ]]; then
                 echo -e "  ${GREEN}[Active Link]${NC} $rel_path -> $target_resolved"
