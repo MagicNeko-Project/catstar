@@ -10,10 +10,13 @@ Environment=CONTAINER_IMAGE=docker.io/library/postgres:18.6
 Environment=BIND_IP=127.0.0.1
 Environment=BIND_PORT=5432
 Environment=DATA_DIR=/data/%j
+Environment=POSTGRES_INITDB_ARGS=--auth=scram-sha-256
+Environment=PGPASSFILE=/var/lib/postgresql/.pgpass
 EnvironmentFile=-%E/container-%j.conf
 EnvironmentFile=-/usr/local/etc/container-%j.conf
 Environment=PODMAN_SYSTEMD_UNIT=%n
 RuntimeDirectory=postgresql-18
+RuntimeDirectoryMode=0755
 Restart=on-failure
 TimeoutStopSec=70
 Type=notify
@@ -26,13 +29,15 @@ ExecStart=/usr/bin/podman run \
     --cidfile=%t/%n.ctr-id \
     --sdnotify=conmon \
     --cgroups=no-conmon \
-    --network=slirp4netns \
+    --network=bridge \
+    --userns=auto \
     -p ${BIND_IP}:${BIND_PORT}:5432 \
-    -v ${DATA_DIR}:/var/lib/postgresql \
-    -v %t/postgresql-18:/var/run/postgresql \
+    -v ${DATA_DIR}:/var/lib/postgresql:U \
+    -v %t/postgresql-18:/var/run/postgresql:U \
     -e POSTGRES_USER \
     -e POSTGRES_PASSWORD \
     -e POSTGRES_INITDB_ARGS \
+    -e PGPASSFILE \
     -d \
     ${CONTAINER_IMAGE}
 ExecStop=/usr/bin/podman stop --ignore -t 10 --cidfile=%t/%n.ctr-id
