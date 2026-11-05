@@ -24,7 +24,7 @@ ExecStart=/usr/bin/podman run \
     --cidfile=%t/%n.ctr-id \
     --sdnotify=conmon \
     --cgroups=no-conmon \
-    --network=slirp4netns \
+    --network=bridge \
     -p ${BIND_IP}:${BIND_PORT}:8080 \
     -d \
     ${CONTAINER_IMAGE}
