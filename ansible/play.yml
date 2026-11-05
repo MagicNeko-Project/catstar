@@ -15,6 +15,11 @@
         - nftables
       when: not (skip_nftables | default(false))
 
+    - role: local.infra.podman
+      tags:
+        - podman
+      when: not (skip_podman | default(false))
+
     - role: local.infra.ssl
       tags:
         - ssl

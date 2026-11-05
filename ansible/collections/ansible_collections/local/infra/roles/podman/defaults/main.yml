@@ -1,0 +1,6 @@
+---
+# Account that owns the sub-ID range consumed by Podman `--userns=auto`
+podman_subid_owner: containers
+
+# "<start>:<count>" applied only when the owner has no existing allocation
+podman_subid_allocation: "16877216:16777216"

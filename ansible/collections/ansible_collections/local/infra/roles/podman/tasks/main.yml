@@ -1,0 +1,38 @@
+---
+# shadow 4.20+ libsubid resolves sub-ID owners via getpwnam, so the owner must be a real account
+- name: Ensure sub-ID owner system group exists
+  ansible.builtin.group:
+    name: "{{ podman_subid_owner }}"
+    system: true
+
+- name: Ensure sub-ID owner system user exists
+  ansible.builtin.user:
+    name: "{{ podman_subid_owner }}"
+    group: "{{ podman_subid_owner }}"
+    system: true
+    home: /nonexistent
+    create_home: false
+    shell: "{{ '/usr/sbin/nologin' if ansible_facts['os_family'] == 'Debian' else '/usr/bin/nologin' }}"
+    comment: Podman auto user namespace sub-ID owner
+
+# lineinfile with regexp would rewrite an existing allocation and remap container-owned files
+- name: Check for existing sub-ID allocations
+  ansible.builtin.command:
+    cmd: grep -q '^{{ podman_subid_owner }}:' {{ item }}
+  loop:
+    - /etc/subuid
+    - /etc/subgid
+  register: podman_subid_check
+  check_mode: false
+  failed_when: false
+  changed_when: false
+
+- name: Add sub-ID allocation where missing
+  ansible.builtin.lineinfile:
+    path: "{{ item.item }}"
+    line: "{{ podman_subid_owner }}:{{ podman_subid_allocation }}"
+    create: true
+    mode: "0644"
+  loop: "{{ podman_subid_check.results | selectattr('rc', 'ne', 0) }}"
+  loop_control:
+    label: "{{ item.item }}"
