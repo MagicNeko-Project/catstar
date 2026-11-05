@@ -47,6 +47,11 @@ nginx_sites_enabled: {}
 nginx_sites_disabled: []
 nginx_stream: []
 nginx_proxy_cache_paths: []
+
+# file name under nginx_root -> PEM CA bundle, referenced by server blocks via
+# `options: {ssl_client_certificate: <file name>, ssl_verify_client: true}`
+nginx_ssl_client_cas: {}
+
 # vars file for nginx
 nginx_mozilla_ssl: modern
 nginx_redirect_code: 301 # Choose 301 or 302
