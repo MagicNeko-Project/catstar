@@ -27,7 +27,7 @@ Hex over BIP39 words: clients restore hex natively, while words would make recov
 
 ## Generation
 
-Use KeePassXC's own generator on a trusted device, preferably offline — the key never passes through a chat, AI agent, or any networked tool.
+Use KeePassXC's own generator, saving straight to a local, unsynced path — the key never passes through a chat, AI agent, or any networked tool.
 
 - Existing database: Database Security → add Key File protection → Generate.
 - New database: `keepassxc-cli db-create -p --set-key-file vault.keyx vault.kdbx` creates the key file when the path does not yet exist.
