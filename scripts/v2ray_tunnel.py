@@ -12,6 +12,7 @@ import argparse
 import ipaddress
 import json
 import random
+import socket
 import subprocess
 import sys
 import time
@@ -707,8 +708,18 @@ def main() -> None:
                 v2ray_process.stdin.write(config_json_string.encode("utf-8"))
                 v2ray_process.stdin.close()
 
-                # Pause to let V2Ray bind to the port
-                time.sleep(0.2)
+                # Wait for V2Ray process to bind to the port or fail
+                start_wait = time.time()
+                while time.time() - start_wait < 2.0:
+                    if v2ray_process.poll() is not None:
+                        break
+                    try:
+                        with socket.create_connection(
+                            ("127.0.0.1", inbound_endpoint.port), timeout=0.05
+                        ):
+                            break
+                    except (OSError, ConnectionRefusedError):
+                        time.sleep(0.05)
 
                 # Verify that the V2Ray process is still running
                 if v2ray_process.poll() is not None:
