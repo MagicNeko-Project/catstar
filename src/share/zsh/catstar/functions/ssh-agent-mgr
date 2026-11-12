@@ -1,11 +1,6 @@
 # SSH Agent Manager (ssh-agent-mgr)
-# -----------------------------------------------------------------------------
-# Scans common SSH agent socket locations (including existing environment
-# variables, macOS temporary dirs, system agents, 1Password, GPG agent, etc.),
-# validates active sockets, displays a selection menu, and switches SSH_AUTH_SOCK.
-#
-# Usage: ssh-agent-mgr [ -h | --help ]
-# -----------------------------------------------------------------------------
+# Scans common SSH agent socket locations, validates active agents,
+# displays an interactive selection menu, and switches SSH_AUTH_SOCK.
 
 if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   print -P "%F{cyan}=== SSH Agent Manager (ssh-agent-mgr) ===%f"
@@ -20,31 +15,26 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   return 0
 fi
 
-# Ensure global associative array exists to persist discovered sockets across runs
 typeset -g -A _CATSTAR_KNOWN_SSH_SOCKETS
 
-# Ensure strict local scope for all internal variables
 local current_sock="$SSH_AUTH_SOCK"
-local -a candidate_sockets valid_sockets socket_descriptions
-local socket candidate choice index key_list exit_status key_count first_key_comment selected_sock
+local -a candidate_sockets valid_sockets socket_descriptions common_paths lines first_key_fields
+local socket candidate choice index key_list exit_status key_count first_key_comment selected_sock sock desc active_marker color
 
 if [[ -n "$current_sock" && -S "$current_sock" ]]; then
   candidate_sockets+=("$current_sock")
   _CATSTAR_KNOWN_SSH_SOCKETS[$current_sock]=1
 fi
 
-# Include previously known sockets from session
 for socket in ${(k)_CATSTAR_KNOWN_SSH_SOCKETS}; do
   if [[ -S "$socket" ]]; then
     candidate_sockets+=("$socket")
   else
-    # Prune dead sockets from known cache
     unset "_CATSTAR_KNOWN_SSH_SOCKETS[$socket]"
   fi
 done
 
-# Include common macOS / Linux agent socket locations using Zsh nullglob (N)
-local -a common_paths=(
+common_paths=(
   /var/folders/*/*/*/ssh-*/agent.*(N)
   /tmp/ssh-*/agent.*(N)
   "$HOME/.1password/agent.sock"
@@ -79,23 +69,15 @@ for candidate in "${common_paths[@]}"; do
   fi
 done
 
-local -a unique_sockets
-local -A seen_sockets
-for socket in "${candidate_sockets[@]}"; do
-  if [[ -z "${seen_sockets[$socket]}" ]]; then
-    seen_sockets[$socket]=1
-    unique_sockets+=("$socket")
-  fi
-done
+candidate_sockets=(${(u)candidate_sockets})
 
-if (( ${#unique_sockets[@]} == 0 )); then
+if (( ${#candidate_sockets[@]} == 0 )); then
   print -P "%F{yellow}No SSH agent sockets found in common locations or environment.%f"
   print -P "You can start a new agent using: %F{cyan}eval \$(ssh-agent -s)%f"
   return 1
 fi
 
-for socket in "${unique_sockets[@]}"; do
-  # Test socket communication with ssh-add -l (exactly one external call per socket)
+for socket in "${candidate_sockets[@]}"; do
   key_list=$(env SSH_AUTH_SOCK="$socket" ssh-add -l 2>/dev/null)
   exit_status=$?
 
@@ -104,12 +86,9 @@ for socket in "${unique_sockets[@]}"; do
     if (( exit_status == 1 )); then
       socket_descriptions+=("No keys loaded")
     else
-      # Zsh native string splitting by newline (f)
-      local -a lines=( ${(f)key_list} )
+      lines=( ${(f)key_list} )
       key_count=${#lines}
-
-      # Zsh native word splitting for the first line
-      local -a first_key_fields=( ${=lines[1]} )
+      first_key_fields=( ${=lines[1]} )
       first_key_comment="${first_key_fields[3]}"
 
       if (( key_count == 1 )); then
@@ -118,6 +97,8 @@ for socket in "${unique_sockets[@]}"; do
         socket_descriptions+=("$key_count keys loaded (incl. $first_key_comment)")
       fi
     fi
+  else
+    unset "_CATSTAR_KNOWN_SSH_SOCKETS[$socket]"
   fi
 done
 
@@ -130,10 +111,10 @@ print -P "\n%F{cyan}=== SSH Agent Manager ===%f\n"
 print -P "Available SSH Agents:"
 
 for index in {1..${#valid_sockets[@]}}; do
-  local sock="${valid_sockets[$index]}"
-  local desc="${socket_descriptions[$index]}"
-  local active_marker="  "
-  local color="%F{white}"
+  sock="${valid_sockets[$index]}"
+  desc="${socket_descriptions[$index]}"
+  active_marker="  "
+  color="%F{white}"
 
   if [[ "$sock" == "$current_sock" ]]; then
     active_marker="* "
@@ -155,7 +136,6 @@ if [[ "$choice" == "q" || "$choice" == "Q" || -z "$choice" ]]; then
   return 0
 fi
 
-# Validate user choice
 if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#valid_sockets[@]} )); then
   selected_sock="${valid_sockets[$choice]}"
   export SSH_AUTH_SOCK="$selected_sock"
