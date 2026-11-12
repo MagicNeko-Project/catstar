@@ -8,7 +8,6 @@ ExecStart=/usr/local/bin/rclone serve restic $RCLONE_REMOTE
 EnvironmentFile=%h/.config/rclone-serve-restic-%i.conf
 NoNewPrivileges=yes
 ProtectSystem=full
-PrivateTmp=yes
 Type=simple
 
 [Install]
