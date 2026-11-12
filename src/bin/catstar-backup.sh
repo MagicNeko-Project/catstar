@@ -82,26 +82,30 @@ backup_btrfs_restic() {
   local subvol dest
   for subvol in "${!BTRFS_SNAPSHOT_@}"; do
     dest="${subvol#BTRFS_SNAPSHOT_}"
-    btrfs subvolume snapshot -r "${!subvol}" "$BTRFS_SNAPSHOTS_ROOT/$dest"
+    btrfs subvolume snapshot -r "${!subvol}" "$BTRFS_SNAPSHOTS_ROOT/$dest" || return $?
   done
 
-  restic version
-  restic backup --exclude-caches "$BTRFS_SNAPSHOTS_ROOT"
-  btrfs subvolume delete "$BTRFS_SNAPSHOTS_ROOT/"*
+  restic version || return $?
+  restic backup --exclude-caches "$BTRFS_SNAPSHOTS_ROOT" || return $?
+  btrfs subvolume delete "$BTRFS_SNAPSHOTS_ROOT/"* || true
 }
 
 backup_root_tar() {
   notify_send_verbose "开始备份：tar.zst"
 
   printf -v TAR_SAVE_FILE "$TAR_FILE_NAME"
-  tar -I zstd -cp --one-file-system / | openssl "$TAR_OPENSSL_TYPE" -salt -k "$TAR_OPENSSL_PASSWORD" | dd bs=64K | ssh "$TAR_SSH_SERVER" "cat > '$TAR_SAVE_FILE'"
+  local res=0
+  set -o pipefail
+  tar -I zstd -cp --one-file-system / | openssl "$TAR_OPENSSL_TYPE" -salt -k "$TAR_OPENSSL_PASSWORD" | dd bs=64K | ssh "$TAR_SSH_SERVER" "cat > '$TAR_SAVE_FILE'" || res=$?
+  set +o pipefail
+  return $res
 }
 
 backup_root_restic() {
   notify_send_verbose "开始备份：restic"
 
-  restic version
-  restic backup --exclude-caches --one-file-system "$RESTIC_ROOT"
+  restic version || return $?
+  restic backup --exclude-caches --one-file-system "$RESTIC_ROOT" || return $?
 }
 
 backup_test() {
@@ -111,7 +115,11 @@ backup_test() {
   for i in {1..2}; do
     echo "测试备份消息：123*$i"
   done
-  return "$BACKUP_TEST"  # 测试返回值
+  local status=0
+  if [[ "${BACKUP_TEST:-}" =~ ^[0-9]+$ ]]; then
+    status="$BACKUP_TEST"
+  fi
+  return "$status"  # 测试返回值
 }
 
 
@@ -120,19 +128,19 @@ backup_main() {
   http_ping_start "开始备份时间: $(printf '%(%F %T)T')"
 
   if [[ -v BACKUP_TEST ]]; then
-    backup_test
+    backup_test || return $?
   fi
 
   if [[ -v TAR_SSH_SERVER ]]; then
-    backup_root_tar
+    backup_root_tar || return $?
   fi
 
   if [[ -v RESTIC_ROOT ]]; then
-    backup_root_restic
+    backup_root_restic || return $?
   fi
 
   if [[ -v BTRFS_SNAPSHOTS_ROOT ]]; then
-    backup_btrfs_restic
+    backup_btrfs_restic || return $?
   fi
 
   notify_send_verbose "结束备份时间: $(printf '%(%F %T)T')"
@@ -156,15 +164,19 @@ upload_journal() {
     fi
 
     # 日志上传失败或没有配置链接
-    if [ -z "$JOURNAL" ]; then
+    if [ -z "${JOURNAL:-}" ]; then
+      JOURNAL="$JOURNAL_TEXT"
+    fi
+  else
+    if [ -z "${JOURNAL:-}" ]; then
       JOURNAL="$JOURNAL_TEXT"
     fi
   fi
 }
 
 printf -v BACKUP_BEGIN "%(%F %T)T"
-( set -eu; backup_main ) # 报错立即退出
-BACKUP_STAT=$?
+BACKUP_STAT=0
+backup_main || BACKUP_STAT=$?
 printf -v BACKUP_END "%(%F %T)T"
 JOURNAL_TEXT="$(print_journal)"
 if [[ -v HTTP_PING_APPEND_STATUS ]]; then
