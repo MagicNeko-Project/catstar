@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""
-Git repository archival utility.
+"""Git repository archival utility.
 
-Backs up complete Git repositories (all branches, tags, and commits) into
-verified standalone bundle files organized by repository path and month.
-Includes change detection to avoid duplicate archives, temp repository reuse,
-and a retention policy engine modeled after restic forget.
+Backs up complete Git repositories into verified standalone bundle files
+organized by repository path and month with restic-style retention management.
 """
 
 from __future__ import annotations
@@ -56,8 +53,8 @@ class RetentionPolicy:
     def is_active(self) -> bool:
         """Determines whether any retention limits are active."""
         return any(
-            criterion is not None
-            for criterion in (
+            c is not None
+            for c in (
                 self.keep_last,
                 self.keep_daily,
                 self.keep_weekly,
@@ -81,15 +78,12 @@ class RepositoryExecutionSummary:
 
 def format_file_size(size_in_bytes: int) -> str:
     """Formats raw byte count into a human-readable string with units."""
-    units = ("B", "KB", "MB", "GB", "TB")
-    scaled_size = float(size_in_bytes)
-    for unit in units:
-        if scaled_size < 1024.0 or unit == "TB":
-            if unit == "B":
-                return f"{int(scaled_size)} B"
-            return f"{scaled_size:.1f} {unit}"
-        scaled_size /= 1024.0
-    return f"{scaled_size:.1f} TB"
+    scaled = float(size_in_bytes)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if scaled < 1024.0 or unit == "TB":
+            return f"{int(scaled)} B" if unit == "B" else f"{scaled:.1f} {unit}"
+        scaled /= 1024.0
+    return f"{scaled:.1f} TB"
 
 
 def run_git_command(
@@ -99,113 +93,72 @@ def run_git_command(
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """Executes a git command with standard options and error reporting."""
-    command = ["git"]
+    cmd = ["git"]
     if working_directory is not None:
-        command.extend(["-C", str(working_directory)])
-    command.extend(arguments)
-
-    environment = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
-
+        cmd.extend(["-C", str(working_directory)])
+    cmd.extend(arguments)
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     return subprocess.run(
-        command,
-        capture_output=capture_output,
-        text=True,
-        check=check,
-        env=environment,
+        cmd, capture_output=capture_output, text=True, check=check, env=env
     )
 
 
 def is_remote_repository_url(source_address: str) -> bool:
     """Determines whether the source string is a remote Git URL."""
     remote_schemes = ("http://", "https://", "git://", "ssh://", "file://")
-    if any(source_address.startswith(scheme) for scheme in remote_schemes):
+    if any(source_address.startswith(s) for s in remote_schemes):
         return True
-
-    # Windows drive letter (e.g. C:\repo or D:/repo) is always a local path
-    if re.match(r"^[a-zA-Z]:[\\/]", source_address):
+    if re.match(r"^[a-zA-Z]:[\\/]", source_address) or source_address.startswith(
+        ("\\\\", "//")
+    ):
         return False
-
-    # Windows UNC network share path (e.g. \\server\share)
-    if source_address.startswith(("\\\\", "//")):
-        return False
-
-    # Existing local filesystem entries are never remote URLs
     if Path(source_address).exists():
         return False
-
-    # Identify SCP-style addresses (e.g. git@github.com:org/repo.git or host.com:org/repo.git)
     if ":" in source_address and not source_address.startswith(("/", ".")):
-        host_segment, path_segment = source_address.split(":", 1)
-        is_valid_scp_host = (
-            len(host_segment) > 1
-            and "/" not in host_segment
-            and "\\" not in host_segment
-        )
-        if is_valid_scp_host and bool(path_segment.strip()):
+        host, path = source_address.split(":", 1)
+        if len(host) > 1 and "/" not in host and "\\" not in host and path.strip():
             return True
-
     return False
 
 
 def parse_remote_repository_relative_path(remote_url: str) -> Path:
     """Extracts the org/repo relative filesystem path from a remote URL."""
-    cleaned_url = remote_url.strip().removesuffix(".git").rstrip("/")
-
-    # Handle SCP-style addresses (git@host:org/repo)
-    if ":" in cleaned_url and not any(
-        cleaned_url.startswith(scheme)
-        for scheme in ("http://", "https://", "git://", "ssh://")
+    cleaned = remote_url.strip().removesuffix(".git").rstrip("/")
+    if ":" in cleaned and not any(
+        cleaned.startswith(s) for s in ("http://", "https://", "git://", "ssh://")
     ):
-        _, path_part = cleaned_url.split(":", 1)
-        path_segments = [seg for seg in path_part.strip("/").split("/") if seg]
-        if path_segments:
-            return Path(*path_segments)
+        _, path_part = cleaned.split(":", 1)
+        segs = [s for s in path_part.strip("/").split("/") if s]
+        if segs:
+            return Path(*segs)
 
-    # Handle standard URLs
-    parsed_url = urlparse(cleaned_url)
-    raw_path_segments = [seg for seg in parsed_url.path.strip("/").split("/") if seg]
-    if not raw_path_segments:
+    parsed = urlparse(cleaned)
+    segs = [s for s in parsed.path.strip("/").split("/") if s]
+    if not segs:
         raise ValueError(f"Unable to extract repository path from URL: {remote_url}")
-
-    return Path(*raw_path_segments)
+    return Path(*segs)
 
 
 def resolve_local_repository_relative_path(repository_path: Path) -> Path:
-    """
-    Resolves the relative path for a local repository.
-
-    Prefers extracting org/repo from the remote origin URL if configured,
-    falling back to the local directory name.
-    """
+    """Resolves relative path for a local repo, preferring org/repo from origin URL."""
     try:
-        remote_output = run_git_command(
-            ["remote", "get-url", "origin"],
-            working_directory=repository_path,
+        out = run_git_command(
+            ["remote", "get-url", "origin"], working_directory=repository_path
         )
-        origin_url = remote_output.stdout.strip()
-        if origin_url:
-            return parse_remote_repository_relative_path(origin_url)
+        if url := out.stdout.strip():
+            return parse_remote_repository_relative_path(url)
     except (subprocess.CalledProcessError, ValueError):
         pass
 
-    # Check any other remote if origin was not present
     try:
-        remotes_output = run_git_command(
-            ["remote"],
-            working_directory=repository_path,
-        )
-        remote_names = [
-            name for name in remotes_output.stdout.splitlines() if name.strip()
-        ]
-        for remote_name in remote_names:
+        remotes_out = run_git_command(["remote"], working_directory=repository_path)
+        for r in (m.strip() for m in remotes_out.stdout.splitlines() if m.strip()):
             try:
-                remote_url_output = run_git_command(
-                    ["remote", "get-url", remote_name],
-                    working_directory=repository_path,
+                out = run_git_command(
+                    ["remote", "get-url", r], working_directory=repository_path
                 )
-                remote_url = remote_url_output.stdout.strip()
-                if remote_url:
-                    return parse_remote_repository_relative_path(remote_url)
+                if url := out.stdout.strip():
+                    return parse_remote_repository_relative_path(url)
             except (subprocess.CalledProcessError, ValueError):
                 continue
     except subprocess.CalledProcessError:
@@ -215,78 +168,62 @@ def resolve_local_repository_relative_path(repository_path: Path) -> Path:
 
 
 def resolve_repository_destination_path(source_identifier: str) -> Path:
-    """
-    Resolves the relative destination path (<org>/<repo>) for a given repository source.
-
-    Accepts remote URLs or local repository paths.
-    """
+    """Resolves relative destination path (<org>/<repo>) for a repository source."""
     if is_remote_repository_url(source_identifier):
         return parse_remote_repository_relative_path(source_identifier)
-
     local_path = Path(source_identifier).resolve()
-    if local_path.exists():
-        return resolve_local_repository_relative_path(local_path)
-
-    return Path(local_path.name)
+    return (
+        resolve_local_repository_relative_path(local_path)
+        if local_path.exists()
+        else Path(local_path.name)
+    )
 
 
 def deduplicate_repository_sources(sources: Sequence[str]) -> list[str]:
-    """
-    Deduplicates repository sources by their resolved relative destination path.
-
-    Preserves first-seen order across merged sources.
-    """
-    deduplicated_sources: list[str] = []
-    seen_destinations: set[Path] = set()
-
-    for source in sources:
+    """Deduplicates repository sources by resolved destination path."""
+    deduped: list[str] = []
+    seen: set[Path] = set()
+    for src in sources:
         try:
-            destination_path = resolve_repository_destination_path(source)
+            dest = resolve_repository_destination_path(src)
         except (ValueError, OSError, subprocess.CalledProcessError):
-            destination_path = Path(source.strip().rstrip("/"))
-
-        if destination_path not in seen_destinations:
-            seen_destinations.add(destination_path)
-            deduplicated_sources.append(source)
-
-    return deduplicated_sources
+            dest = Path(src.strip().rstrip("/"))
+        if dest not in seen:
+            seen.add(dest)
+            deduped.append(src)
+    return deduped
 
 
 def parse_repository_list_file(source: str | Path, is_stdin: bool = False) -> list[str]:
-    """
-    Parses a repository list file or standard input.
-
-    - Strips leading and trailing whitespace.
-    - Ignores blank lines.
-    - Ignores whole-line comments starting with '#' or ';'.
-    - Strips inline comments where '#' is preceded by whitespace (e.g. '<url>  # note').
-    - Preserves '#' within URLs when not preceded by whitespace.
-    """
+    """Parses repository list file or stdin, stripping comments and whitespace."""
     if is_stdin or str(source) == "-":
-        raw_lines = sys.stdin.read().splitlines()
+        lines = sys.stdin.read().splitlines()
     else:
         file_path = Path(source).resolve()
         if not file_path.is_file():
             raise FileNotFoundError(f"Repository list file not found: {file_path}")
         try:
-            with open(file_path, encoding="utf-8", errors="replace") as file_handle:
-                raw_lines = file_handle.read().splitlines()
+            lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError as err:
             raise OSError(
                 f"Failed to read repository list file '{file_path}': {err}"
             ) from err
 
-    extracted_repositories: list[str] = []
-    for line in raw_lines:
-        stripped_line = line.strip()
-        if not stripped_line or stripped_line.startswith(("#", ";")):
+    result: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("#", ";")):
             continue
+        if cleaned := INLINE_COMMENT_PATTERN.sub("", stripped).strip():
+            result.append(cleaned)
+    return result
 
-        cleaned_entry = INLINE_COMMENT_PATTERN.sub("", stripped_line).strip()
-        if cleaned_entry:
-            extracted_repositories.append(cleaned_entry)
 
-    return extracted_repositories
+def _atomic_write_file(target_path: Path, content: str) -> None:
+    """Writes content to target_path atomically using a temporary file."""
+    tmp = target_path.parent / f".{target_path.name}.tmp_{os.getpid()}"
+    tmp.write_text(content, encoding="utf-8")
+    tmp.replace(target_path)
 
 
 def update_or_write_repository_list_file(
@@ -295,115 +232,78 @@ def update_or_write_repository_list_file(
     dry_run: bool = False,
     verbose: bool = False,
 ) -> int:
-    """
-    Writes or updates the repository list file with candidate sources.
-
-    - If target_path exists: preserves original lines/comments and appends only
-      newly added repositories whose resolved destinations are not already in target_path.
-    - If target_path does not exist: creates target_path and writes all deduplicated sources.
-    - In dry_run mode: previews changes without modifying files.
-
-    Returns the count of newly appended/written repositories.
-    """
+    """Writes or updates repository list file with candidate sources."""
     if target_path.exists():
-        existing_repositories = parse_repository_list_file(target_path)
-        existing_destinations = {
-            resolve_repository_destination_path(repo) for repo in existing_repositories
-        }
-
-        new_repositories_to_append: list[str] = []
+        existing = parse_repository_list_file(target_path)
+        existing_dests = {resolve_repository_destination_path(r) for r in existing}
+        to_append: list[str] = []
         for candidate in candidate_sources:
             try:
-                candidate_destination = resolve_repository_destination_path(candidate)
+                dest = resolve_repository_destination_path(candidate)
             except (ValueError, OSError, subprocess.CalledProcessError):
-                candidate_destination = Path(candidate.strip().rstrip("/"))
+                dest = Path(candidate.strip().rstrip("/"))
+            if dest not in existing_dests:
+                existing_dests.add(dest)
+                to_append.append(candidate)
 
-            if candidate_destination not in existing_destinations:
-                existing_destinations.add(candidate_destination)
-                new_repositories_to_append.append(candidate)
-
-        if not new_repositories_to_append:
+        if not to_append:
             if verbose:
                 print(f"Repository list file is already up to date: {target_path}")
             return 0
 
         if dry_run:
-            print(
-                f"Would append {len(new_repositories_to_append)} repositories to {target_path}"
-            )
-            return len(new_repositories_to_append)
+            print(f"Would append {len(to_append)} repositories to {target_path}")
+            return len(to_append)
 
         try:
-            existing_content = target_path.read_text(encoding="utf-8", errors="replace")
-            if existing_content and not existing_content.endswith("\n"):
-                existing_content += "\n"
-            updated_content = (
-                existing_content + "\n".join(new_repositories_to_append) + "\n"
-            )
-
-            temporary_file_path = (
-                target_path.parent / f".{target_path.name}.tmp_{os.getpid()}"
-            )
-            temporary_file_path.write_text(updated_content, encoding="utf-8")
-            temporary_file_path.replace(target_path)
+            curr = target_path.read_text(encoding="utf-8", errors="replace")
+            if curr and not curr.endswith("\n"):
+                curr += "\n"
+            _atomic_write_file(target_path, curr + "\n".join(to_append) + "\n")
         except OSError as err:
             raise OSError(
                 f"Failed to update repository list file '{target_path}': {err}"
             ) from err
 
         if verbose:
-            print(
-                f"Appended {len(new_repositories_to_append)} new repositories to {target_path}"
-            )
-        return len(new_repositories_to_append)
+            print(f"Appended {len(to_append)} new repositories to {target_path}")
+        return len(to_append)
 
-    # Target path does not exist: create fresh file
-    deduplicated = deduplicate_repository_sources(candidate_sources)
-
+    deduped = deduplicate_repository_sources(candidate_sources)
     if dry_run:
-        print(f"Would write {len(deduplicated)} repositories to {target_path}")
-        return len(deduplicated)
+        print(f"Would write {len(deduped)} repositories to {target_path}")
+        return len(deduped)
 
     try:
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        content_to_write = "\n".join(deduplicated) + ("\n" if deduplicated else "")
-        temporary_file_path = (
-            target_path.parent / f".{target_path.name}.tmp_{os.getpid()}"
-        )
-        temporary_file_path.write_text(content_to_write, encoding="utf-8")
-        temporary_file_path.replace(target_path)
+        content = "\n".join(deduped) + ("\n" if deduped else "")
+        _atomic_write_file(target_path, content)
     except OSError as err:
         raise OSError(
             f"Failed to create repository list file '{target_path}': {err}"
         ) from err
 
     if verbose:
-        print(f"Wrote {len(deduplicated)} repositories to {target_path}")
-    return len(deduplicated)
+        print(f"Wrote {len(deduped)} repositories to {target_path}")
+    return len(deduped)
 
 
 def inspect_local_repository_cleanliness(repository_path: Path) -> bool:
-    """
-    Verifies working tree cleanliness of a local repository.
-
-    Warns on stderr if uncommitted or untracked changes are detected.
-    """
+    """Verifies working tree cleanliness of a local repository."""
     try:
-        bare_check = run_git_command(
-            ["rev-parse", "--is-bare-repository"],
-            working_directory=repository_path,
+        bare = run_git_command(
+            ["rev-parse", "--is-bare-repository"], working_directory=repository_path
         )
-        if bare_check.stdout.strip() == "true":
+        if bare.stdout.strip() == "true":
             return True
     except subprocess.CalledProcessError:
         return True
 
     try:
-        status_output = run_git_command(
-            ["status", "--porcelain"],
-            working_directory=repository_path,
+        status = run_git_command(
+            ["status", "--porcelain"], working_directory=repository_path
         )
-        if status_output.stdout.strip():
+        if status.stdout.strip():
             sys.stderr.write(
                 f"Warning: Repository '{repository_path}' has uncommitted changes "
                 "or untracked files; archiving committed refs and stashes only.\n"
@@ -411,88 +311,62 @@ def inspect_local_repository_cleanliness(repository_path: Path) -> bool:
             return False
     except subprocess.CalledProcessError:
         pass
-
     return True
 
 
 def fetch_repository_references(repository_path: Path) -> dict[str, str]:
-    """Retrieves all references and their commit hashes from a Git repository."""
+    """Retrieves all references and commit hashes from a Git repository."""
     try:
-        show_ref_output = run_git_command(
-            ["show-ref", "--head"],
-            working_directory=repository_path,
-        )
-    except subprocess.CalledProcessError as process_error:
-        # Exit code 1 from show-ref indicates an empty repository with no refs
-        if process_error.returncode == 1:
+        out = run_git_command(["show-ref", "--head"], working_directory=repository_path)
+    except subprocess.CalledProcessError as err:
+        if err.returncode == 1:
             return {}
         raise
 
-    references_map: dict[str, str] = {}
-    for line in show_ref_output.stdout.splitlines():
-        line_stripped = line.strip()
-        if not line_stripped:
-            continue
-        parts = line_stripped.split(maxsplit=1)
-        if len(parts) == 2:
-            commit_hash, reference_name = parts
-            references_map[reference_name] = commit_hash
+    refs: dict[str, str] = {}
+    for line in out.stdout.splitlines():
+        if len(parts := line.strip().split(maxsplit=1)) == 2:
+            refs[parts[1]] = parts[0]
 
-    # Discover active worktree HEADs which git bundle --all packages
     try:
-        git_path_output = run_git_command(
-            ["rev-parse", "--git-path", "worktrees"],
-            working_directory=repository_path,
+        wt_out = run_git_command(
+            ["rev-parse", "--git-path", "worktrees"], working_directory=repository_path
         )
-        worktrees_directory = Path(git_path_output.stdout.strip())
-        if not worktrees_directory.is_absolute():
-            worktrees_directory = repository_path / worktrees_directory
-
-        if worktrees_directory.is_dir():
-            for worktree_entry in worktrees_directory.iterdir():
-                if worktree_entry.is_dir() and (worktree_entry / "HEAD").is_file():
-                    worktree_ref_name = f"worktrees/{worktree_entry.name}/HEAD"
-                    rev_parse_output = run_git_command(
-                        ["rev-parse", worktree_ref_name],
-                        working_directory=repository_path,
+        wt_dir = Path(wt_out.stdout.strip())
+        if not wt_dir.is_absolute():
+            wt_dir = repository_path / wt_dir
+        if wt_dir.is_dir():
+            for entry in wt_dir.iterdir():
+                if entry.is_dir() and (entry / "HEAD").is_file():
+                    ref_name = f"worktrees/{entry.name}/HEAD"
+                    rev_out = run_git_command(
+                        ["rev-parse", ref_name], working_directory=repository_path
                     )
-                    references_map[worktree_ref_name] = rev_parse_output.stdout.strip()
+                    refs[ref_name] = rev_out.stdout.strip()
     except (subprocess.CalledProcessError, OSError):
         pass
 
-    return references_map
+    return refs
 
 
 def fetch_bundle_references(bundle_path: Path) -> dict[str, str]:
     """Extracts reference names and commit hashes directly from a Git bundle."""
-    list_heads_output = run_git_command(
-        ["bundle", "list-heads", str(bundle_path)],
-    )
-
-    references_map: dict[str, str] = {}
-    for line in list_heads_output.stdout.splitlines():
-        line_stripped = line.strip()
-        if not line_stripped:
-            continue
-        parts = line_stripped.split(maxsplit=1)
-        if len(parts) == 2:
-            commit_hash, reference_name = parts
-            references_map[reference_name] = commit_hash
-
-    return references_map
+    out = run_git_command(["bundle", "list-heads", str(bundle_path)])
+    refs: dict[str, str] = {}
+    for line in out.stdout.splitlines():
+        if len(parts := line.strip().split(maxsplit=1)) == 2:
+            refs[parts[1]] = parts[0]
+    return refs
 
 
 def is_repository_unchanged(repository_path: Path, latest_bundle_path: Path) -> bool:
     """Compares current repository references with the latest archived bundle."""
     if not latest_bundle_path.is_file():
         return False
-
     try:
-        bundle_references = fetch_bundle_references(latest_bundle_path)
-        repository_references = fetch_repository_references(repository_path)
-        if not repository_references:
-            return False
-        return bundle_references == repository_references
+        bundle_refs = fetch_bundle_references(latest_bundle_path)
+        repo_refs = fetch_repository_references(repository_path)
+        return bool(repo_refs) and bundle_refs == repo_refs
     except (subprocess.CalledProcessError, OSError):
         return False
 
@@ -503,22 +377,21 @@ def verify_bundle_integrity(
     """Verifies that a Git bundle is valid and complete."""
     if working_directory is not None:
         run_git_command(
-            ["bundle", "verify", str(bundle_path)],
-            working_directory=working_directory,
+            ["bundle", "verify", str(bundle_path)], working_directory=working_directory
         )
         return
 
     try:
         run_git_command(["bundle", "verify", str(bundle_path)])
-    except subprocess.CalledProcessError as process_error:
-        if "need a repository to verify a bundle" in process_error.stderr:
+    except subprocess.CalledProcessError as err:
+        if "need a repository to verify a bundle" in err.stderr:
             with tempfile.TemporaryDirectory(
                 prefix="git_archivist_verify_"
-            ) as ephemeral_repo:
-                run_git_command(["init", "--bare", ephemeral_repo])
+            ) as ephemeral:
+                run_git_command(["init", "--bare", ephemeral])
                 run_git_command(
                     ["bundle", "verify", str(bundle_path)],
-                    working_directory=Path(ephemeral_repo),
+                    working_directory=Path(ephemeral),
                 )
         else:
             raise
@@ -530,79 +403,58 @@ def update_latest_symlink(
     leaf_name: str,
     dry_run: bool,
 ) -> None:
-    """
-    Atomically creates or updates the canonical repo_name.bundle symlink
-    one directory above repository_archive_directory.
-
-    Uses a relative symlink target (e.g. repo/202609/20260902_223000.bundle)
-    so the archive directory can be moved safely.
-    """
-    symlink_parent_directory = repository_archive_directory.parent
-    symlink_path = symlink_parent_directory / f"{leaf_name}.bundle"
-    relative_target = (
+    """Atomically creates or updates repo_name.bundle symlink."""
+    parent_dir = repository_archive_directory.parent
+    symlink_path = parent_dir / f"{leaf_name}.bundle"
+    target_rel = (
         Path(repository_archive_directory.name)
         / target_bundle_path.parent.name
         / target_bundle_path.name
     )
 
     if dry_run:
-        print(f"Would update symlink: {symlink_path.name} -> {relative_target}")
+        print(f"Would update symlink: {symlink_path.name} -> {target_rel}")
         return
 
-    symlink_parent_directory.mkdir(parents=True, exist_ok=True)
-    temporary_symlink_path = (
-        symlink_parent_directory / f"{leaf_name}.bundle.tmp_{os.getpid()}"
-    )
+    parent_dir.mkdir(parents=True, exist_ok=True)
+    tmp_link = parent_dir / f"{leaf_name}.bundle.tmp_{os.getpid()}"
+    if tmp_link.is_symlink() or tmp_link.exists():
+        tmp_link.unlink()
 
-    if temporary_symlink_path.is_symlink() or temporary_symlink_path.exists():
-        temporary_symlink_path.unlink()
-
-    temporary_symlink_path.symlink_to(relative_target)
-    temporary_symlink_path.replace(symlink_path)
+    tmp_link.symlink_to(target_rel)
+    tmp_link.replace(symlink_path)
 
 
 def collect_repository_bundles(
     repository_archive_directory: Path,
 ) -> list[ArchiveBundle]:
-    """
-    Discovers all archived .bundle files within monthly subdirectories.
-
-    Returns the archives sorted chronologically descending (newest first).
-    """
-    discovered_bundles: list[ArchiveBundle] = []
-
+    """Discovers all archived .bundle files within monthly subdirectories."""
+    bundles: list[ArchiveBundle] = []
     if not repository_archive_directory.is_dir():
-        return discovered_bundles
+        return bundles
 
-    for child_entry in repository_archive_directory.iterdir():
-        if child_entry.is_dir() and MONTH_DIRECTORY_PATTERN.match(child_entry.name):
-            for candidate_file in child_entry.glob("*.bundle"):
-                if candidate_file.is_symlink():
+    for child in repository_archive_directory.iterdir():
+        if child.is_dir() and MONTH_DIRECTORY_PATTERN.match(child.name):
+            for candidate in child.glob("*.bundle"):
+                if candidate.is_symlink():
                     continue
-                match = TIMESTAMP_FILENAME_PATTERN.match(candidate_file.name)
-                if match:
-                    timestamp_string = f"{match.group(1)}_{match.group(2)}"
+                if match := TIMESTAMP_FILENAME_PATTERN.match(candidate.name):
                     try:
-                        parsed_timestamp = datetime.strptime(
-                            timestamp_string, TIMESTAMP_FORMAT
+                        ts = datetime.strptime(
+                            f"{match.group(1)}_{match.group(2)}", TIMESTAMP_FORMAT
                         ).replace(tzinfo=timezone.utc)
                     except ValueError:
                         continue
-
-                    file_size = candidate_file.stat().st_size
-                    discovered_bundles.append(
+                    bundles.append(
                         ArchiveBundle(
-                            file_path=candidate_file,
-                            timestamp=parsed_timestamp,
-                            size_in_bytes=file_size,
+                            file_path=candidate,
+                            timestamp=ts,
+                            size_in_bytes=candidate.stat().st_size,
                         )
                     )
 
-    # Sort descending: newest bundle first
-    discovered_bundles.sort(
-        key=lambda item: (item.timestamp, item.file_path.name), reverse=True
-    )
-    return discovered_bundles
+    bundles.sort(key=lambda b: (b.timestamp, b.file_path.name), reverse=True)
+    return bundles
 
 
 def collect_newest_bundle_per_period(
@@ -614,70 +466,52 @@ def collect_newest_bundle_per_period(
     if retention_limit is None or retention_limit <= 0:
         return []
 
-    newest_bundle_per_period: dict[PeriodKey, ArchiveBundle] = {}
+    newest: dict[PeriodKey, ArchiveBundle] = {}
     for bundle in sorted_bundles:
-        period_key = extract_period_key(bundle.timestamp)
-        if period_key not in newest_bundle_per_period:
-            newest_bundle_per_period[period_key] = bundle
+        key = extract_period_key(bundle.timestamp)
+        if key not in newest:
+            newest[key] = bundle
 
-    return list(newest_bundle_per_period.values())[:retention_limit]
+    return list(newest.values())[:retention_limit]
 
 
 def evaluate_retention_candidates(
     bundles: list[ArchiveBundle],
     policy: RetentionPolicy,
 ) -> tuple[set[ArchiveBundle], set[ArchiveBundle]]:
-    """
-    Evaluates archive bundles against retention policies modeled after restic forget.
-
-    Returns a tuple of (kept_bundles, prune_candidates).
-    """
+    """Evaluates archive bundles against retention policies modeled after restic forget."""
     if not policy.is_active or not bundles:
         return set(bundles), set()
 
-    kept_bundles: set[ArchiveBundle] = set()
+    kept: set[ArchiveBundle] = set()
 
-    # Rule 1: Keep last N snapshots
     if policy.keep_last is not None and policy.keep_last > 0:
-        kept_bundles.update(bundles[: policy.keep_last])
+        kept.update(bundles[: policy.keep_last])
 
-    # Rule 2: Keep daily snapshots
-    kept_bundles.update(
+    kept.update(
         collect_newest_bundle_per_period(
-            bundles, policy.keep_daily, lambda timestamp: timestamp.date()
+            bundles, policy.keep_daily, lambda ts: ts.date()
         )
     )
-
-    # Rule 3: Keep weekly snapshots
-    kept_bundles.update(
+    kept.update(
         collect_newest_bundle_per_period(
             bundles,
             policy.keep_weekly,
-            lambda timestamp: (
-                timestamp.isocalendar().year,
-                timestamp.isocalendar().week,
-            ),
+            lambda ts: (ts.isocalendar().year, ts.isocalendar().week),
         )
     )
-
-    # Rule 4: Keep monthly snapshots
-    kept_bundles.update(
+    kept.update(
         collect_newest_bundle_per_period(
-            bundles,
-            policy.keep_monthly,
-            lambda timestamp: (timestamp.year, timestamp.month),
+            bundles, policy.keep_monthly, lambda ts: (ts.year, ts.month)
         )
     )
-
-    # Rule 5: Keep yearly snapshots
-    kept_bundles.update(
+    kept.update(
         collect_newest_bundle_per_period(
-            bundles, policy.keep_yearly, lambda timestamp: timestamp.year
+            bundles, policy.keep_yearly, lambda ts: ts.year
         )
     )
 
-    prune_candidates = set(bundles) - kept_bundles
-    return kept_bundles, prune_candidates
+    return kept, set(bundles) - kept
 
 
 def apply_retention_policy(
@@ -687,73 +521,59 @@ def apply_retention_policy(
     dry_run: bool,
     verbose: bool,
 ) -> int:
-    """
-    Executes retention evaluation, removing expired archives and cleaning empty directories.
-
-    Returns the count of pruned bundles.
-    """
+    """Executes retention evaluation, removing expired archives and cleaning empty dirs."""
     if not policy.is_active:
         return 0
 
-    all_bundles = collect_repository_bundles(repository_archive_directory)
-    if not all_bundles:
+    bundles = collect_repository_bundles(repository_archive_directory)
+    if not bundles:
         return 0
 
-    kept_bundles, prune_candidates = evaluate_retention_candidates(all_bundles, policy)
-    if not prune_candidates:
+    kept, prunes = evaluate_retention_candidates(bundles, policy)
+    if not prunes:
         if verbose:
-            print(f"Retention policy: all {len(kept_bundles)} bundles retained.")
+            print(f"Retention policy: all {len(kept)} bundles retained.")
         return 0
 
-    # Sort prune candidates chronologically for readable logging
-    sorted_prune_list = sorted(prune_candidates, key=lambda item: item.timestamp)
-
-    for bundle in sorted_prune_list:
-        relative_display_path = bundle.file_path.relative_to(
-            repository_archive_directory
-        )
-        formatted_size = format_file_size(bundle.size_in_bytes)
+    for bundle in sorted(prunes, key=lambda b: b.timestamp):
+        rel_path = bundle.file_path.relative_to(repository_archive_directory)
+        size_str = format_file_size(bundle.size_in_bytes)
         if dry_run:
             print(
-                f"Would prune: {relative_display_path} "
-                f"({formatted_size}, {bundle.timestamp.strftime('%Y-%m-%d %H:%M:%S')})"
+                f"Would prune: {rel_path} ({size_str}, {bundle.timestamp.strftime('%Y-%m-%d %H:%M:%S')})"
             )
         else:
             bundle.file_path.unlink()
             if verbose:
-                print(f"Pruned archive: {relative_display_path}")
+                print(f"Pruned archive: {rel_path}")
 
-            # Prune parent monthly directory if now empty
-            monthly_parent_directory = bundle.file_path.parent
-            if monthly_parent_directory.is_dir() and not any(
-                monthly_parent_directory.iterdir()
-            ):
-                monthly_parent_directory.rmdir()
+            month_dir = bundle.file_path.parent
+            if month_dir.is_dir() and not any(month_dir.iterdir()):
+                month_dir.rmdir()
 
-    # Re-evaluate latest symlink health
     symlink_path = repository_archive_directory.parent / f"{leaf_name}.bundle"
     if symlink_path.is_symlink():
-        symlink_broken = False
+        broken = False
         try:
-            target_path = (symlink_path.parent / os.readlink(symlink_path)).resolve()
-            if not target_path.exists():
-                symlink_broken = True
+            target = (symlink_path.parent / os.readlink(symlink_path)).resolve()
+            if not target.exists():
+                broken = True
         except OSError:
-            symlink_broken = True
+            broken = True
 
-        if symlink_broken:
-            if kept_bundles:
-                remaining_newest = max(kept_bundles, key=lambda item: item.timestamp)
+        if broken:
+            if kept:
+                newest = max(kept, key=lambda b: b.timestamp)
                 update_latest_symlink(
                     repository_archive_directory,
-                    remaining_newest.file_path,
+                    newest.file_path,
                     leaf_name,
                     dry_run=dry_run,
                 )
             elif not dry_run:
                 symlink_path.unlink()
 
-    return len(prune_candidates)
+    return len(prunes)
 
 
 def synchronize_remote_mirror(
@@ -761,43 +581,34 @@ def synchronize_remote_mirror(
     mirror_directory: Path,
     verbose: bool,
 ) -> None:
-    """
-    Synchronizes a bare mirror repository for remote URLs.
-
-    If an existing mirror exists, updates it incrementally; otherwise clones fresh.
-    """
+    """Synchronizes a bare mirror repository for remote URLs."""
     if mirror_directory.exists():
-        is_bare = False
         try:
-            bare_check = run_git_command(
+            bare = run_git_command(
                 ["rev-parse", "--is-bare-repository"],
                 working_directory=mirror_directory,
             )
-            is_bare = bare_check.stdout.strip() == "true"
+            if bare.stdout.strip() == "true":
+                if verbose:
+                    print(f"Updating existing bare mirror: {mirror_directory}")
+                run_git_command(
+                    ["remote", "update", "--prune"],
+                    working_directory=mirror_directory,
+                    capture_output=not verbose,
+                )
+                return
         except subprocess.CalledProcessError:
-            is_bare = False
-
-        if is_bare:
-            if verbose:
-                print(f"Updating existing bare mirror: {mirror_directory}")
-            run_git_command(
-                ["remote", "update", "--prune"],
-                working_directory=mirror_directory,
-                capture_output=not verbose,
-            )
-            return
-
-        # Existing directory is not a valid bare repo; recreate
+            pass
         shutil.rmtree(mirror_directory)
 
     if verbose:
         print(f"Cloning bare mirror from {remote_url} to {mirror_directory}...")
     mirror_directory.parent.mkdir(parents=True, exist_ok=True)
-    clone_arguments = ["clone", "--mirror", "--bare"]
+    args = ["clone", "--mirror", "--bare"]
     if verbose:
-        clone_arguments.append("--progress")
-    clone_arguments.extend([remote_url, str(mirror_directory)])
-    run_git_command(clone_arguments, capture_output=not verbose)
+        args.append("--progress")
+    args.extend([remote_url, str(mirror_directory)])
+    run_git_command(args, capture_output=not verbose)
 
 
 def archive_single_repository(
@@ -813,45 +624,33 @@ def archive_single_repository(
     """Processes a single repository, creating a verified bundle and applying retention."""
     is_remote = is_remote_repository_url(source_identifier)
 
-    # 1. Resolve repository path and leaf identifier
     if is_remote:
-        relative_repo_path = parse_remote_repository_relative_path(source_identifier)
-        leaf_name = relative_repo_path.name
-        source_is_local = False
+        rel_repo_path = parse_remote_repository_relative_path(source_identifier)
+        leaf_name = rel_repo_path.name
+        working_git_path = None
     else:
-        local_repo_path = Path(source_identifier).resolve()
-        if not local_repo_path.exists():
-            raise FileNotFoundError(
-                f"Local repository does not exist: {local_repo_path}"
-            )
-
-        # Verify it is a git directory
+        local_path = Path(source_identifier).resolve()
+        if not local_path.exists():
+            raise FileNotFoundError(f"Local repository does not exist: {local_path}")
         try:
-            run_git_command(
-                ["rev-parse", "--git-dir"], working_directory=local_repo_path
-            )
+            run_git_command(["rev-parse", "--git-dir"], working_directory=local_path)
         except subprocess.CalledProcessError as err:
             raise ValueError(
-                f"Path is not a valid Git repository: {local_repo_path}"
+                f"Path is not a valid Git repository: {local_path}"
             ) from err
 
-        inspect_local_repository_cleanliness(local_repo_path)
-        relative_repo_path = resolve_local_repository_relative_path(local_repo_path)
-        leaf_name = relative_repo_path.name
-        source_is_local = True
+        inspect_local_repository_cleanliness(local_path)
+        rel_repo_path = resolve_local_repository_relative_path(local_path)
+        leaf_name = rel_repo_path.name
+        working_git_path = local_path
 
-    repository_archive_directory = destination_root / relative_repo_path
-    canonical_symlink_path = repository_archive_directory.parent / f"{leaf_name}.bundle"
+    repo_archive_dir = destination_root / rel_repo_path
+    canonical_symlink = repo_archive_dir.parent / f"{leaf_name}.bundle"
 
-    print(f"Processing repository: {source_identifier} -> {relative_repo_path}")
+    print(f"Processing repository: {source_identifier} -> {rel_repo_path}")
 
-    # 2. Prepare working Git directory (local directly, or mirror clone for remote)
-    temp_mirror_directory: Path | None = None
-    working_git_path: Path
-
-    if source_is_local:
-        working_git_path = Path(source_identifier).resolve()
-    else:
+    temp_mirror_dir: Path | None = None
+    if is_remote:
         if custom_temp_directory is not None:
             base_temp = custom_temp_directory.resolve()
         elif keep_temp_repo:
@@ -859,75 +658,52 @@ def archive_single_repository(
         else:
             base_temp = Path(tempfile.gettempdir()) / "git_archivist_repos"
 
-        temp_mirror_directory = (base_temp / relative_repo_path).with_suffix(".git")
-        synchronize_remote_mirror(
-            source_identifier,
-            temp_mirror_directory,
-            verbose=verbose,
-        )
-        working_git_path = temp_mirror_directory
+        temp_mirror_dir = (base_temp / rel_repo_path).with_suffix(".git")
+        synchronize_remote_mirror(source_identifier, temp_mirror_dir, verbose=verbose)
+        working_git_path = temp_mirror_dir
 
     bundle_created = False
     skipped_unchanged = False
 
     try:
-        # 3. Check for unchanged state
-        if not force and is_repository_unchanged(
-            working_git_path, canonical_symlink_path
-        ):
+        if not force and is_repository_unchanged(working_git_path, canonical_symlink):
             print(
-                f"  Repository '{relative_repo_path}' is unchanged; skipping bundle creation."
+                f"  Repository '{rel_repo_path}' is unchanged; skipping bundle creation."
             )
             skipped_unchanged = True
         else:
-            # 4. Construct target destination path
-            current_time = datetime.now(timezone.utc)
-            month_folder_name = current_time.strftime(MONTH_FORMAT)
-            base_timestamp_name = current_time.strftime(TIMESTAMP_FORMAT)
-            timestamp_file_name = f"{base_timestamp_name}.bundle"
-            target_bundle_path = (
-                repository_archive_directory / month_folder_name / timestamp_file_name
-            )
-            collision_counter = 1
-            while target_bundle_path.exists():
-                timestamp_file_name = (
-                    f"{base_timestamp_name}_{collision_counter}.bundle"
+            now = datetime.now(timezone.utc)
+            month_folder = now.strftime(MONTH_FORMAT)
+            base_ts_name = now.strftime(TIMESTAMP_FORMAT)
+            target_bundle = repo_archive_dir / month_folder / f"{base_ts_name}.bundle"
+
+            counter = 1
+            while target_bundle.exists():
+                target_bundle = (
+                    repo_archive_dir / month_folder / f"{base_ts_name}_{counter}.bundle"
                 )
-                target_bundle_path = (
-                    repository_archive_directory
-                    / month_folder_name
-                    / timestamp_file_name
-                )
-                collision_counter += 1
+                counter += 1
 
             if dry_run:
                 print(
-                    f"  Would create bundle: {target_bundle_path.relative_to(destination_root)}"
+                    f"  Would create bundle: {target_bundle.relative_to(destination_root)}"
                 )
                 update_latest_symlink(
-                    repository_archive_directory,
-                    target_bundle_path,
-                    leaf_name,
-                    dry_run=True,
+                    repo_archive_dir, target_bundle, leaf_name, dry_run=True
                 )
                 bundle_created = True
             else:
-                target_bundle_path.parent.mkdir(parents=True, exist_ok=True)
+                target_bundle.parent.mkdir(parents=True, exist_ok=True)
                 if verbose:
                     print(
-                        f"  Creating bundle: {target_bundle_path.relative_to(destination_root)}..."
+                        f"  Creating bundle: {target_bundle.relative_to(destination_root)}..."
                     )
 
-                bundle_arguments = [
-                    "bundle",
-                    "create",
-                    str(target_bundle_path),
-                    "--all",
-                ]
+                bundle_args = ["bundle", "create", str(target_bundle), "--all"]
                 if verbose:
-                    bundle_arguments.append("--progress")
+                    bundle_args.append("--progress")
                 run_git_command(
-                    bundle_arguments,
+                    bundle_args,
                     working_directory=working_git_path,
                     capture_output=not verbose,
                 )
@@ -935,25 +711,18 @@ def archive_single_repository(
                 if verbose:
                     print("  Verifying bundle integrity...")
                 verify_bundle_integrity(
-                    target_bundle_path, working_directory=working_git_path
+                    target_bundle, working_directory=working_git_path
                 )
 
                 update_latest_symlink(
-                    repository_archive_directory,
-                    target_bundle_path,
-                    leaf_name,
-                    dry_run=False,
+                    repo_archive_dir, target_bundle, leaf_name, dry_run=False
                 )
-                bundle_size = target_bundle_path.stat().st_size
-                print(
-                    f"  Archived successfully: {target_bundle_path.name} "
-                    f"({format_file_size(bundle_size)})"
-                )
+                size_str = format_file_size(target_bundle.stat().st_size)
+                print(f"  Archived successfully: {target_bundle.name} ({size_str})")
                 bundle_created = True
 
-        # 5. Apply retention policy
         pruned_count = apply_retention_policy(
-            repository_archive_directory=repository_archive_directory,
+            repository_archive_directory=repo_archive_dir,
             leaf_name=leaf_name,
             policy=retention_policy,
             dry_run=dry_run,
@@ -964,20 +733,19 @@ def archive_single_repository(
             print(f"  Retention: {action_text} {pruned_count} historical bundles.")
 
     finally:
-        # 6. Clean up temporary mirror if requested
         if (
             is_remote
-            and temp_mirror_directory is not None
+            and temp_mirror_dir is not None
             and not keep_temp_repo
-            and temp_mirror_directory.exists()
+            and temp_mirror_dir.exists()
         ):
             if verbose:
-                print(f"  Removing temporary mirror: {temp_mirror_directory}")
-            shutil.rmtree(temp_mirror_directory)
+                print(f"  Removing temporary mirror: {temp_mirror_dir}")
+            shutil.rmtree(temp_mirror_dir)
 
     return RepositoryExecutionSummary(
         repository_identifier=source_identifier,
-        target_relative_path=relative_repo_path,
+        target_relative_path=rel_repo_path,
         bundle_created=bundle_created,
         skipped_unchanged=skipped_unchanged,
         bundles_pruned_count=pruned_count,
@@ -990,71 +758,64 @@ def list_archived_repositories(destination_root: Path) -> None:
         print(f"Destination directory does not exist: {destination_root}")
         return
 
-    # Find all directories that contain monthly archive folders
-    discovered_repos: list[Path] = []
-    for candidate_dir in destination_root.glob("**/*"):
-        if not candidate_dir.is_dir() or MONTH_DIRECTORY_PATTERN.match(
-            candidate_dir.name
+    discovered: list[Path] = []
+    for candidate in destination_root.glob("**/*"):
+        if (
+            candidate.is_dir()
+            and not MONTH_DIRECTORY_PATTERN.match(candidate.name)
+            and any(
+                sub.is_dir() and MONTH_DIRECTORY_PATTERN.match(sub.name)
+                for sub in candidate.iterdir()
+            )
         ):
-            continue
-        has_monthly_folder = any(
-            sub.is_dir() and MONTH_DIRECTORY_PATTERN.match(sub.name)
-            for sub in candidate_dir.iterdir()
-        )
-        if has_monthly_folder:
-            discovered_repos.append(candidate_dir)
+            discovered.append(candidate)
 
-    if not discovered_repos:
+    if not discovered:
         print(f"No git archives found in: {destination_root}")
         return
 
-    # Sort repositories alphabetically by relative path
-    discovered_repos.sort(key=lambda p: str(p.relative_to(destination_root)))
+    discovered.sort(key=lambda p: str(p.relative_to(destination_root)))
 
     print(f"Archived Repositories in {destination_root}:")
     print("=" * 80)
 
-    for repo_directory in discovered_repos:
-        relative_repo = repo_directory.relative_to(destination_root)
-        bundles = collect_repository_bundles(repo_directory)
-        leaf_name = repo_directory.name
-        symlink_path = repo_directory.parent / f"{leaf_name}.bundle"
+    for repo_dir in discovered:
+        rel_repo = repo_dir.relative_to(destination_root)
+        bundles = collect_repository_bundles(repo_dir)
+        leaf_name = repo_dir.name
+        symlink_path = repo_dir.parent / f"{leaf_name}.bundle"
 
-        symlink_target_name = ""
+        symlink_target = ""
         if symlink_path.is_symlink():
             try:
-                symlink_target_name = os.readlink(symlink_path)
+                symlink_target = os.readlink(symlink_path)
             except OSError:
-                symlink_target_name = "(broken)"
+                symlink_target = "(broken)"
 
         total_bytes = sum(b.size_in_bytes for b in bundles)
-        total_size_string = format_file_size(total_bytes)
+        total_size_str = format_file_size(total_bytes)
 
-        print(f"\nRepository: {relative_repo}")
-        if symlink_target_name:
+        print(f"\nRepository: {rel_repo}")
+        if symlink_target:
             print(
-                f"  Latest symlink: {symlink_path.relative_to(destination_root)} -> {symlink_target_name}"
+                f"  Latest symlink: {symlink_path.relative_to(destination_root)} -> {symlink_target}"
             )
-        print(f"  Snapshots ({len(bundles)} total, {total_size_string}):")
+        print(f"  Snapshots ({len(bundles)} total, {total_size_str}):")
 
         for bundle in bundles:
-            relative_bundle_path = bundle.file_path.relative_to(repo_directory)
-            bundle_target_relative = str(
-                Path(repo_directory.name) / relative_bundle_path
-            )
-            is_latest = bundle_target_relative == symlink_target_name
-            latest_marker = " [latest]" if is_latest else ""
-            timestamp_display = bundle.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-            size_display = format_file_size(bundle.size_in_bytes)
-            print(
-                f"    {relative_bundle_path!s:<28} {size_display:>10}  {timestamp_display}{latest_marker}"
-            )
+            rel_bundle = bundle.file_path.relative_to(repo_dir)
+            target_rel = str(Path(repo_dir.name) / rel_bundle)
+            is_latest = target_rel == symlink_target
+            marker = " [latest]" if is_latest else ""
+            ts_str = bundle.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            size_str = format_file_size(bundle.size_in_bytes)
+            print(f"    {rel_bundle!s:<28} {size_str:>10}  {ts_str}{marker}")
 
     print("\n" + "=" * 80)
 
 
 def ensure_destination_available(destination: Path, dry_run: bool = False) -> None:
-    """Ensures the destination exists and is writable, or can be created with parents=False."""
+    """Ensures destination exists and is writable, or can be created with parents=False."""
     if destination.exists():
         if not destination.is_dir():
             raise NotADirectoryError(f"Destination is not a directory: {destination}")
@@ -1064,19 +825,18 @@ def ensure_destination_available(destination: Path, dry_run: bool = False) -> No
             )
         return
 
-    # If destination does not exist, it must be creatable directly inside an existing parent
     try:
         if not dry_run:
             destination.mkdir(parents=False, exist_ok=True)
         else:
-            parent_directory = destination.parent
-            if not parent_directory.exists() or not parent_directory.is_dir():
+            parent = destination.parent
+            if not parent.exists() or not parent.is_dir():
                 raise FileNotFoundError(
-                    f"Destination parent directory does not exist: {parent_directory}"
+                    f"Destination parent directory does not exist: {parent}"
                 )
-            if not os.access(parent_directory, os.W_OK):
+            if not os.access(parent, os.W_OK):
                 raise PermissionError(
-                    f"Destination parent directory is not writable: {parent_directory}"
+                    f"Destination parent directory is not writable: {parent}"
                 )
     except (FileNotFoundError, PermissionError, OSError) as error:
         raise OSError(
@@ -1097,7 +857,6 @@ def build_argument_parser() -> argparse.ArgumentParser:
         metavar="REPOSITORY",
         help="Local repository directories or remote Git clone URLs (HTTPS/SSH) to archive.",
     )
-
     parser.add_argument(
         "-i",
         "--input-file",
@@ -1106,7 +865,6 @@ def build_argument_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Path to a text file containing repository URLs/paths (one per line), or '-' for standard input.",
     )
-
     parser.add_argument(
         "--write-input-file",
         nargs="?",
@@ -1115,7 +873,6 @@ def build_argument_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Write or update repository list file with deduplicated repositories. Defaults to -i file if PATH is omitted.",
     )
-
     parser.add_argument(
         "-d",
         "--destination",
@@ -1124,35 +881,30 @@ def build_argument_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Target root directory where archives will be organized and stored.",
     )
-
     parser.add_argument(
         "-f",
         "--force",
         action="store_true",
         help="Force creation of a new bundle even if repository refs are unchanged.",
     )
-
     parser.add_argument(
         "-n",
         "--dry-run",
         action="store_true",
         help="Simulate archival and retention actions without modifying the filesystem.",
     )
-
     parser.add_argument(
         "-l",
         "--list",
         action="store_true",
         help="List all archived repositories and their bundle snapshots in the destination.",
     )
-
     parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
         help="Enable detailed progress logging.",
     )
-
     parser.add_argument(
         "--temp-dir",
         type=Path,
@@ -1160,7 +912,6 @@ def build_argument_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Base directory for temporary clone mirrors (defaults to system temp or user cache).",
     )
-
     parser.add_argument(
         "--keep-temp-repo",
         action="store_true",
@@ -1218,12 +969,10 @@ def main(arguments: Sequence[str] | None = None) -> int:
         sys.stderr.write(f"Error: {error}\n")
         return 1
 
-    # Handle list action
     if parsed_args.list:
         list_archived_repositories(destination_root)
         return 0
 
-    # Ingest repositories from -i / --input-file if specified
     file_repositories: list[str] = []
     if parsed_args.input_file is not None:
         try:
@@ -1243,7 +992,6 @@ def main(arguments: Sequence[str] | None = None) -> int:
             "At least one repository path or URL must be specified via arguments or -i/--input-file unless --list is used."
         )
 
-    # Handle --write-input-file if requested
     if parsed_args.write_input_file is not None:
         target_write_string = parsed_args.write_input_file
         if target_write_string == "":
@@ -1315,7 +1063,6 @@ def main(arguments: Sequence[str] | None = None) -> int:
                 )
             )
 
-    # Print batch summary
     created_count = sum(1 for s in summaries if s.bundle_created)
     skipped_count = sum(1 for s in summaries if s.skipped_unchanged)
     failed_count = sum(1 for s in summaries if s.error_message is not None)
