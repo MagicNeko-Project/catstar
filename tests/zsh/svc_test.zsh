@@ -11,7 +11,7 @@ typeset -g INCLUDE_DIR=""
 typeset -g OLD_HOME=""
 
 SetUp() {
-  TEST_WORKSPACE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/svc_test_XXXXXX")"
+  TEST_WORKSPACE_DIR="$(mktemp -d "${${TMPDIR:-/tmp}%/}/svc_test_XXXXXX")"
   STUB_BIN_DIR="$TEST_WORKSPACE_DIR/bin"
   CALL_LOG="$TEST_WORKSPACE_DIR/calls"
   mkdir -p "$STUB_BIN_DIR" "$TEST_WORKSPACE_DIR/home"
@@ -25,7 +25,7 @@ SetUp() {
   export XDG_CONFIG_HOME="$TEST_WORKSPACE_DIR/config"
   SUPERVISOR_CONFIG="$XDG_CONFIG_HOME/supervisor/supervisord.conf"
   INCLUDE_DIR="$XDG_CONFIG_HOME/supervisor/conf.d"
-  unset SVC_BACKEND STUB_EXIT_STATUS STUB_STATUS_OUTPUT STUB_STATUS_EXIT STUB_REQUIRE_USER
+  unset SVC_BACKEND STUB_EXIT_STATUS STUB_STATUS_OUTPUT STUB_STATUS_EXIT STUB_PID_EXIT STUB_REQUIRE_USER
 }
 
 TearDown() {
@@ -51,6 +51,9 @@ EOF
     else
       cat > "$STUB_BIN_DIR/$command_name" <<EOF
 #!$zsh_bin
+if [[ "\$1" == pid ]] && (( \$+STUB_PID_EXIT )); then
+  exit \${STUB_PID_EXIT}
+fi
 if [[ "\$1" == status || ( "\$1" == -c && "\$3" == status ) ]] && (( \$+STUB_STATUS_OUTPUT )); then
   print -r -- "\$STUB_STATUS_OUTPUT"
   exit \${STUB_STATUS_EXIT:-0}
@@ -99,10 +102,11 @@ test_detection_requires_booted_systemd_when_systemctl_exists() {
   fi
 }
 
-test_supervisor_requires_config_or_live_socket_for_detection() {
+test_supervisor_requires_config_or_live_daemon_for_detection() {
   use_stub_commands supervisorctl
   local stderr_file="$TEST_WORKSPACE_DIR/stderr"
 
+  export STUB_PID_EXIT=4
   svc status web 2>"$stderr_file"
 
   if [[ -S /run/supervisor.sock || -S /var/run/supervisor.sock ]]; then
@@ -113,6 +117,11 @@ test_supervisor_requires_config_or_live_socket_for_detection() {
     expect_contains "$(<"$stderr_file")" "no supported service manager is running here"
     expect_eq "$(recorded_calls)" ""
   fi
+
+  export STUB_PID_EXIT=0
+  svc status web 2>/dev/null
+  expect_status 0 "a reachable non-XDG supervisord (e.g. Homebrew) must be detected"
+  expect_eq "$(recorded_calls)" "supervisorctl status web"
 }
 
 test_supervisor_falls_back_to_home_config_when_xdg_differs() {

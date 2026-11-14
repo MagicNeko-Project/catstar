@@ -364,12 +364,15 @@ _svc_systemd_complete() {
 
 # --- Backend: supervisor ---
 
-# Supervisor is active when supervisorctl is installed and either a user config or a live
-# system control socket exists.
+# Supervisor is active when supervisorctl is installed and either a user config, a live system
+# socket, or a reachable daemon (e.g. Homebrew's prefix config) responds to "supervisorctl pid".
 _svc_supervisor_is_active() {
   (( $+commands[supervisorctl] )) || return 1
   _svc_supervisor_user_config
-  [[ -f $REPLY || -S /run/supervisor.sock || -S /var/run/supervisor.sock ]]
+  if [[ -f $REPLY || -S /run/supervisor.sock || -S /var/run/supervisor.sock ]]; then
+    return 0
+  fi
+  supervisorctl pid >/dev/null 2>&1
 }
 
 # supervisorctl talks to a single configured daemon, so refusing --user prevents ambiguity.
