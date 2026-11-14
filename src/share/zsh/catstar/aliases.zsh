@@ -23,27 +23,6 @@ alias ydlbest4='yt-dlp -o "%(title)s.%(ext)s" -f "bestvideo[ext=mp4]+bestaudio[e
 # --- Media Player ---
 alias m='mpv'
 
-# --- Service Management (Smart Detection) ---
-# Automatically detects the best available service manager (systemd, launchd, or supervisord)
-() {
-  if (($+commands[systemctl])); then
-    alias ct='systemctl'
-    alias sct='sudo systemctl'
-    alias ctu='systemctl --user'
-    alias jt='journalctl -u'
-    alias sjt='sudo journalctl -u'
-    alias jtf='journalctl -fu'
-    alias sjtf='sudo journalctl -fu'
-    alias jtu='journalctl --user -u'
-    alias jtfu='journalctl --user -fu'
-  elif (($+commands[launchctl])); then
-    alias ct='launchctl'
-    alias lct='launchctl'
-  elif (($+commands[supervisorctl])); then
-    alias ct='supervisorctl'
-  fi
-}
-
 # --- System Maintenance ---
 alias reload='sudo killall -SIGUSR1'
 alias dns='sudo killall -SIGHUP mDNSResponder'
