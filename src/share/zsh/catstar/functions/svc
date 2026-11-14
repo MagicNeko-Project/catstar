@@ -1,0 +1,852 @@
+# Service Management
+# -----------------------------------------------------------------------------
+# svc drives the host's service manager with one set of systemctl-style verbs:
+#
+#   svc                            list services
+#   svc VERB [NAME...]             status, start, stop, restart, enable, disable, daemon-reload, ...
+#   svc logs [-f] [NAME...] [ARG...]  recent log entries, or follow them with -f
+#   svc --user ...                 systemd's per-user manager instead of the system one
+#   svc help                       usage and the service manager in use
+#
+# Verbs reach the native tool unchanged unless a backend translates them, and every call prints
+# the native command before running it.
+#
+# Backends
+#   svc uses the first backend in _svc_backends whose _is_active check succeeds; SVC_BACKEND=<name>
+#   skips detection. Supporting another service manager means adding its name to _svc_backends
+#   and defining these functions for it:
+#
+#     _svc_<name>_is_active                  succeed when <name> manages services on this host
+#     _svc_<name>_supports_user_scope        succeed when --user selects a per-user manager
+#     _svc_<name>_run SCOPE [VERB [ARG...]]  run VERB (SCOPE is "" or "user"), or list services
+#     _svc_<name>_logs SCOPE [ARG...]        show logs (SCOPE is "" or "user")
+#     _svc_<name>_complete                   complete the words after "svc" (words, CURRENT)
+# -----------------------------------------------------------------------------
+
+# Service managers in detection order.
+(( $+_svc_backends )) || typeset -ga _svc_backends=(systemd supervisor)
+
+# --- Shared Plumbing ---
+
+# Sets REPLY to the backend in charge: SVC_BACKEND when set, else the first active one.
+_svc_resolve_backend() {
+  if [[ -n $SVC_BACKEND ]]; then
+    REPLY=$SVC_BACKEND
+    (( ${_svc_backends[(Ie)$SVC_BACKEND]} ))
+    return
+  fi
+
+  local backend
+  for backend in "${_svc_backends[@]}"; do
+    if _svc_${backend}_is_active; then
+      REPLY=$backend
+      return 0
+    fi
+  done
+  return 1
+}
+
+_svc_report_unresolved_backend() {
+  if [[ -n $SVC_BACKEND ]]; then
+    print -u2 -r -- "svc: unknown SVC_BACKEND '$SVC_BACKEND' (supported: ${(j:, :)_svc_backends})"
+    return
+  fi
+  print -u2 -r -- "svc: no supported service manager is running here (checked: ${(j:, :)_svc_backends})"
+}
+
+_svc_print_help() {
+  local backend=$1
+  print -r -- "Usage: svc [--user] [VERB [ARG...]]
+
+  svc                            list services
+  svc status|start|stop|restart NAME...
+  svc logs [-f] [NAME...] [ARG...]  recent log entries, -f to follow; without NAME, the manager's log
+  svc enable [--now] FILE|NAME...   enable services (supervisor: link file into conf.d and apply)
+  svc disable NAME...            disable services (supervisor: remove that link and apply)
+  svc daemon-reload              apply changed service definitions
+  svc VERB [ARG...]              any other verb goes to the service manager unchanged
+
+On systemd, --user selects the per-user manager and system state changes run through sudo.
+Every call prints the native command before running it.
+"
+  if [[ -z $backend ]]; then
+    _svc_report_unresolved_backend
+    return
+  fi
+  print -r -- "Service manager: $backend (detection order: ${(j:, :)_svc_backends}; SVC_BACKEND overrides)"
+}
+
+# Prints the native command on stderr, dimmed on a terminal, so translation and sudo stay visible,
+# then runs it and returns its status.
+_svc_run() {
+  local command_text="+ ${(j: :)${(q-)@}}"
+  if [[ -t 2 ]]; then
+    print -u2 -rP -- "%F{8}${command_text//\%/%%}%f"
+  else
+    print -u2 -r -- "$command_text"
+  fi
+  "$@"
+}
+
+# Runs a command as root: directly when already root, else through sudo when it is installed.
+_svc_run_as_root() {
+  if (( EUID != 0 )) && (( $+commands[sudo] )); then
+    _svc_run sudo "$@"
+    return
+  fi
+  _svc_run "$@"
+}
+
+# --- Backend: systemd ---
+
+# /run/systemd/system exists only when systemd booted the host (sd_booted(3)); systemctl alone is
+# also installed where systemd is not running, such as most containers.
+_svc_systemd_is_active() {
+  (( $+commands[systemctl] )) && [[ -d /run/systemd/system ]]
+}
+
+_svc_systemd_supports_user_scope() {
+  return 0
+}
+
+_svc_systemd_run() {
+  local scope=$1
+  shift
+
+  local -a systemctl_command=(systemctl)
+  if [[ $scope == user ]]; then
+    systemctl_command+=(--user)
+  fi
+
+  if (( $# == 0 )); then
+    _svc_run "${systemctl_command[@]}" list-units --type=service
+    return
+  fi
+
+  if [[ $scope != user ]] && _svc_systemd_changes_state "$@"; then
+    _svc_run_as_root "${systemctl_command[@]}" "$@"
+    return
+  fi
+  _svc_run "${systemctl_command[@]}" "$@"
+}
+
+# Scans systemctl arguments before "--". Returns 0 when not just requesting help/version, and sets
+# REPLY to the 1-based index of the command verb (0 if no verb is present).
+_svc_systemd_find_verb() {
+  local arg ch skip_next=false seen_end_of_options=false
+  local -i index verb_index=0 saw_help=0
+  local short_opts_with_arg='HMtpPsno'
+  local -a long_opts_with_arg=(
+    --host --machine --type --state --property --job-mode --check-inhibitors
+    --kill-whom --kill-value --signal --what --legend --preset-mode --root
+    --image --image-policy --lines --output --boot-loader-menu
+    --boot-loader-entry --timestamp --drop-in --when
+  )
+
+  for (( index = 1; index <= $#; index++ )); do
+    arg=${argv[index]}
+    if [[ $skip_next == true ]]; then
+      skip_next=false
+      continue
+    fi
+    if [[ $seen_end_of_options == false ]]; then
+      if [[ $arg == -- ]]; then
+        seen_end_of_options=true
+        continue
+      fi
+      if [[ $arg == (-h|--help|--version) ]]; then
+        saw_help=1
+        continue
+      fi
+      if [[ $arg == --* ]]; then
+        (( ${long_opts_with_arg[(Ie)$arg]} )) && skip_next=true
+        continue
+      fi
+      if [[ $arg == -?* ]]; then
+        local chars=${arg#-}
+        local -i char_index
+        for (( char_index = 1; char_index <= ${#chars}; char_index++ )); do
+          ch=${chars[char_index]}
+          if [[ $ch == h ]]; then
+            saw_help=1
+          elif [[ $short_opts_with_arg == *$ch* ]]; then
+            (( char_index == ${#chars} )) && skip_next=true
+            break
+          fi
+        done
+        continue
+      fi
+    fi
+    if (( verb_index == 0 )); then
+      verb_index=$index
+    fi
+  done
+
+  REPLY=$verb_index
+  return $saw_help
+}
+
+# Read-only verbs run unprivileged; every other verb changes state and needs root on the system
+# manager. Help queries and option-only calls (which list units) also stay unprivileged.
+_svc_systemd_changes_state() {
+  _svc_systemd_find_verb "$@" || return 1
+  (( REPLY == 0 )) && return 1
+  local verb=${argv[REPLY]}
+  local -a read_only_verbs=(
+    cat get-default help is-active is-enabled is-failed is-system-running list-automounts
+    list-dependencies list-jobs list-machines list-paths list-sockets list-timers
+    list-unit-files list-units show show-environment status whoami
+  )
+  (( ! ${read_only_verbs[(Ie)$verb]} ))
+}
+
+_svc_systemd_logs() {
+  local scope=$1
+  shift
+
+  local -a journalctl_command=(journalctl)
+  if [[ $scope == user ]]; then
+    journalctl_command+=(--user)
+  fi
+
+  # Default to -e (--pager-end) only when the caller did not specify follow, reverse, line count,
+  # time range, grep, or pager/help control (-e implies -n 1000 in journalctl).
+  local want_pager_end=true
+  local -a translated_args=()
+  local arg next_arg
+  local short_opts_with_arg='MDSUcpugtoF'
+  local -a long_opts_with_arg=(
+    --after-cursor --case-sensitive --cursor --cursor-file --directory --facility --field
+    --file --grep --identifier --image --image-policy --machine --namespace --output
+    --output-fields --priority --root --since --unit --until --user-unit
+  )
+
+  local -i index=1
+  while (( index <= $# )); do
+    arg=${argv[index]}
+    next_arg=""
+    (( index < $# )) && next_arg=${argv[index + 1]}
+
+    if [[ $arg == -- ]]; then
+      (( index++ ))
+      while (( index <= $# )); do
+        arg=${argv[index]}
+        if [[ $arg != *=* && $arg != /* ]]; then
+          translated_args+=(-u "$arg")
+        else
+          translated_args+=("$arg")
+        fi
+        (( index++ ))
+      done
+      break
+    fi
+
+    # Leading "-" unit names such as "-.mount" must become "-u -.mount" rather than options.
+    if [[ $arg == -*.(service|socket|device|mount|automount|swap|target|path|timer|slice|scope) ]]; then
+      translated_args+=(-u "$arg")
+      (( index++ ))
+      continue
+    fi
+
+    if [[ $arg == --* ]]; then
+      translated_args+=("$arg")
+      case ${arg%%=*} in
+        --follow|--pager-end|--reverse|--lines|--since|--until|--grep|--no-pager|--help|--version)
+          want_pager_end=false
+          ;;
+      esac
+      local consume_next=false
+      if [[ $arg != *=* ]]; then
+        if (( ${long_opts_with_arg[(Ie)$arg]} )); then
+          consume_next=true
+        elif [[ $arg == --lines && $next_arg =~ '^(\+?[0-9]+|all)$' ]]; then
+          consume_next=true
+        elif [[ $arg == --boot && $next_arg =~ '^([-+]?[0-9]+|[0-9a-fA-F]{32}|all)$' ]]; then
+          consume_next=true
+        fi
+      fi
+      if [[ $consume_next == true ]] && (( index < $# )); then
+        translated_args+=("$next_arg")
+        (( index += 2 ))
+      else
+        (( index++ ))
+      fi
+      continue
+    fi
+
+    if [[ $arg == -?* ]]; then
+      translated_args+=("$arg")
+      local chars=${arg#-}
+      local ch consume_next=false
+      local -i char_index
+      for (( char_index = 1; char_index <= ${#chars}; char_index++ )); do
+        ch=${chars[char_index]}
+        case $ch in
+          f|e|r|n|S|U|g|h) want_pager_end=false ;;
+        esac
+        if [[ $short_opts_with_arg == *$ch* ]]; then
+          (( char_index == ${#chars} )) && consume_next=true
+          break
+        elif [[ $ch == n ]]; then
+          (( char_index == ${#chars} )) && [[ $next_arg =~ '^(\+?[0-9]+|all)$' ]] && consume_next=true
+          break
+        elif [[ $ch == b ]]; then
+          (( char_index == ${#chars} )) && [[ $next_arg =~ '^([-+]?[0-9]+|[0-9a-fA-F]{32}|all)$' ]] && consume_next=true
+          break
+        fi
+      done
+      if [[ $consume_next == true ]] && (( index < $# )); then
+        translated_args+=("$next_arg")
+        (( index += 2 ))
+      else
+        (( index++ ))
+      fi
+      continue
+    fi
+
+    if [[ $arg == *=* || $arg == /* ]]; then
+      translated_args+=("$arg")
+    else
+      translated_args+=(-u "$arg")
+    fi
+    (( index++ ))
+  done
+
+  if [[ $want_pager_end == true ]]; then
+    journalctl_command+=(-e)
+  fi
+  _svc_run "${journalctl_command[@]}" "${translated_args[@]}"
+}
+
+_svc_systemd_complete() {
+  local -i verb_status=0
+  local -i verb_pos=0
+  _svc_systemd_find_verb "${(@)words[2,CURRENT-1]}"
+  verb_status=$?
+  (( REPLY > 0 )) && verb_pos=$(( REPLY + 1 ))
+
+  if (( verb_pos > 0 )) && [[ $words[verb_pos] == logs ]]; then
+    local -a journal_value_opts=(
+      -M --machine -D --directory --file --root --image --image-policy --namespace
+      -S --since -U --until -c --cursor --after-cursor --cursor-file
+      -b --boot -u --unit --user-unit -t --identifier -p --priority --facility
+      -g --grep --case-sensitive -o --output --output-fields -n --lines -F --field
+    )
+    local prev_word=""
+    (( CURRENT > verb_pos + 1 )) && prev_word=$words[CURRENT-1]
+
+    if [[ $words[CURRENT] == -* ]] || (( ${journal_value_opts[(Ie)$prev_word]} )); then
+      local -a pre_logs=("${(@M)${(@)words[2,verb_pos-1]}:#(--user|--system)}")
+      local -i shift_count=$(( verb_pos - 1 - ${#pre_logs} ))
+      words=(journalctl "${pre_logs[@]}" "${(@)words[verb_pos+1,-1]}")
+      (( CURRENT -= shift_count ))
+      _normal
+      return
+    fi
+
+    local -a scope_flags=("${(@M)${(@)words[2,CURRENT-1]}:#(--user|--system)}")
+    words=(systemctl "${scope_flags[@]}" status "${words[CURRENT]}")
+    CURRENT=${#words}
+    _normal
+    return
+  fi
+
+  local -i completion_status=1
+  if (( verb_status == 0 && verb_pos == 0 )) && [[ $words[CURRENT] != -* ]]; then
+    local -a svc_verbs=('logs:show recent log entries (-f follows)')
+    _describe -t svc-commands 'svc command' svc_verbs && completion_status=0
+  fi
+
+  words[1]=systemctl
+  _normal && completion_status=0
+  return $completion_status
+}
+
+# --- Backend: supervisor ---
+
+# Supervisor is active when supervisorctl is installed and either a user config or a live
+# system control socket exists.
+_svc_supervisor_is_active() {
+  (( $+commands[supervisorctl] )) || return 1
+  _svc_supervisor_user_config
+  [[ -f $REPLY || -S /run/supervisor.sock || -S /var/run/supervisor.sock ]]
+}
+
+# supervisorctl talks to a single configured daemon, so refusing --user prevents ambiguity.
+_svc_supervisor_supports_user_scope() {
+  return 1
+}
+
+# Supervisor reads no config-path environment variable, so prefer XDG_CONFIG_HOME and fall back
+# to ~/.config when only the standard user path exists.
+_svc_supervisor_user_config() {
+  local primary="${XDG_CONFIG_HOME:-$HOME/.config}/supervisor/supervisord.conf"
+  local fallback="$HOME/.config/supervisor/supervisord.conf"
+  if [[ -f $primary || ! -f $fallback ]]; then
+    REPLY=$primary
+  else
+    REPLY=$fallback
+  fi
+}
+
+# Sets reply to the supervisorctl command line for the config in use.
+_svc_supervisor_command() {
+  _svc_supervisor_user_config
+  reply=(supervisorctl)
+  if [[ -f $REPLY ]]; then
+    reply+=(-c "$REPLY")
+  fi
+}
+
+# Sets REPLY to the conf.d directory beside the user config, which "[include] files = %(here)s/conf.d/*.conf" reads.
+_svc_supervisor_include_directory() {
+  _svc_supervisor_user_config
+  local config_file=$REPLY
+  local include_directory="${config_file:h}/conf.d"
+  if [[ ! -f $config_file || ! -d $include_directory ]]; then
+    print -u2 -r -- "svc: enable and disable need $config_file and $include_directory"
+    return 1
+  fi
+  REPLY=$include_directory
+}
+
+# Inspects a Supervisor config file and sets REPLY to its link stem (single group, else single
+# program/fcgi/eventlistener, else filename stem) and reply to its start targets for --now.
+_svc_supervisor_unit_name() {
+  local program_file=$1 line
+  local -a groups=() programs=()
+  local section_pattern='^\[([^]:]+):([^]]+)\][[:space:]]*([#;].*)?$'
+
+  while IFS= read -r line || [[ -n $line ]]; do
+    if [[ $line =~ $section_pattern ]]; then
+      case $match[1] in
+        group)
+          groups+=("$match[2]")
+          ;;
+        program|fcgi-program|eventlistener)
+          programs+=("$match[2]")
+          ;;
+      esac
+    fi
+  done < "$program_file"
+
+  if (( ${#groups} == 1 )); then
+    REPLY=$groups[1]
+    reply=("$groups[1]:*")
+    return
+  fi
+
+  if (( ${#groups} == 0 && ${#programs} == 1 )); then
+    REPLY=$programs[1]
+    reply=("$programs[1]")
+    return
+  fi
+
+  REPLY=${program_file:t:r}
+  if (( ${#groups} > 1 )); then
+    reply=("${(@)^groups}:*")
+  elif (( ${#programs} > 0 )); then
+    reply=("${programs[@]}")
+  else
+    reply=("${program_file:t:r}")
+  fi
+}
+
+_svc_supervisor_run() {
+  shift  # supervisor has no user scope
+  _svc_supervisor_command
+  local -a supervisorctl_command=("${reply[@]}")
+
+  if (( $# == 0 )); then
+    _svc_run "${supervisorctl_command[@]}" status
+    return
+  fi
+
+  if [[ $1 == --now && ($2 == enable || $2 == disable) ]]; then
+    local verb=$2
+    shift 2
+    set -- "$verb" --now "$@"
+  fi
+
+  case $1 in
+    daemon-reload)
+      _svc_run "${supervisorctl_command[@]}" update
+      ;;
+    enable)
+      shift
+      _svc_supervisor_enable "$@"
+      ;;
+    disable)
+      shift
+      _svc_supervisor_disable "$@"
+      ;;
+    reload)
+      # "supervisorctl reload" restarts supervisord and every program without confirmation.
+      print -u2 -r -- "svc: 'supervisorctl reload' restarts supervisord and every program; use 'svc restart NAME' or 'svc daemon-reload'"
+      return 1
+      ;;
+    *)
+      _svc_run "${supervisorctl_command[@]}" "$@"
+      ;;
+  esac
+}
+
+_svc_supervisor_logs() {
+  shift  # supervisor has no user scope
+  _svc_supervisor_command
+  local -a supervisorctl_command=("${reply[@]}")
+
+  local modifier="" arg seen_end_of_options=false
+  local -a positional=()
+  for arg in "$@"; do
+    if [[ $seen_end_of_options == false ]]; then
+      case $arg in
+        --)
+          seen_end_of_options=true
+          continue
+          ;;
+        -f|--follow)
+          modifier=-f
+          continue
+          ;;
+        -*)
+          if [[ $arg =~ '^-[0-9]+$' ]]; then
+            modifier=$arg
+            continue
+          fi
+          print -u2 -r -- "svc: supervisor logs supports -f, --follow, or -BYTES (got '$arg')"
+          return 1
+          ;;
+      esac
+    fi
+    positional+=("$arg")
+  done
+
+  local -a modifier_args=()
+  [[ -n $modifier ]] && modifier_args=("$modifier")
+
+  if (( ${#positional} == 0 )); then
+    _svc_run "${supervisorctl_command[@]}" maintail "${modifier_args[@]}"
+    return
+  fi
+  _svc_run "${supervisorctl_command[@]}" tail "${modifier_args[@]}" "${positional[@]}"
+}
+
+# Pre-validates every file, links missing conf.d entries using lexical paths (:a) so symlinks are
+# preserved, applies via update, and starts targets when --now was requested.
+_svc_supervisor_enable() {
+  local start_now=false seen_end_of_options=false arg
+  local -a program_files=()
+  for arg in "$@"; do
+    if [[ $seen_end_of_options == false ]]; then
+      if [[ $arg == -- ]]; then
+        seen_end_of_options=true
+        continue
+      elif [[ $arg == --now ]]; then
+        start_now=true
+        continue
+      fi
+    fi
+    program_files+=("$arg")
+  done
+
+  if (( ${#program_files} == 0 )); then
+    print -u2 -r -- "usage: svc enable [--now] PROGRAM_FILE..."
+    return 1
+  fi
+  _svc_supervisor_include_directory || return
+  local include_directory=$REPLY
+  _svc_supervisor_command
+  local -a supervisorctl_command=("${reply[@]}")
+
+  local has_zstat=false
+  zmodload -F zsh/stat b:zstat 2>/dev/null && has_zstat=true
+
+  local program_file link_target link_path
+  local -A planned_links
+  local -a link_target_info targets_to_link=() links_to_create=() start_targets=()
+  for program_file in "${program_files[@]}"; do
+    if [[ ! -f $program_file ]]; then
+      print -u2 -r -- "svc: no such program file: $program_file"
+      return 1
+    fi
+    _svc_supervisor_unit_name "$program_file"
+    start_targets+=("${reply[@]}")
+    link_target=${program_file:a}
+    link_path="$include_directory/$REPLY.conf"
+
+    if (( ${+planned_links[$link_path]} )); then
+      print -u2 -r -- "svc: multiple files map to $link_path"
+      return 1
+    fi
+    planned_links[$link_path]=1
+
+    if [[ -L $link_path ]]; then
+      if [[ $has_zstat == true ]] && zstat -A link_target_info -L +link "$link_path" 2>/dev/null; then
+        [[ ${link_target_info[1]} == $link_target ]] && continue
+      fi
+      if [[ -e $link_path && ${link_path:A} == ${program_file:A} ]]; then
+        continue
+      fi
+      print -u2 -r -- "svc: $link_path already points to another file"
+      return 1
+    fi
+
+    if [[ -e $link_path ]]; then
+      print -u2 -r -- "svc: $link_path already exists and is not a symlink"
+      return 1
+    fi
+
+    targets_to_link+=("$link_target")
+    links_to_create+=("$link_path")
+  done
+
+  local -i i
+  for (( i = 1; i <= ${#targets_to_link}; i++ )); do
+    _svc_run ln -s "${targets_to_link[i]}" "${links_to_create[i]}" || return
+  done
+  _svc_run "${supervisorctl_command[@]}" update || return
+
+  if [[ $start_now == true && ${#start_targets} -gt 0 ]]; then
+    _svc_run "${supervisorctl_command[@]}" start "${start_targets[@]}"
+  fi
+}
+
+# Pre-validates and removes only symlinks in conf.d, accepting <name>, <name>.conf, or a file
+# path symmetric with svc enable, then applies via update.
+_svc_supervisor_disable() {
+  local seen_end_of_options=false arg
+  local -a targets=()
+  for arg in "$@"; do
+    if [[ $seen_end_of_options == false ]]; then
+      if [[ $arg == -- ]]; then
+        seen_end_of_options=true
+        continue
+      elif [[ $arg == --now ]]; then
+        continue
+      fi
+    fi
+    targets+=("$arg")
+  done
+
+  if (( ${#targets} == 0 )); then
+    print -u2 -r -- "usage: svc disable PROGRAM..."
+    return 1
+  fi
+  _svc_supervisor_include_directory || return
+  local include_directory=$REPLY
+  _svc_supervisor_command
+  local -a supervisorctl_command=("${reply[@]}")
+
+  local target program_name link_path
+  local -A seen_links
+  local -a links_to_remove=()
+  for target in "${targets[@]}"; do
+    if [[ -f $target ]]; then
+      _svc_supervisor_unit_name "$target"
+      program_name=$REPLY
+    elif [[ $target == */* ]]; then
+      print -u2 -r -- "svc: no such program file: $target"
+      return 1
+    else
+      program_name=${target%.conf}
+    fi
+
+    if [[ -z $program_name || $program_name == (.|..) ]]; then
+      print -u2 -r -- "svc: invalid program name: $target"
+      return 1
+    fi
+
+    link_path="$include_directory/$program_name.conf"
+    if [[ ! -L $link_path ]]; then
+      print -u2 -r -- "svc: $program_name is not enabled through a link in $include_directory"
+      return 1
+    fi
+    if (( ! ${+seen_links[$link_path]} )); then
+      seen_links[$link_path]=1
+      links_to_remove+=("$link_path")
+    fi
+  done
+
+  for link_path in "${links_to_remove[@]}"; do
+    _svc_run rm "$link_path" || return
+  done
+  _svc_run "${supervisorctl_command[@]}" update
+}
+
+_svc_supervisor_complete_programs() {
+  _svc_supervisor_command
+  local status_output
+  status_output=$("${reply[@]}" status 2>/dev/null)
+  local -i status_code=$?
+  # supervisorctl status exits 0 when running, 3 when stopped programs exist, and 4 when
+  # unreachable (writing its error message to stdout).
+  (( status_code == 0 || status_code == 3 )) || return 1
+
+  local -a status_lines=("${(@f)status_output}")
+  status_lines=("${(@)status_lines:#}")
+  (( ${#status_lines} > 0 )) || return 1
+
+  local -a program_names=("${(@)status_lines[@]%% *}")
+  local expl
+  _wanted programs expl 'program' compadd -a program_names
+}
+
+_svc_supervisor_complete() {
+  # Refuse completions once --user appears before "--", matching runtime behavior.
+  local word
+  for word in "${(@)words[2,CURRENT-1]}"; do
+    [[ $word == -- ]] && break
+    [[ $word == --user ]] && return 1
+  done
+
+  if (( CURRENT == 2 )); then
+    local -a supervisor_verbs=(
+      'status:show program status'
+      'start:start programs'
+      'stop:stop programs'
+      'restart:restart programs'
+      'logs:show recent log entries (-f follows)'
+      'enable:link a program file into conf.d and apply'
+      'disable:remove a program link and apply'
+      'daemon-reload:apply configuration changes'
+      'avail:list configured programs'
+      'reread:reload configuration without applying it'
+      'update:apply configuration changes'
+      'signal:send a signal to programs'
+      'clear:clear program logs'
+      'pid:show supervisord or program PID'
+      'fg:attach to a program in the foreground'
+      'add:add configured programs'
+      'remove:remove stopped programs'
+      'shutdown:shut down supervisord'
+      'version:show supervisord version'
+      'help:show usage and the service manager in use'
+    )
+    _describe -t commands 'svc command' supervisor_verbs
+    return
+  fi
+
+  local verb=$words[2]
+  local -i verb_index=2
+  if [[ $verb == --now ]]; then
+    if (( CURRENT == 3 )); then
+      local -a now_verbs=(
+        'enable:link a program file into conf.d, apply, and start'
+        'disable:remove a program link and apply'
+      )
+      _describe -t commands 'svc command' now_verbs
+      return
+    fi
+    verb=$words[3]
+    verb_index=3
+  fi
+
+  local -i arg_offset=$(( CURRENT - verb_index ))
+  local expl
+  case $verb in
+    enable)
+      if [[ $words[CURRENT] == -* ]] && (( ! ${words[verb_index+1,CURRENT-1][(Ie)--now]} )); then
+        compadd -- --now
+        return
+      fi
+      _files
+      ;;
+    disable)
+      _svc_supervisor_include_directory 2>/dev/null || return 1
+      local -a linked_programs=("$REPLY"/*.conf(N@:t:r))
+      (( ${#linked_programs} > 0 )) || return 1
+      _wanted programs expl 'enabled program' compadd -a linked_programs
+      ;;
+    daemon-reload|avail|reread|update|shutdown|version|help)
+      return 1
+      ;;
+    signal)
+      if (( arg_offset == 1 )); then
+        _signals -s
+      else
+        _svc_supervisor_complete_programs
+      fi
+      ;;
+    logs)
+      if [[ $words[CURRENT] == -* ]]; then
+        compadd -- -f --follow
+        return
+      fi
+      local -i positional_count=0
+      for word in "${(@)words[verb_index+1,CURRENT-1]}"; do
+        [[ $word == (-f|--follow) || $word =~ '^-[0-9]+$' ]] && continue
+        (( positional_count++ ))
+      done
+      if (( positional_count == 0 )); then
+        _svc_supervisor_complete_programs
+      elif (( positional_count == 1 )); then
+        _wanted channels expl 'log channel' compadd stdout stderr
+      else
+        return 1
+      fi
+      ;;
+    *)
+      _svc_supervisor_complete_programs
+      ;;
+  esac
+}
+
+# --- Entry Point ---
+
+svc() {
+  emulate -L zsh
+  local REPLY
+  local -a reply
+
+  if [[ -z $USER || ${(t)USER} != *export* ]]; then
+    local resolved_user=${USER:-${LOGNAME:-$USERNAME}}
+    local -x USER=$resolved_user
+  fi
+
+  # Extract --user anywhere before "--", preserving arguments after "--" unchanged.
+  local scope="" arg seen_end_of_options=false
+  local -a args=()
+  for arg in "$@"; do
+    if [[ $seen_end_of_options == false ]]; then
+      if [[ $arg == -- ]]; then
+        seen_end_of_options=true
+      elif [[ $arg == --user ]]; then
+        scope=user
+        continue
+      fi
+    fi
+    args+=("$arg")
+  done
+  set -- "${args[@]}"
+
+  local backend=""
+  if _svc_resolve_backend; then
+    backend=$REPLY
+  fi
+
+  if [[ ($# -eq 1 && $1 == help) || $1 == (-h|--help) ]]; then
+    _svc_print_help "$backend"
+    return 0
+  fi
+
+  if [[ -z $backend ]]; then
+    _svc_report_unresolved_backend
+    return 1
+  fi
+
+  if [[ $scope == user ]] && ! _svc_${backend}_supports_user_scope; then
+    print -u2 -r -- "svc: $backend has no user services"
+    return 1
+  fi
+
+  if [[ $1 == logs ]]; then
+    shift
+    _svc_${backend}_logs "$scope" "$@"
+    return
+  fi
+
+  _svc_${backend}_run "$scope" "$@"
+}
+
+svc "$@"

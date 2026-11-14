@@ -1,0 +1,17 @@
+#compdef svc
+
+_svc() {
+  local REPLY
+  local -a reply
+
+  if [[ -z $USER || ${(t)USER} != *export* ]]; then
+    local resolved_user=${USER:-${LOGNAME:-$USERNAME}}
+    local -x USER=$resolved_user
+  fi
+
+  (( $+functions[_svc_resolve_backend] )) || svc --help >/dev/null 2>&1
+  _svc_resolve_backend || return 1
+  _svc_${REPLY}_complete
+}
+
+_svc "$@"
