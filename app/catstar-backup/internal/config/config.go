@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -123,6 +124,8 @@ func Load(configPath string) (*Config, error) {
 		parsedConfig.App.LogLevel = "info"
 	}
 
+	applySystemdCacheDirectoryDefaults(parsedConfig.Jobs)
+
 	structValidator := validator.New(validator.WithRequiredStructEnabled())
 	if err := structValidator.Struct(&parsedConfig); err != nil {
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
@@ -135,4 +138,25 @@ func Load(configPath string) (*Config, error) {
 	time.Local = location
 
 	return &parsedConfig, nil
+}
+
+func applySystemdCacheDirectoryDefaults(jobs []JobConfig) {
+	if os.Getenv("RESTIC_CACHE_DIR") != "" {
+		return
+	}
+
+	systemdCacheDirectory, _, _ := strings.Cut(os.Getenv("CACHE_DIRECTORY"), ":")
+	if systemdCacheDirectory == "" {
+		return
+	}
+
+	for jobIndex := range jobs {
+		job := &jobs[jobIndex]
+		if job.Restic != nil && job.Restic.CacheDir == "" {
+			job.Restic.CacheDir = systemdCacheDirectory
+		}
+		if job.BtrfsRestic != nil && job.BtrfsRestic.CacheDir == "" {
+			job.BtrfsRestic.CacheDir = systemdCacheDirectory
+		}
+	}
 }

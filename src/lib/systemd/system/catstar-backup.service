@@ -4,6 +4,8 @@ Description=Catstar backup script service
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/catstar-backup.sh
+CacheDirectory=catstar-backup
+CacheDirectoryMode=0700
 Environment=HOME=/root
 EnvironmentFile=/usr/local/etc/catstar-backup.conf
 ReadOnlyPaths=/

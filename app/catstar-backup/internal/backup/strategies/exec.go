@@ -87,10 +87,14 @@ func runSimpleCommand(
 	ctx context.Context,
 	factory CommandFactory,
 	logger *slog.Logger,
+	environmentVariables []string,
 	commandName string,
 	arguments ...string,
 ) error {
 	process := factory.Create(ctx, commandName, arguments...)
+	if len(environmentVariables) > 0 {
+		process.SetEnv(environmentVariables)
+	}
 
 	outputWriter := newSlogWriter(logger, slog.LevelInfo, commandName)
 	process.SetStdout(outputWriter)

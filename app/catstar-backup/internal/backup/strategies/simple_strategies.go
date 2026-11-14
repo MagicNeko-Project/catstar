@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"os"
 	"slices"
 
 	"github.com/MagicNeko-Project/catstar-backup/internal/config"
@@ -90,17 +91,44 @@ func NewResticEngine(
 
 func (engine *ResticEngine) Name() string { return engine.jobName }
 
+func buildResticEnvironment(repository, password, packSize, cacheDirectory string) []string {
+	var overrides []string
+	if repository != "" {
+		overrides = append(overrides, "RESTIC_REPOSITORY="+repository)
+	}
+	if password != "" {
+		overrides = append(overrides, "RESTIC_PASSWORD="+password)
+	}
+	if packSize != "" {
+		overrides = append(overrides, "RESTIC_PACK_SIZE="+packSize)
+	}
+	if cacheDirectory != "" {
+		overrides = append(overrides, "RESTIC_CACHE_DIR="+cacheDirectory)
+	}
+	if len(overrides) == 0 {
+		return nil
+	}
+	return append(os.Environ(), overrides...)
+}
+
 func (engine *ResticEngine) Execute(ctx context.Context) error {
 	engine.logger.Info("Executing Restic Backup Engine")
 	if engine.verbose {
 		engine.notifier.Send(ctx, fmt.Sprintf("%s 开始备份 (%s)：restic", engine.machineName, engine.jobName))
 	}
 
-	if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, "restic", "version"); err != nil {
+	resticEnvironment := buildResticEnvironment(
+		engine.config.Repository,
+		engine.config.Password,
+		engine.config.PackSize,
+		engine.config.CacheDir,
+	)
+
+	if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, resticEnvironment, "restic", "version"); err != nil {
 		return fmt.Errorf("restic version check failed: %w", err)
 	}
 
-	if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, "restic", "backup", "--exclude-caches", "--one-file-system", engine.config.Root); err != nil {
+	if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, resticEnvironment, "restic", "backup", "--exclude-caches", "--one-file-system", engine.config.Root); err != nil {
 		return fmt.Errorf("restic backup failed: %w", err)
 	}
 
@@ -151,10 +179,10 @@ func (engine *BtrfsResticEngine) Execute(ctx context.Context) error {
 
 	deleteCommand := fmt.Sprintf("btrfs subvolume delete %s/* || true", engine.config.SnapshotsRoot)
 
-	_ = runSimpleCommand(ctx, engine.commandFactory, engine.logger, "bash", "-c", deleteCommand)
+	_ = runSimpleCommand(ctx, engine.commandFactory, engine.logger, nil, "bash", "-c", deleteCommand)
 
 	defer func() {
-		_ = runSimpleCommand(context.Background(), engine.commandFactory, engine.logger, "bash", "-c", deleteCommand)
+		_ = runSimpleCommand(context.Background(), engine.commandFactory, engine.logger, nil, "bash", "-c", deleteCommand)
 	}()
 
 	sortedSubvolumeKeys := slices.Sorted(maps.Keys(engine.config.Subvolumes))
@@ -162,17 +190,24 @@ func (engine *BtrfsResticEngine) Execute(ctx context.Context) error {
 		sourceSubvolumePath := engine.config.Subvolumes[destinationSubvolumeKey]
 		destinationSnapshotPath := fmt.Sprintf("%s/%s", engine.config.SnapshotsRoot, destinationSubvolumeKey)
 
-		if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, "btrfs", "subvolume", "snapshot", "-r", sourceSubvolumePath, destinationSnapshotPath); err != nil {
+		if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, nil, "btrfs", "subvolume", "snapshot", "-r", sourceSubvolumePath, destinationSnapshotPath); err != nil {
 			engine.logger.Error("Failed to create btrfs snapshot", "source", sourceSubvolumePath, "destination", destinationSnapshotPath, "error", err)
 			return fmt.Errorf("btrfs snapshot creation failed for %s: %w", destinationSnapshotPath, err)
 		}
 	}
 
-	if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, "restic", "version"); err != nil {
+	resticEnvironment := buildResticEnvironment(
+		engine.config.Repository,
+		engine.config.Password,
+		"",
+		engine.config.CacheDir,
+	)
+
+	if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, resticEnvironment, "restic", "version"); err != nil {
 		return fmt.Errorf("restic version check failed: %w", err)
 	}
 
-	if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, "restic", "backup", "--exclude-caches", engine.config.SnapshotsRoot); err != nil {
+	if err := runSimpleCommand(ctx, engine.commandFactory, engine.logger, resticEnvironment, "restic", "backup", "--exclude-caches", engine.config.SnapshotsRoot); err != nil {
 		engine.logger.Error("Restic backup of btrfs snapshots failed", "error", err)
 		return fmt.Errorf("restic backup of btrfs snapshots failed: %w", err)
 	}

@@ -36,7 +36,6 @@ jobs:
       repository: "sftp:user@host:/backups/root"
       password: "${RESTIC_PASSWORD}"
       pack_size: "64"
-      cache_dir: "/tmp/restic-cache"
 
   - name: "Docker Volumes BTRFS"
     type: "btrfs_restic"
@@ -44,7 +43,6 @@ jobs:
       snapshots_root: "/mnt/btrfs_snapshots"
       repository: "sftp:user@host:/backups/docker"
       password: "${RESTIC_PASSWORD}"
-      cache_dir: "/tmp/restic-cache"
       subvolumes:
         docker_data: "/var/lib/docker/volumes"
         app_configs: "/etc/opt"

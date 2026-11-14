@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -103,5 +104,82 @@ func TestBtrfsResticEngine_FailureCleanup(t *testing.T) {
 	lastCommand := mockFactory.Processes[len(mockFactory.Processes)-1].FullCommand
 	if !strings.Contains(lastCommand, "btrfs subvolume delete") {
 		t.Errorf("expected final command to be cleanup, got %s", lastCommand)
+	}
+}
+
+func TestResticEngine_EnvironmentPropagation(t *testing.T) {
+	testConfig, logger, notifier := createTestDependencies()
+	mockFactory := NewMockCommandFactory()
+	cacheDirectory := t.TempDir()
+	resticConfig := &config.ResticConfig{
+		Root:       "/data",
+		Repository: "rest:https://backup.example.com/repo",
+		Password:   "test-secret-password",
+		PackSize:   "64",
+		CacheDir:   cacheDirectory,
+	}
+	engine := NewResticEngine("restic_env_job", testConfig.App.MachineName, false, resticConfig, logger, notifier, mockFactory)
+
+	if err := engine.Execute(context.Background()); err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+
+	if len(mockFactory.Processes) != 2 {
+		t.Fatalf("expected 2 commands, got %d", len(mockFactory.Processes))
+	}
+
+	expectedEntries := []string{
+		"RESTIC_REPOSITORY=rest:https://backup.example.com/repo",
+		"RESTIC_PASSWORD=test-secret-password",
+		"RESTIC_PACK_SIZE=64",
+		"RESTIC_CACHE_DIR=" + cacheDirectory,
+	}
+	for _, process := range mockFactory.Processes {
+		for _, expectedEntry := range expectedEntries {
+			if !slices.Contains(process.Environment, expectedEntry) {
+				t.Errorf("command %q missing env %q", process.FullCommand, expectedEntry)
+			}
+		}
+	}
+}
+
+func TestBtrfsResticEngine_EnvironmentPropagation(t *testing.T) {
+	testConfig, logger, notifier := createTestDependencies()
+	mockFactory := NewMockCommandFactory()
+	cacheDirectory := t.TempDir()
+	btrfsResticConfig := &config.BtrfsResticConfig{
+		SnapshotsRoot: "/snapshots",
+		Repository:    "rest:https://backup.example.com/btrfs",
+		Password:      "test-secret-password",
+		CacheDir:      cacheDirectory,
+		Subvolumes: map[string]string{
+			"root": "/",
+		},
+	}
+	engine := NewBtrfsResticEngine("btrfs_env_job", testConfig.App.MachineName, false, btrfsResticConfig, logger, notifier, mockFactory)
+
+	if err := engine.Execute(context.Background()); err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+
+	expectedEntries := []string{
+		"RESTIC_REPOSITORY=rest:https://backup.example.com/btrfs",
+		"RESTIC_PASSWORD=test-secret-password",
+		"RESTIC_CACHE_DIR=" + cacheDirectory,
+	}
+	resticInvocations := 0
+	for _, process := range mockFactory.Processes {
+		if process.Name != "restic" {
+			continue
+		}
+		resticInvocations++
+		for _, expectedEntry := range expectedEntries {
+			if !slices.Contains(process.Environment, expectedEntry) {
+				t.Errorf("command %q missing env %q", process.FullCommand, expectedEntry)
+			}
+		}
+	}
+	if resticInvocations != 2 {
+		t.Fatalf("expected 2 restic invocations, got %d", resticInvocations)
 	}
 }

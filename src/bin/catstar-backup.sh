@@ -162,6 +162,9 @@ upload_journal() {
   fi
 }
 
+if [[ -z "${RESTIC_CACHE_DIR:-}" && -n "${CACHE_DIRECTORY:-}" ]]; then
+  export RESTIC_CACHE_DIR="${CACHE_DIRECTORY%%:*}"
+fi
 printf -v BACKUP_BEGIN "%(%F %T)T"
 ( set -eu; backup_main ) # 报错立即退出
 BACKUP_STAT=$?
