@@ -446,6 +446,22 @@ describe("webssh CLI & Framing Unit Tests (Offline)", {
     );
   });
 
+  it("parseWrapperArguments scopes --help to leading wrapper options only", () => {
+    assert.equal(parseWrapperArguments(["--help"]).help, true);
+    assert.deepEqual(parseWrapperArguments(["--insecure", "--help"]), {
+      help: true,
+      insecure: true,
+      sshPath: "ssh",
+      remainingArgs: [],
+    });
+    assert.deepEqual(parseWrapperArguments(["example.com", "ls", "--help"]), {
+      help: false,
+      insecure: false,
+      sshPath: "ssh",
+      remainingArgs: ["example.com", "ls", "--help"],
+    });
+  });
+
   it("resolveWebSocketUrl normalizes bare hosts and rejects invalid schemes", () => {
     assert.equal(resolveWebSocketUrl("example.com"), "wss://example.com");
     assert.equal(
@@ -477,6 +493,14 @@ describe("webssh CLI & Framing Unit Tests (Offline)", {
       /Unsupported WebSocket protocol/,
     );
     assert.throws(() => resolveWebSocketUrl("wss://"), /Invalid WebSocket/);
+    assert.throws(
+      () => resolveWebSocketUrl("example.com/ssh#frag"),
+      /fragment identifier/,
+    );
+    assert.throws(
+      () => resolveWebSocketUrl("wss://example.com#"),
+      /fragment identifier/,
+    );
   });
 
   it("buildCloudflareAccessHeaders extracts trimmed access token and paired client credentials", () => {
@@ -787,6 +811,58 @@ describe("webssh CLI & Framing Unit Tests (Offline)", {
 
     await closedPromise;
     assert.deepEqual(Buffer.concat(receivedChunks), expectedInbound);
+  });
+
+  it("FramedWebSocketStream completes zero-byte flush barrier on closed socket and defers aborting CONNECTING writes", async () => {
+    const closedWebSocket = new MemoryWebSocketDouble(
+      WEBSOCKET_READY_STATE_CLOSED,
+    );
+    const closedStream = new FramedWebSocketStream(closedWebSocket);
+
+    await new Promise((resolve, reject) => {
+      closedStream.write(Buffer.alloc(0), (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+    assert.equal(closedStream.hasFlushedAllWrites(), true);
+    closedStream.destroy();
+
+    const connectingWebSocket = new MemoryWebSocketDouble(
+      WEBSOCKET_READY_STATE_CONNECTING,
+    );
+    connectingWebSocket.autoEchoClose = false;
+    const connectingStream = new FramedWebSocketStream(connectingWebSocket, {
+      closeTimeoutMs: 250,
+    });
+    connectingStream.on("error", () => {});
+
+    let writeSettled = false;
+    let writeError = null;
+    connectingStream.write(Buffer.from("DEFERRED_BEFORE_OPEN"), (error) => {
+      writeSettled = true;
+      writeError = error ?? null;
+    });
+
+    connectingWebSocket.readyState = WEBSOCKET_READY_STATE_OPEN;
+    connectingStream.abortWithClose(1000, "Aborted during open");
+    connectingWebSocket.dispatchEvent(new Event("open"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    assert.equal(connectingStream.destroyed, false);
+    assert.equal(writeSettled, false);
+
+    const streamClosed = new Promise((resolve) => {
+      connectingStream.once("close", resolve);
+    });
+    connectingWebSocket.emitClose(1000, "Aborted during open", true);
+    await streamClosed;
+
+    assert.equal(writeSettled, true);
+    assert.ok(writeError instanceof Error);
   });
 });
 
@@ -1105,5 +1181,175 @@ describe("webssh Loopback Proxy Integration Tests", { timeout: 5_000 }, () => {
         stalledServer.close(() => resolve());
       });
     }
+  });
+
+  it("runProxy exits with code 0 and empty stderr when origin closes TCP without Close frame after stdin EOF", async (t) => {
+    const requestPayload = Buffer.from("SSH_COMMAND_REQUEST");
+    const trailingResponse = Buffer.from("TRAILING_STDOUT_PAYLOAD");
+
+    const loopbackServer = await createLoopbackWebSocketServer((connection) => {
+      connection.onFrame((frame) => {
+        if (frame.payload.equals(requestPayload)) {
+          connection.sendBinary(trailingResponse);
+          connection.socket.end();
+        }
+      });
+    });
+    t.after(() => loopbackServer.close());
+
+    const inputStream = new PassThrough();
+    const outputStream = new PassThrough();
+    const errorStream = new PassThrough();
+    const readOutput = collectStreamOutput(outputStream);
+    const readErrors = collectStreamOutput(errorStream);
+
+    const proxyPromise = runProxy(loopbackServer.url, false, {
+      inputStream,
+      outputStream,
+      errorStream,
+      halfCloseTimeoutMs: 500,
+      env: {},
+    });
+
+    inputStream.end(requestPayload);
+    const exitCode = await proxyPromise;
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(readOutput(), trailingResponse);
+    assert.equal(readErrors().toString("utf-8"), "");
+  });
+
+  it("runProxy flushes trailing server output through backpressured stdout before exiting 1 on mid-session abrupt disconnect", async (t) => {
+    const serverPayload = randomBytes(64 * 1024);
+
+    const loopbackServer = await createLoopbackWebSocketServer((connection) => {
+      connection.onFrame(() => {
+        for (let offset = 0; offset < serverPayload.length; offset += 4096) {
+          connection.sendBinary(serverPayload.subarray(offset, offset + 4096));
+        }
+        connection.socket.end();
+      });
+    });
+    t.after(() => loopbackServer.close());
+
+    const inputStream = new PassThrough();
+    const outputChunks = [];
+    const outputStream = new Writable({
+      highWaterMark: 4096,
+      write(chunk, _encoding, callback) {
+        outputChunks.push(Buffer.from(chunk));
+        setTimeout(callback, 2);
+      },
+    });
+    const errorStream = new PassThrough();
+
+    const proxyPromise = runProxy(loopbackServer.url, false, {
+      inputStream,
+      outputStream,
+      errorStream,
+      env: {},
+    });
+
+    inputStream.write(Buffer.from("START_SESSION"));
+    const exitCode = await proxyPromise;
+
+    assert.equal(exitCode, 1);
+    const actualOutput = Buffer.concat(outputChunks);
+    assert.equal(actualOutput.length, serverPayload.length);
+    assert.equal(actualOutput.equals(serverPayload), true);
+  });
+
+  it("runProxy flushes async sub-highWaterMark stdout writes before resolving", {
+    timeout: 500,
+  }, async (t) => {
+    const trailingPayload = Buffer.from("ASYNC_SUB_HWM_TRAILING");
+
+    const loopbackServer = await createLoopbackWebSocketServer((connection) => {
+      connection.onFrame(() => {
+        connection.sendBinary(trailingPayload);
+        connection.sendClose(1000, "Done");
+      });
+    });
+    t.after(() => loopbackServer.close());
+
+    const inputStream = new PassThrough();
+    const outputChunks = [];
+    const outputStream = new Writable({
+      highWaterMark: 16 * 1024,
+      write(chunk, _encoding, callback) {
+        outputChunks.push(Buffer.from(chunk));
+        setTimeout(callback, 15);
+      },
+    });
+    const errorStream = new PassThrough();
+
+    const proxyPromise = runProxy(loopbackServer.url, false, {
+      inputStream,
+      outputStream,
+      errorStream,
+      env: {},
+    });
+
+    inputStream.end(Buffer.from("REQ"));
+    const exitCode = await proxyPromise;
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(Buffer.concat(outputChunks), trailingPayload);
+  });
+
+  it("runProxy logs explicit WebSocket error and exits 1 after draining backpressured stdout even after stdin EOF", async () => {
+    const serverPayload = randomBytes(64 * 1024);
+
+    class ScriptedErrorWebSocket extends MemoryWebSocketDouble {
+      constructor() {
+        super(WEBSOCKET_READY_STATE_CONNECTING);
+        queueMicrotask(() => this.emitOpen());
+      }
+
+      send(data) {
+        super.send(data);
+        for (let offset = 0; offset < serverPayload.length; offset += 4096) {
+          this.emitMessage(serverPayload.subarray(offset, offset + 4096));
+        }
+        this.readyState = WEBSOCKET_READY_STATE_CLOSED;
+        const errorEvent = new Event("error");
+        errorEvent.error = new Error("ECONNRESET");
+        this.dispatchEvent(errorEvent);
+        this.emitClose(1006, "", false);
+      }
+    }
+
+    const inputStream = new PassThrough();
+    const outputChunks = [];
+    const outputStream = new Writable({
+      highWaterMark: 4096,
+      write(chunk, _encoding, callback) {
+        outputChunks.push(Buffer.from(chunk));
+        setTimeout(callback, 2);
+      },
+    });
+    const errorStream = new PassThrough();
+    const readErrors = collectStreamOutput(errorStream);
+
+    const proxyPromise = runProxy("wss://example.com/ssh", false, {
+      WebSocketConstructor: ScriptedErrorWebSocket,
+      inputStream,
+      outputStream,
+      errorStream,
+      halfCloseTimeoutMs: 500,
+      env: {},
+    });
+
+    inputStream.end(Buffer.from("REQ"));
+    const exitCode = await proxyPromise;
+
+    assert.equal(exitCode, 1);
+    assert.match(
+      readErrors().toString("utf-8"),
+      /Connection error: ECONNRESET/,
+    );
+    const actualOutput = Buffer.concat(outputChunks);
+    assert.equal(actualOutput.length, serverPayload.length);
+    assert.equal(actualOutput.equals(serverPayload), true);
   });
 });

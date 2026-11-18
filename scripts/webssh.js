@@ -20,14 +20,30 @@ const WEBSOCKET_CLOSE_TIMEOUT_MILLISECONDS = 2_000;
 const HALF_CLOSE_TIMEOUT_MILLISECONDS = 10_000;
 // RFC 6455 section 5.5 caps control payloads at 125 bytes minus 2 bytes for the close status code.
 const MAX_WEBSOCKET_CLOSE_REASON_BYTES = 123;
+const NODEJS_UNREF_SYMBOL = Symbol.for("nodejs.unref");
+
+function printWrapperHelp() {
+  console.log("Usage: webssh [wrapper-options] [ssh-options] [host] [command]");
+  console.log("Wrapper Options:");
+  console.log("  --insecure        Bypass TLS/SSL certificate verification");
+  console.log("  --ssh <path>      Overwrite the path to the ssh binary");
+  console.log("  --help            Show this help message");
+}
 
 function parseWrapperArguments(sshArguments) {
+  let showHelp = false;
   let allowInsecureCertificate = false;
   let sshBinaryPath = process.env.SSH_PATH || "ssh";
   let argumentIndex = 0;
 
   while (argumentIndex < sshArguments.length) {
     const currentArgument = sshArguments[argumentIndex];
+    if (currentArgument === "--help") {
+      showHelp = true;
+      argumentIndex++;
+      continue;
+    }
+
     if (currentArgument === "--insecure") {
       allowInsecureCertificate = true;
       argumentIndex++;
@@ -48,6 +64,7 @@ function parseWrapperArguments(sshArguments) {
   }
 
   return {
+    help: showHelp,
     insecure: allowInsecureCertificate,
     sshPath: sshBinaryPath,
     remainingArgs: sshArguments.slice(argumentIndex),
@@ -72,7 +89,11 @@ function runWrapper(sshArguments) {
     process.exit(1);
   }
 
-  const { insecure, sshPath, remainingArgs } = parsedConfiguration;
+  const { help, insecure, sshPath, remainingArgs } = parsedConfiguration;
+  if (help || remainingArgs.length === 0) {
+    printWrapperHelp();
+    process.exit(0);
+  }
   const scriptPath = import.meta.filename;
   const nodeBinaryPath = process.execPath;
   const proxyCommand = buildProxyCommand(nodeBinaryPath, scriptPath, insecure);
@@ -126,6 +147,12 @@ function resolveWebSocketUrl(targetHost) {
     parsedUrl = new URL(candidateUrl);
   } catch {
     throw new Error(`Invalid WebSocket target URL: "${trimmedTarget}".`);
+  }
+
+  if (parsedUrl.hash.length > 0 || parsedUrl.href.endsWith("#")) {
+    throw new Error(
+      `WebSocket target URL must not contain a fragment identifier: "${trimmedTarget}".`,
+    );
   }
 
   if (
@@ -209,35 +236,25 @@ function isCleanWebSocketClose(closeEvent) {
   );
 }
 
-function extractWebSocketErrorMessage(errorEvent) {
+function extractWebSocketErrorDetail(errorEvent) {
   const underlyingError = errorEvent?.error ?? errorEvent;
-  const causeMessage = underlyingError?.cause?.message;
-  if (typeof causeMessage === "string" && causeMessage.length > 0) {
-    return causeMessage;
+  const candidateDetails = [
+    underlyingError?.cause?.message,
+    underlyingError?.cause?.code,
+    underlyingError?.message,
+    underlyingError?.code,
+    errorEvent?.message,
+  ];
+  for (const candidate of candidateDetails) {
+    if (typeof candidate === "string" && candidate.length > 0) {
+      return candidate;
+    }
   }
-  const causeCode = underlyingError?.cause?.code;
-  if (typeof causeCode === "string" && causeCode.length > 0) {
-    return causeCode;
-  }
-  if (
-    typeof underlyingError?.message === "string" &&
-    underlyingError.message.length > 0
-  ) {
-    return underlyingError.message;
-  }
-  if (
-    typeof underlyingError?.code === "string" &&
-    underlyingError.code.length > 0
-  ) {
-    return underlyingError.code;
-  }
-  if (
-    typeof errorEvent?.message === "string" &&
-    errorEvent.message.length > 0
-  ) {
-    return errorEvent.message;
-  }
-  return "Connection error";
+  return null;
+}
+
+function extractWebSocketErrorMessage(errorEvent) {
+  return extractWebSocketErrorDetail(errorEvent) ?? "Connection error";
 }
 
 function toDuplexBuffer(chunk, encoding) {
@@ -348,6 +365,7 @@ class FramedWebSocketStream extends Duplex {
     this.activeWriteWaiters = new Set();
     this.activeWriteCount = 0;
     this.closeTimer = null;
+    this.errorDrainTimer = null;
     this.abortCloseListener = null;
     this.finalCloseListener = null;
     this.pendingFinalCallback = null;
@@ -355,6 +373,8 @@ class FramedWebSocketStream extends Duplex {
     this.closeCode = 1000;
     this.closeReason = undefined;
     this.initiatedGracefulClose = false;
+    this.hadWriteFailure = false;
+    this.pendingConnectionError = null;
     this.isAborting = false;
     this.isCleanedUp = false;
 
@@ -376,13 +396,46 @@ class FramedWebSocketStream extends Duplex {
     };
 
     this.handleWebSocketError = (errorEvent) => {
-      const connectionError = new Error(
-        extractWebSocketErrorMessage(errorEvent),
-      );
       this.wakeDrainWaiters();
-      if (!this.destroyed && !this.isAborting) {
-        this.destroy(connectionError);
+      if (this.destroyed || this.isAborting) {
+        return;
       }
+      const errorDetail = extractWebSocketErrorDetail(errorEvent);
+      // WHATWG/undici #onSocketClose dispatches a synthetic ErrorEvent(TypeError("")) with readyState=CLOSED
+      // immediately before CloseEvent(1006) when a peer closes TCP/TLS without an RFC 6455 Close frame
+      // (such as cloudflared tcpOverWS on origin TCP EOF). Defer to handleWebSocketClose so buffered frames drain cleanly.
+      if (
+        this.webSocket.readyState === WEBSOCKET_READY_STATE_CLOSED &&
+        errorDetail === null
+      ) {
+        return;
+      }
+      if (this.pendingConnectionError !== null) {
+        return;
+      }
+      const connectionError = new Error(errorDetail ?? "Connection error");
+      this.pendingConnectionError = connectionError;
+      if (this.readableLength > 0 && this.readableFlowing !== null) {
+        if (!this.readableEnded) {
+          this.push(null);
+        }
+        this.once("end", () => {
+          if (!this.destroyed) {
+            this.destroy(connectionError);
+          }
+        });
+        if (this.errorDrainTimer === null) {
+          this.errorDrainTimer = setTimeout(() => {
+            this.errorDrainTimer = null;
+            if (!this.destroyed) {
+              this.destroy(connectionError);
+            }
+          }, this.closeTimeoutMs);
+          this.errorDrainTimer.unref();
+        }
+        return;
+      }
+      this.destroy(connectionError);
     };
 
     this.handleWebSocketClose = (closeEvent) => {
@@ -414,6 +467,19 @@ class FramedWebSocketStream extends Duplex {
 
   didInitiateGracefulClose() {
     return this.initiatedGracefulClose;
+  }
+
+  getConnectionError() {
+    return this.pendingConnectionError;
+  }
+
+  hasFlushedAllWrites() {
+    return (
+      !this.hadWriteFailure &&
+      this.activeWriteCount === 0 &&
+      this.writableLength === 0 &&
+      this.webSocket.bufferedAmount === 0
+    );
   }
 
   closeGracefully(code = 1000, reason) {
@@ -531,26 +597,44 @@ class FramedWebSocketStream extends Duplex {
     try {
       buffer = toDuplexBuffer(chunk, encoding);
     } catch (error) {
+      this.hadWriteFailure = true;
       callback(normalizeError(error));
+      return;
+    }
+
+    if (buffer.length === 0) {
+      callback(null);
       return;
     }
 
     if (this.webSocket.readyState === WEBSOCKET_READY_STATE_CONNECTING) {
       this.waitForOpen(
         () => {
-          if (this.destroyed || this.isAborting) {
+          if (this.destroyed) {
+            this.hadWriteFailure = true;
             callback(new Error("WebSocket stream destroyed before open."));
+            return;
+          }
+          if (this.isAborting) {
+            this.pendingWriteAborts.add(callback);
             return;
           }
           void this.sendBufferSlices(buffer, callback);
         },
-        () => callback(new Error("WebSocket closed before opening.")),
-        callback,
+        () => {
+          this.hadWriteFailure = true;
+          callback(new Error("WebSocket closed before opening."));
+        },
+        (error) => {
+          this.hadWriteFailure = true;
+          callback(error);
+        },
       );
       return;
     }
 
     if (this.webSocket.readyState !== WEBSOCKET_READY_STATE_OPEN) {
+      this.hadWriteFailure = true;
       callback(
         new Error(
           `Cannot write to WebSocket in readyState ${this.webSocket.readyState}.`,
@@ -593,6 +677,10 @@ class FramedWebSocketStream extends Duplex {
     this.isCleanedUp = true;
 
     this.clearCloseTimer();
+    if (this.errorDrainTimer !== null) {
+      clearTimeout(this.errorDrainTimer);
+      this.errorDrainTimer = null;
+    }
     this.detachWebSocketListeners();
     this.wakeDrainWaiters();
 
@@ -689,6 +777,11 @@ class FramedWebSocketStream extends Duplex {
 
   forceLocalCloseAfterTimeout() {
     this.clearCloseTimer();
+    this.webSocket[NODEJS_UNREF_SYMBOL]?.();
+    if (this.errorDrainTimer !== null) {
+      clearTimeout(this.errorDrainTimer);
+      this.errorDrainTimer = null;
+    }
     this.detachWebSocketListeners();
     this.wakeDrainWaiters();
 
@@ -891,11 +984,6 @@ class FramedWebSocketStream extends Duplex {
   }
 
   async sendBufferSlices(buffer, callback) {
-    if (buffer.length === 0) {
-      callback(null);
-      return;
-    }
-
     this.activeWriteCount++;
     let settled = false;
     let unregisterWriteAbort = () => {};
@@ -905,6 +993,9 @@ class FramedWebSocketStream extends Duplex {
         return;
       }
       settled = true;
+      if (error) {
+        this.hadWriteFailure = true;
+      }
       unregisterWriteAbort();
       this.activeWriteCount--;
       this.notifyWriteWaiters();
@@ -986,27 +1077,20 @@ class FramedWebSocketStream extends Duplex {
 }
 
 async function flushWritableStream(writableStream) {
-  if (writableStream.destroyed || writableStream.writableFinished) {
+  if (
+    writableStream.destroyed ||
+    writableStream.writableFinished ||
+    writableStream.writableEnded ||
+    !writableStream.writable
+  ) {
     return;
   }
 
   if (
     !writableStream.writableNeedDrain &&
-    writableStream.writableLength === 0
+    writableStream.writableLength === 0 &&
+    writableStream !== process.stdout
   ) {
-    if (
-      writableStream === process.stdout &&
-      writableStream.writable &&
-      !writableStream.writableEnded
-    ) {
-      await new Promise((resolve) => {
-        try {
-          writableStream.write("", () => resolve());
-        } catch {
-          resolve();
-        }
-      });
-    }
     return;
   }
 
@@ -1017,17 +1101,20 @@ async function flushWritableStream(writableStream) {
         return;
       }
       settled = true;
-      writableStream.removeListener("drain", finish);
       writableStream.removeListener("finish", finish);
       writableStream.removeListener("close", finish);
       writableStream.removeListener("error", finish);
       resolve();
     };
 
-    writableStream.once("drain", finish);
     writableStream.once("finish", finish);
     writableStream.once("close", finish);
     writableStream.once("error", finish);
+    try {
+      writableStream.write("", finish);
+    } catch {
+      finish();
+    }
   });
 }
 
@@ -1047,6 +1134,7 @@ function waitForStreamClose(stream) {
 }
 
 function closeHandshakeSocketSafely(webSocket) {
+  webSocket[NODEJS_UNREF_SYMBOL]?.();
   const state = webSocket.readyState;
   if (
     state === WEBSOCKET_READY_STATE_CLOSED ||
@@ -1207,10 +1295,27 @@ function coordinateProxySession(
 
       await flushWritableStream(outputStream);
 
+      const connectionError = webSocketStream.getConnectionError();
+      if (connectionError !== null) {
+        errorStream.write(`Connection error: ${connectionError.message}\n`);
+        if (!webSocketStream.destroyed) {
+          webSocketStream.destroy();
+        }
+        resolve(1);
+        return;
+      }
+
       const peerCloseEvent = webSocketStream.getPeerCloseEvent();
+      // cloudflared tcpOverWS closes the tunnel stream without an RFC 6455 Close frame (code 1006)
+      // when the origin SSH socket reaches EOF. Once local stdin has ended and all outbound bytes flushed,
+      // frameless remote EOF is the normal half-close completion signal.
+      const isFramelessHalfCloseEof =
+        peerCloseEvent?.code === 1006 &&
+        inputEnded &&
+        webSocketStream.hasFlushedAllWrites();
       const isCleanClose =
         peerCloseEvent !== null
-          ? isCleanWebSocketClose(peerCloseEvent)
+          ? isCleanWebSocketClose(peerCloseEvent) || isFramelessHalfCloseEof
           : webSocketStream.didInitiateGracefulClose();
 
       if (!webSocketStream.destroyed) {
@@ -1451,7 +1556,7 @@ if (isExecutingAsMain()) {
 
   if (commandLineArguments[0] === "--ws-proxy") {
     const targetHost = commandLineArguments[1];
-    if (!targetHost) {
+    if (!targetHost || targetHost.startsWith("-")) {
       console.error("Error: --ws-proxy requires a target host.");
       process.exit(1);
     }
@@ -1459,17 +1564,8 @@ if (isExecutingAsMain()) {
       commandLineArguments.includes("--insecure");
     const exitCode = await runProxy(targetHost, allowInsecureCertificate);
     process.exit(exitCode);
-  } else if (
-    commandLineArguments.length === 0 ||
-    commandLineArguments.includes("--help")
-  ) {
-    console.log(
-      "Usage: webssh [wrapper-options] [ssh-options] [host] [command]",
-    );
-    console.log("Wrapper Options:");
-    console.log("  --insecure        Bypass TLS/SSL certificate verification");
-    console.log("  --ssh <path>      Overwrite the path to the ssh binary");
-    console.log("  --help            Show this help message");
+  } else if (commandLineArguments.length === 0) {
+    printWrapperHelp();
     process.exit(0);
   } else {
     runWrapper(commandLineArguments);
