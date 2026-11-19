@@ -60,7 +60,7 @@ test_loader_comma_and_colon_separated_list() {
   local catstar_script="${CATSTAR_ROOT:-$PWD}/src/share/zsh/catstar.zsh"
   local status_code
 
-  (source "$catstar_script" --loaders "cargo:go,direnv:sdkman,phpenv:goenv:tfenv") >/dev/null 2>&1
+  (source "$catstar_script" --loaders "cargo:go,direnv:sdkman,phpenv:goenv:tfenv,gcloud") >/dev/null 2>&1
   status_code=$?
 
   assert_eq "$status_code" "0" "Comma and colon separated loaders list should parse and initialize successfully"
@@ -97,6 +97,7 @@ test_loader_list_loaders_output() {
   expect_contains "$output" "phpenv"
   expect_contains "$output" "goenv"
   expect_contains "$output" "tfenv"
+  expect_contains "$output" "gcloud"
 }
 
 test_loader_silent_skip_for_missing_tools() {
