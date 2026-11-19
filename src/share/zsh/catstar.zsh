@@ -165,9 +165,29 @@
   # ---------------------------------------------------------------------------
   # 5. Function Autoloading & Completion Registration
   # ---------------------------------------------------------------------------
+  # Register standard user, Homebrew, and distro completion directories ahead
+  # of Zsh's built-in functions and before Oh My Zsh invokes compinit, so
+  # custom-built Zsh and Homebrew installs discover package completions.
+  local -a completion_directories=()
+  local completion_directory
+  for completion_directory in \
+    "${XDG_DATA_HOME:-$HOME/.local/share}/zsh/site-functions" \
+    "${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/share/zsh/site-functions}" \
+    "/opt/homebrew/share/zsh/site-functions" \
+    "/home/linuxbrew/.linuxbrew/share/zsh/site-functions" \
+    "/usr/local/share/zsh/site-functions" \
+    "/usr/share/zsh/vendor-completions" \
+    "/usr/share/zsh/site-functions"; do
+    if [[ -n "$completion_directory" && -d "$completion_directory" ]]; then
+      completion_directories+=("$completion_directory")
+    fi
+  done
+  if (( ${#completion_directories} > 0 )); then
+    fpath=("${completion_directories[@]}" $fpath)
+  fi
+
   local functions_directory="$catstar_directory/functions"
   if [[ -d "$functions_directory" ]]; then
-    typeset -g -U fpath
     fpath=("$functions_directory" $fpath)
 
     () {
