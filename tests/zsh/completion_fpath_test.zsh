@@ -80,3 +80,26 @@ test_completion_fpath_skips_missing_and_deduplicates_existing_entries() {
   done
   expect_eq "$match_count" "1" "Duplicate completion directories must be deduplicated in fpath"
 }
+
+test_functions_directory_autoloads_files_and_symlinks_only() {
+  local staged_root="$TEST_WORKSPACE_DIR/stowed"
+  local target_dir="$TEST_WORKSPACE_DIR/targets"
+  local result_file="$TEST_WORKSPACE_DIR/autoload_result"
+
+  mkdir -p "$staged_root/catstar/functions/nested_dir" "$target_dir"
+  ln -s "$CATSTAR_LOADER_SCRIPT" "$staged_root/catstar.zsh"
+  print -r -- 'print -r -- "plain"' > "$staged_root/catstar/functions/plain_fn"
+  print -r -- 'print -r -- "linked"' > "$target_dir/linked_fn"
+  ln -s "$target_dir/linked_fn" "$staged_root/catstar/functions/linked_fn"
+  ln -s "$target_dir/does_not_exist" "$staged_root/catstar/functions/broken_link"
+  print -r -- '#compdef plain_fn' > "$staged_root/catstar/functions/_plain_fn"
+
+  (
+    source "$staged_root/catstar.zsh" >"$TEST_WORKSPACE_DIR/stdout" 2>&1
+    print -r -- "plain=$+functions[plain_fn] linked=$+functions[linked_fn] broken=$+functions[broken_link] comp=$+functions[_plain_fn] dir=$+functions[nested_dir]" > "$result_file"
+  )
+  assert_status 0 "catstar.zsh must autoload functions cleanly from a stowed layout"
+  expect_eq "$(<"$TEST_WORKSPACE_DIR/stdout")" "" "Function autoloading must not emit stdout"
+  expect_eq "$(<"$result_file")" "plain=1 linked=1 broken=0 comp=0 dir=0" \
+    "Autoloading must include regular files and valid symlinks while skipping _*, directories, and broken symlinks"
+}

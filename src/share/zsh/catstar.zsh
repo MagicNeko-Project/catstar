@@ -190,10 +190,10 @@
   if [[ -d "$functions_directory" ]]; then
     fpath=("$functions_directory" $fpath)
 
-    () {
-      setopt localoptions extendedglob
-      autoload -Uz "$functions_directory"/(^_*)(N:t)
-    }
+    local -a autoload_functions=("$functions_directory"/[!_]*(N-.:t))
+    if (( ${#autoload_functions} > 0 )); then
+      autoload -Uz -- "${autoload_functions[@]}"
+    fi
   fi
 
   # ---------------------------------------------------------------------------
