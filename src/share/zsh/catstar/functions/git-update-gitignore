@@ -15,7 +15,7 @@ local item
 for item in $GITIGNORE_INCLUDE; do
     local file="$HOME/.cfg/gitignore/$item.gitignore"
     if [[ -f "$file" ]]; then
-        gitignore_content+="# Source: $item\n$(<"$file")\n\n"
+        gitignore_content+="# Source: $item"$'\n'"$(<"$file")"$'\n\n'
     fi
 done
 
