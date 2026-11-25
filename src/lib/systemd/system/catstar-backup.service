@@ -8,7 +8,7 @@ CacheDirectory=catstar-backup
 CacheDirectoryMode=0700
 Environment=HOME=/root
 EnvironmentFile=/usr/local/etc/catstar-backup.conf
-ReadOnlyPaths=/
+ProtectSystem=strict
 ReadWritePaths=/root
 PrivateTmp=yes
 PrivateDevices=yes
