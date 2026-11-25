@@ -16,3 +16,4 @@ common_create_directories: {}
 common_create_files: {}
 common_create_configs: {}
 common_create_json_configs: {}
+common_systemd_services: {}

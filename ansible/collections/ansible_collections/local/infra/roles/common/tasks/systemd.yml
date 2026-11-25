@@ -1,0 +1,212 @@
+---
+- name: Collect standalone systemd service definitions
+  ansible.builtin.set_fact:
+    common_systemd_raw_map: "{{ q('ansible.builtin.vars', *(q('ansible.builtin.varnames', '^common_systemd_services(_.*)?$') | sort)) | combine }}"
+
+- name: Manage declared standalone systemd services
+  when: common_systemd_raw_map | length > 0
+  block:
+    - name: Normalize standalone systemd service definitions
+      ansible.builtin.set_fact:
+        common_systemd_units: >-
+          {%- set out = {} -%}
+          {%- for raw_name, cfg in common_systemd_raw_map.items() -%}
+            {%- set unit = raw_name if raw_name is regex('\.(service|socket|timer|path|mount|target)$') else raw_name ~ '.service' -%}
+            {%- set entry = {
+              'remote_src': cfg.remote_src | default(false),
+              'dropins': cfg.dropins | default({}),
+              'env_mode': cfg.env_mode | default('0600'),
+              'enabled': cfg.enabled if 'enabled' in cfg else true,
+              'state': cfg.state if 'state' in cfg else 'started',
+              'restarted': cfg.restarted if 'restarted' in cfg else true,
+            } -%}
+            {%- for opt in ['src', 'content', 'env_file', 'env_dir_mode', 'env'] -%}
+              {%- if opt in cfg and cfg[opt] is not none -%}
+                {%- set _ = entry.update({opt: cfg[opt]}) -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- set _ = out.update({unit: entry}) -%}
+          {%- endfor -%}
+          {{ out }}
+
+    - name: Partition standalone systemd services by desired presence
+      ansible.builtin.set_fact:
+        common_systemd_present: >-
+          {{
+            common_systemd_units
+            | dict2items
+            | rejectattr('value.state', 'equalto', 'absent')
+            | items2dict
+          }}
+        common_systemd_absent_units: >-
+          {{
+            common_systemd_units
+            | dict2items
+            | selectattr('value.state', 'equalto', 'absent')
+            | map(attribute='key')
+            | list
+          }}
+
+    - name: Remove absent standalone systemd services
+      when: common_systemd_absent_units | length > 0
+      block:
+        - name: Check existing unit files for absent systemd services
+          ansible.builtin.stat:
+            path: "/etc/systemd/system/{{ item }}"
+          loop: "{{ common_systemd_absent_units }}"
+          register: common_systemd_absent_stats
+
+        - name: Stop and disable absent systemd services
+          ansible.builtin.systemd_service:
+            name: "{{ item.item }}"
+            enabled: false
+            state: stopped
+          loop: "{{ common_systemd_absent_stats.results | selectattr('stat.exists') }}"
+          loop_control:
+            label: "{{ item.item }}"
+          when: "'@.' not in item.item"
+
+        - name: Remove absent systemd unit files and drop-in directories
+          ansible.builtin.file:
+            path: "/etc/systemd/system/{{ item.0 }}{{ item.1 }}"
+            state: absent
+          loop: "{{ common_systemd_absent_units | product(['', '.d']) }}"
+          loop_control:
+            label: "{{ item.0 }}{{ item.1 }}"
+          register: common_systemd_absent_rm
+
+        - name: Reload systemd manager after unit removal
+          ansible.builtin.systemd_service:
+            daemon_reload: true
+          when: (common_systemd_absent_rm.results | selectattr('changed') | list | length) > 0
+
+    - name: Configure present standalone systemd services
+      when: common_systemd_present | length > 0
+      block:
+        - name: Check pre-existing unit files for present systemd services
+          ansible.builtin.stat:
+            path: "/etc/systemd/system/{{ item.key }}"
+          loop: "{{ common_systemd_present | dict2items }}"
+          loop_control:
+            label: "{{ item.key }}"
+          register: common_systemd_present_stats
+
+        - name: Deploy standalone systemd unit files
+          ansible.builtin.copy:
+            src: "{{ item.value.src | default(omit) }}"
+            remote_src: "{{ item.value.remote_src if 'src' in item.value else omit }}"
+            content: "{{ item.value.content | default(omit) }}"
+            dest: "/etc/systemd/system/{{ item.key }}"
+            mode: "0644"
+          loop: "{{ common_systemd_present | dict2items }}"
+          loop_control:
+            label: "{{ item.key }}"
+          when: item.value.src is defined or item.value.content is defined
+          register: common_systemd_unit_res
+
+        - name: Create systemd drop-in directories
+          ansible.builtin.file:
+            path: "/etc/systemd/system/{{ item.key }}.d"
+            state: directory
+            mode: "0755"
+          loop: "{{ common_systemd_present | dict2items }}"
+          loop_control:
+            label: "{{ item.key }}"
+          when: item.value.dropins | length > 0
+
+        - name: Flatten systemd drop-in definitions
+          ansible.builtin.set_fact:
+            common_systemd_dropins: >-
+              {%- set items = [] -%}
+              {%- for unit, cfg in common_systemd_present.items() -%}
+                {%- for fname, fcontent in cfg.dropins.items() -%}
+                  {%- set _ = items.append({'unit': unit, 'dest': '/etc/systemd/system/' ~ unit ~ '.d/' ~ fname, 'content': fcontent}) -%}
+                {%- endfor -%}
+              {%- endfor -%}
+              {{ items }}
+
+        - name: Deploy systemd drop-in files
+          ansible.builtin.copy:
+            content: "{{ item.content }}"
+            dest: "{{ item.dest }}"
+            mode: "0644"
+          loop: "{{ common_systemd_dropins }}"
+          loop_control:
+            label: "{{ item.dest }}"
+          register: common_systemd_dropin_res
+
+        - name: Ensure systemd environment file parent directories exist
+          ansible.builtin.file:
+            path: "{{ item.value.env_file | dirname }}"
+            state: directory
+            mode: "{{ item.value.env_dir_mode | default(omit) }}"
+          loop: "{{ common_systemd_present | dict2items }}"
+          loop_control:
+            label: "{{ item.key }}"
+          when:
+            - item.value.env_file is defined
+            - item.value.env is defined
+
+        - name: Deploy systemd environment files
+          ansible.builtin.copy:
+            dest: "{{ item.value.env_file }}"
+            content: |
+              {% for k, v in item.value.env.items() %}
+              {{ k }}={{ v | lower if v is boolean else v }}
+              {% endfor %}
+            mode: "{{ item.value.env_mode }}"
+          loop: "{{ common_systemd_present | dict2items }}"
+          loop_control:
+            label: "{{ item.key }}"
+          when:
+            - item.value.env_file is defined
+            - item.value.env is defined
+          register: common_systemd_env_res
+
+        - name: Collect systemd reload and restart state
+          ansible.builtin.set_fact:
+            common_systemd_reload_needed: >-
+              {{
+                (
+                  (common_systemd_unit_res.results | selectattr('changed') | list | length)
+                  + (common_systemd_dropin_res.results | selectattr('changed') | list | length)
+                ) > 0
+              }}
+            common_systemd_changed_units: >-
+              {{
+                (
+                  (common_systemd_unit_res.results | selectattr('changed') | map(attribute='item.key') | list)
+                  + (common_systemd_dropin_res.results | selectattr('changed') | map(attribute='item.unit') | list)
+                  + (common_systemd_env_res.results | selectattr('changed') | map(attribute='item.key') | list)
+                ) | unique
+              }}
+            common_systemd_existing_units: >-
+              {{
+                common_systemd_present_stats.results
+                | selectattr('stat.exists')
+                | map(attribute='item.key')
+                | list
+              }}
+
+        - name: Reload systemd manager configuration
+          ansible.builtin.systemd_service:
+            daemon_reload: true
+          when: common_systemd_reload_needed
+
+        - name: Enforce standalone systemd service enablement and state
+          ansible.builtin.systemd_service:
+            name: "{{ item.key }}"
+            enabled: "{{ item.value.enabled if item.value.enabled is not none else omit }}"
+            state: >-
+              {{
+                'restarted'
+                if (item.value.state == 'started' and item.value.restarted and item.key in common_systemd_changed_units)
+                else (item.value.state if item.value.state is not none else omit)
+              }}
+          loop: "{{ common_systemd_present | dict2items }}"
+          loop_control:
+            label: "{{ item.key }}"
+          when:
+            - "'@.' not in item.key"
+            - item.value.enabled is not none or item.value.state is not none
+            - not ansible_check_mode or item.key in common_systemd_existing_units or (item.value.src is not defined and item.value.content is not defined)

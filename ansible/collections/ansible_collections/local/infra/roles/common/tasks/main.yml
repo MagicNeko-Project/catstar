@@ -71,3 +71,8 @@
     mode: "0644"
   when: common_sysctl_swappiness
   notify: Reload sysctl
+
+- name: Manage standalone systemd services
+  ansible.builtin.import_tasks: systemd.yml
+  tags:
+    - systemd
